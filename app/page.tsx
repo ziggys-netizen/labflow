@@ -4,6 +4,9 @@ export default function Home() {
       <nav className="border-b border-gray-200 px-6 py-4">
         <div className="max-w-5xl mx-auto flex items-center justify-between">
           <span className="text-lg font-semibold text-gray-900">LabFlow</span>
+          <a href="/patients" className="text-sm font-medium text-gray-700 hover:text-gray-900">
+            View patients
+          </a>
         </div>
       </nav>
 
