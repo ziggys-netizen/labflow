@@ -6,9 +6,12 @@ import { collection, getDocs, orderBy, query, deleteDoc, doc } from "firebase/fi
 
 interface Patient {
   id: string;
+  labId: string;
   name: string;
+  sex: string;
   dob: string;
   phone: string;
+  address: string;
   createdAt: string;
 }
 
@@ -26,9 +29,12 @@ export default function Patients() {
         const data = docSnap.data();
         return {
           id: docSnap.id,
+          labId: data.labId || "—",
           name: data.name,
+          sex: data.sex || "—",
           dob: data.dob,
           phone: data.phone,
+          address: data.address || "—",
           createdAt: data.createdAt,
         };
       });
@@ -63,7 +69,7 @@ export default function Patients() {
 
   return (
     <main className="min-h-screen bg-white px-6 py-16">
-      <div className="max-w-2xl mx-auto">
+      <div className="max-w-4xl mx-auto">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold text-gray-900">Patients</h1>
           <a href="/register" className="text-sm font-medium text-gray-900 underline">
@@ -79,34 +85,42 @@ export default function Patients() {
         )}
 
         {!loading && patients.length > 0 && (
-          <table className="w-full text-left border-collapse">
-            <thead>
-              <tr className="border-b border-gray-300">
-                <th className="py-2 pr-4 text-sm font-medium text-gray-700">Name</th>
-                <th className="py-2 pr-4 text-sm font-medium text-gray-700">Date of birth</th>
-                <th className="py-2 pr-4 text-sm font-medium text-gray-700">Phone</th>
-                <th className="py-2 pr-4 text-sm font-medium text-gray-700"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {patients.map((p) => (
-                <tr key={p.id} className="border-b border-gray-100">
-                  <td className="py-2 pr-4 text-gray-900">{p.name}</td>
-                  <td className="py-2 pr-4 text-gray-600">{p.dob}</td>
-                  <td className="py-2 pr-4 text-gray-600">{p.phone}</td>
-                  <td className="py-2 pr-4">
-                    <button
-                      onClick={() => handleDelete(p.id, p.name)}
-                      disabled={deletingId === p.id}
-                      className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
-                    >
-                      {deletingId === p.id ? "Deleting..." : "Delete"}
-                    </button>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="border-b border-gray-300">
+                  <th className="py-2 pr-4 text-sm font-medium text-gray-700">Lab ID</th>
+                  <th className="py-2 pr-4 text-sm font-medium text-gray-700">Name</th>
+                  <th className="py-2 pr-4 text-sm font-medium text-gray-700">Sex</th>
+                  <th className="py-2 pr-4 text-sm font-medium text-gray-700">DOB</th>
+                  <th className="py-2 pr-4 text-sm font-medium text-gray-700">Phone</th>
+                  <th className="py-2 pr-4 text-sm font-medium text-gray-700">Address</th>
+                  <th className="py-2 pr-4 text-sm font-medium text-gray-700"></th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody>
+                {patients.map((p) => (
+                  <tr key={p.id} className="border-b border-gray-100">
+                    <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">{p.labId}</td>
+                    <td className="py-2 pr-4 text-gray-900">{p.name}</td>
+                    <td className="py-2 pr-4 text-gray-600">{p.sex}</td>
+                    <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.dob}</td>
+                    <td className="py-2 pr-4 text-gray-600">{p.phone}</td>
+                    <td className="py-2 pr-4 text-gray-600">{p.address}</td>
+                    <td className="py-2 pr-4">
+                      <button
+                        onClick={() => handleDelete(p.id, p.name)}
+                        disabled={deletingId === p.id}
+                        className="text-sm text-red-600 hover:text-red-800 disabled:opacity-50"
+                      >
+                        {deletingId === p.id ? "Deleting..." : "Delete"}
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </main>
