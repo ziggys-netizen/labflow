@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { db } from "../lib/firebase";
-import { collection, addDoc } from "firebase/firestore";
+import { collection, addDoc, query, where, getDocs } from "firebase/firestore";
 
 const COUNTRY_CODES = [
   { code: "+93", label: "🇦🇫 Afghanistan (+93)" },
@@ -173,12 +173,25 @@ function generateLabId() {
   return `LF-${datePart}-${randomPart}`;
 }
 
+// Normalizes a name: trims extra whitespace, converts to consistent Title Case
+function normalizeName(raw: string): string {
+  return raw
+    .trim()
+    .replace(/\s+/g, " ")
+    .split(" ")
+    .map((word) =>
+      word.length > 0 ? word.charAt(0).toUpperCase() + word.slice(1).toLowerCase() : word
+    )
+    .join(" ");
+}
+
 const NAME_REGEX = /^[a-zA-Z\s\-'.]{2,100}$/;
 const PHONE_DIGITS_REGEX = /^[0-9]{6,10}$/;
 const NATIONAL_ID_REGEX = /^[a-zA-Z0-9\-]{4,30}$/;
 
 export default function Register() {
   const [name, setName] = useState("");
+  const [preferredName, setPreferredName] = useState("");
   const [sex, setSex] = useState("");
   const [dob, setDob] = useState("");
   const [countryCode, setCountryCode] = useState("+220");
@@ -186,6 +199,9 @@ export default function Register() {
   const [address, setAddress] = useState("");
   const [nationalId, setNationalId] = useState("");
   const [nextOfKin, setNextOfKin] = useState("");
+  const [referringClinician, setReferringClinician] = useState("");
+  const [reasonForVisit, setReasonForVisit] = useState("");
+  const [consentGiven, setConsentGiven] = useState(false);
 
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [status, setStatus] = useState("");
@@ -196,6 +212,9 @@ export default function Register() {
 
     if (!NAME_REGEX.test(name.trim())) {
       newErrors.name = "Enter a valid name (letters only, at least 2 characters).";
+    }
+    if (preferredName.trim() && !NAME_REGEX.test(preferredName.trim())) {
+      newErrors.preferredName = "Enter a valid name (letters only).";
     }
     if (!sex) {
       newErrors.sex = "Please select a sex.";
@@ -214,9 +233,44 @@ export default function Register() {
     if (nationalId.trim() && !NATIONAL_ID_REGEX.test(nationalId.trim())) {
       newErrors.nationalId = "National ID should be letters/numbers only, 4-30 characters.";
     }
+    if (!NAME_REGEX.test(referringClinician.trim())) {
+      newErrors.referringClinician = "Enter the referring clinician's name (letters only).";
+    }
+    if (!consentGiven) {
+      newErrors.consent = "Patient consent is required before registration.";
+    }
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  }
+
+  async function findDuplicates(): Promise<{ found: boolean; matches: string[] }> {
+    const normalizedName = normalizeName(name).toLowerCase();
+    const fullPhone = `${countryCode}${phoneLocal.trim()}`;
+    const matches: string[] = [];
+
+    // Check 1: same name + same date of birth
+    const dobQuery = query(collection(db, "patients"), where("dob", "==", dob));
+    const dobSnapshot = await getDocs(dobQuery);
+    dobSnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      if ((data.name || "").trim().toLowerCase() === normalizedName) {
+        matches.push(`Name + DOB match — Lab ID: ${data.labId}`);
+      }
+    });
+
+    // Check 2: same phone number
+    const phoneQuery = query(collection(db, "patients"), where("phone", "==", fullPhone));
+    const phoneSnapshot = await getDocs(phoneQuery);
+    phoneSnapshot.forEach((docSnap) => {
+      const data = docSnap.data();
+      const alreadyListed = matches.some((m) => m.includes(data.labId));
+      if (!alreadyListed) {
+        matches.push(`Same phone number — Lab ID: ${data.labId} (${data.name})`);
+      }
+    });
+
+    return { found: matches.length > 0, matches };
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -224,31 +278,55 @@ export default function Register() {
     setStatus("");
     if (!validate()) return;
 
+    setStatus("Checking for existing records...");
+    const duplicateCheck = await findDuplicates();
+
+    if (duplicateCheck.found) {
+      const proceed = window.confirm(
+        `Possible existing record(s) found:\n\n${duplicateCheck.matches.join("\n")}\n\nRegister anyway as a new record?`
+      );
+      if (!proceed) {
+        setStatus("Registration cancelled — existing record kept.");
+        return;
+      }
+    }
+
     setStatus("Saving...");
     const labId = generateLabId();
     const fullPhone = `${countryCode}${phoneLocal.trim()}`;
+    const cleanName = normalizeName(name);
+    const cleanPreferredName = preferredName.trim() ? normalizeName(preferredName) : null;
+    const cleanClinician = normalizeName(referringClinician);
 
     try {
       await addDoc(collection(db, "patients"), {
         labId,
-        name: name.trim(),
+        name: cleanName,
+        preferredName: cleanPreferredName,
         sex,
         dob,
         phone: fullPhone,
         address: address.trim(),
         nationalId: nationalId.trim() || null,
         nextOfKin: nextOfKin.trim() || null,
+        referringClinician: cleanClinician,
+        reasonForVisit: reasonForVisit.trim() || null,
+        consentGiven: true,
         createdAt: new Date().toISOString(),
       });
       setStatus("Patient registered successfully.");
       setLastLabId(labId);
       setName("");
+      setPreferredName("");
       setSex("");
       setDob("");
       setPhoneLocal("");
       setAddress("");
       setNationalId("");
       setNextOfKin("");
+      setReferringClinician("");
+      setReasonForVisit("");
+      setConsentGiven(false);
       setErrors({});
     } catch (error) {
       console.error(error);
@@ -270,6 +348,19 @@ export default function Register() {
               className={`w-full border rounded-lg px-3 py-2 ${errors.name ? "border-red-500" : "border-gray-300"}`}
             />
             {errors.name && <p className="text-sm text-red-600 mt-1">{errors.name}</p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Preferred / alternate name <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <input
+              type="text"
+              value={preferredName}
+              onChange={(e) => setPreferredName(e.target.value)}
+              className={`w-full border rounded-lg px-3 py-2 ${errors.preferredName ? "border-red-500" : "border-gray-300"}`}
+            />
+            {errors.preferredName && <p className="text-sm text-red-600 mt-1">{errors.preferredName}</p>}
           </div>
 
           <div>
@@ -334,7 +425,9 @@ export default function Register() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">National ID number <span className="text-gray-400 font-normal">(optional)</span></label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              National ID number <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
             <input
               type="text"
               value={nationalId}
@@ -345,7 +438,9 @@ export default function Register() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Next of kin <span className="text-gray-400 font-normal">(name and phone, optional)</span></label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Next of kin <span className="text-gray-400 font-normal">(name and phone, optional)</span>
+            </label>
             <input
               type="text"
               value={nextOfKin}
@@ -353,6 +448,45 @@ export default function Register() {
               placeholder="e.g. Awa Jallow, 220 XXX XXXX"
               className="w-full border border-gray-300 rounded-lg px-3 py-2"
             />
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Referring clinician</label>
+            <input
+              type="text"
+              value={referringClinician}
+              onChange={(e) => setReferringClinician(e.target.value)}
+              placeholder="Name of requesting doctor/nurse"
+              className={`w-full border rounded-lg px-3 py-2 ${errors.referringClinician ? "border-red-500" : "border-gray-300"}`}
+            />
+            {errors.referringClinician && <p className="text-sm text-red-600 mt-1">{errors.referringClinician}</p>}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Reason for visit / clinical notes <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <textarea
+              value={reasonForVisit}
+              onChange={(e) => setReasonForVisit(e.target.value)}
+              rows={3}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2"
+            />
+          </div>
+
+          <div className="border-t border-gray-200 pt-4">
+            <label className="flex items-start gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
+                checked={consentGiven}
+                onChange={(e) => setConsentGiven(e.target.checked)}
+                className="mt-1"
+              />
+              <span>
+                The patient (or their guardian) has been informed about this laboratory testing and consents to registration and sample collection.
+              </span>
+            </label>
+            {errors.consent && <p className="text-sm text-red-600 mt-1">{errors.consent}</p>}
           </div>
 
           <button type="submit" className="w-full bg-gray-900 text-white rounded-lg py-2 font-medium hover:bg-gray-800 transition">
