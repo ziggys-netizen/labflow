@@ -124,6 +124,9 @@ export default function Patients() {
                     <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.nextOfKin}</td>
                     <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.referringClinician}</td>
                     <td className="py-2 pr-4 whitespace-nowrap">
+                      <a href={`/orders/new/${p.id}`} className="text-gray-900 underline mr-3">
+                        Order tests
+                      </a>
                       <button
                         onClick={() => handleDelete(p.id, p.name)}
                         disabled={deletingId === p.id}
