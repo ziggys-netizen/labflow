@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { db } from "../lib/firebase";
 import { collection, getDocs, orderBy, query, deleteDoc, doc } from "firebase/firestore";
+import ProtectedRoute from "../lib/ProtectedRoute";
 
 interface Patient {
   id: string;
@@ -76,6 +77,7 @@ export default function Patients() {
   }
 
   return (
+    <ProtectedRoute>
     <main className="min-h-screen bg-white px-6 py-16">
       <div className="max-w-6xl mx-auto">
         <div className="flex items-center justify-between mb-6">
@@ -143,5 +145,6 @@ export default function Patients() {
         )}
       </div>
     </main>
+    </ProtectedRoute>
   );
 }

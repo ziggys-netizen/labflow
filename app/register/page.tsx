@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { db } from "../lib/firebase";
 import { collection, addDoc, query, where, getDocs } from "firebase/firestore";
+import ProtectedRoute from "../lib/ProtectedRoute";
 
 const COUNTRY_CODES = [
   { code: "+93", label: "🇦🇫 Afghanistan (+93)" },
@@ -335,6 +336,7 @@ export default function Register() {
   };
 
   return (
+    <ProtectedRoute>
     <main className="min-h-screen bg-white px-6 py-16">
       <div className="max-w-md mx-auto">
         <h1 className="text-2xl font-semibold text-gray-900 mb-6">Register a patient</h1>
@@ -502,5 +504,6 @@ export default function Register() {
         </form>
       </div>
     </main>
+    </ProtectedRoute>
   );
 }

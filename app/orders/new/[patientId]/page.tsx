@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { db } from "../../../lib/firebase";
 import { doc, getDoc, collection, addDoc } from "firebase/firestore";
 import { TEST_CATALOG, LabTest } from "../../../lib/testCatalog";
+import ProtectedRoute from "../../../lib/ProtectedRoute";
 
 export default function NewOrder() {
   const params = useParams();
@@ -77,10 +78,15 @@ export default function NewOrder() {
   }
 
   if (loadingPatient) {
-    return <main className="min-h-screen bg-white px-6 py-16 text-center text-gray-600">Loading patient...</main>;
+    return (
+      <ProtectedRoute>
+        <main className="min-h-screen bg-white px-6 py-16 text-center text-gray-600">Loading patient...</main>
+      </ProtectedRoute>
+    );
   }
 
   return (
+    <ProtectedRoute>
     <main className="min-h-screen bg-white px-6 py-16">
       <div className="max-w-lg mx-auto">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Order tests</h1>
@@ -140,5 +146,6 @@ export default function NewOrder() {
         {status && <p className="text-sm text-gray-600 mt-3">{status}</p>}
       </div>
     </main>
+    </ProtectedRoute>
   );
 }

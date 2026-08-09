@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { db } from "../lib/firebase";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import ProtectedRoute from "../lib/ProtectedRoute";
 
 interface Order {
   id: string;
@@ -45,6 +46,7 @@ export default function Orders() {
   }, []);
 
   return (
+    <ProtectedRoute>
     <main className="min-h-screen bg-white px-6 py-16">
       <div className="max-w-3xl mx-auto">
         <h1 className="text-2xl font-semibold text-gray-900 mb-6">Test orders</h1>
@@ -68,5 +70,6 @@ export default function Orders() {
         </div>
       </div>
     </main>
+    </ProtectedRoute>
   );
 }
