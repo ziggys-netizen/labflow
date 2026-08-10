@@ -12,7 +12,7 @@ export default function Settings() {
   const router = useRouter();
   const [tests, setTests] = useState<LabTest[]>([]);
   const [loadingTests, setLoadingTests] = useState(true);
-  const [editingCode, setEditingCode] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
   const [status, setStatus] = useState("");
 
   useEffect(() => {
@@ -26,15 +26,17 @@ export default function Settings() {
       try {
         const q = query(collection(db, "testCatalog"), orderBy("name"));
         const snapshot = await getDocs(q);
-        if (snapshot.empty) {
-          // First time: seed Firestore from the hardcoded catalog
-          for (const test of TEST_CATALOG) {
-            await setDoc(doc(db, "testCatalog", test.code), test);
-          }
-          setTests(TEST_CATALOG);
-        } else {
-          setTests(snapshot.docs.map((d) => d.data() as LabTest));
+
+        const existingCodes = snapshot.docs.map((d) => d.id);
+        const missingTests = TEST_CATALOG.filter((t) => !existingCodes.includes(t.code));
+        for (const test of missingTests) {
+          await setDoc(doc(db, "testCatalog", test.code), test);
         }
+        const finalSnapshot =
+          missingTests.length > 0
+            ? await getDocs(query(collection(db, "testCatalog"), orderBy("name")))
+            : snapshot;
+        setTests(finalSnapshot.docs.map((d) => d.data() as LabTest));
       } catch (err) {
         console.error(err);
       } finally {
@@ -61,95 +63,108 @@ export default function Settings() {
 
   async function updatePrice(testCode: string, price: string) {
     const updated = tests.map((t) =>
-      t.code === testCode ? { ...t, price: parseFloat(price) || 0 } : t
+      t.code === testCode ? { ...t, price: Number(price) } : t
     );
     setTests(updated);
   }
 
-  async function saveTest(testCode: string) {
-    const test = tests.find((t) => t.code === testCode);
-    if (!test) return;
-    setStatus("Saving...");
+  async function saveAll() {
+    setSaving(true);
+    setStatus("");
     try {
-      await setDoc(doc(db, "testCatalog", testCode), test);
-      setStatus("Saved.");
-      setEditingCode(null);
+      for (const test of tests) {
+        await setDoc(doc(db, "testCatalog", test.code), test);
+      }
+      setStatus("Saved successfully.");
     } catch (err) {
       console.error(err);
-      setStatus("Failed to save.");
+      setStatus("Error saving changes.");
+    } finally {
+      setSaving(false);
     }
   }
 
   if (loading || loadingTests) {
-    return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading...</main>;
+    return <div className="p-6">Loading...</div>;
   }
-  if (!user || role !== "admin") return null;
+
+  if (!user || role !== "admin") {
+    return null;
+  }
 
   return (
-    <main className="min-h-screen bg-white px-6 py-16">
-      <div className="max-w-3xl mx-auto">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-2">Clinic Settings</h1>
-        <p className="text-gray-600 mb-6">Edit test units, reference ranges, and pricing.</p>
-        {status && <p className="text-sm text-gray-600 mb-4">{status}</p>}
+    <div className="p-6 max-w-5xl mx-auto">
+      <h1 className="text-2xl font-semibold mb-4">Test Catalog Settings</h1>
 
-        <div className="space-y-4">
-          {tests.map((test) => (
-            <div key={test.code} className="border border-gray-200 rounded-lg p-4">
-              <div className="flex items-center justify-between mb-3">
-                <div>
-                  <h2 className="font-medium text-gray-900">{test.name}</h2>
-                  <p className="text-xs text-gray-500">{test.category}</p>
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className="text-sm text-gray-600">Price (D):</label>
-                  <input
-                    type="number"
-                    defaultValue={(test as any).price || 0}
-                    onChange={(e) => updatePrice(test.code, e.target.value)}
-                    className="w-24 border border-gray-300 rounded px-2 py-1 text-sm"
-                  />
-                  <button
-                    onClick={() => setEditingCode(editingCode === test.code ? null : test.code)}
-                    className="text-sm text-gray-900 underline"
-                  >
-                    {editingCode === test.code ? "Close" : "Edit parameters"}
-                  </button>
-                </div>
-              </div>
-
-              {editingCode === test.code && (
-                <div className="space-y-2 mt-3 border-t border-gray-100 pt-3">
-                  {test.parameters.map((p, i) => (
-                    <div key={i} className="grid grid-cols-3 gap-2 items-center">
-                      <span className="text-sm text-gray-700">{p.name}</span>
-                      <input
-                        type="text"
-                        value={p.unit}
-                        onChange={(e) => updateParameter(test.code, i, "unit", e.target.value)}
-                        placeholder="Unit"
-                        className="border border-gray-300 rounded px-2 py-1 text-sm"
-                      />
-                      <input
-                        type="text"
-                        value={p.referenceRange}
-                        onChange={(e) => updateParameter(test.code, i, "referenceRange", e.target.value)}
-                        placeholder="Reference range"
-                        className="border border-gray-300 rounded px-2 py-1 text-sm"
-                      />
-                    </div>
-                  ))}
-                  <button
-                    onClick={() => saveTest(test.code)}
-                    className="mt-2 bg-gray-900 text-white text-sm rounded px-3 py-1.5"
-                  >
-                    Save changes
-                  </button>
-                </div>
-              )}
-            </div>
-          ))}
+      {status && (
+        <div className="mb-4 text-sm px-3 py-2 rounded bg-gray-100 border">
+          {status}
         </div>
+      )}
+
+      <div className="space-y-6">
+        {tests.map((test) => (
+          <div key={test.code} className="border rounded-lg p-4">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="font-medium">
+                {test.name} <span className="text-gray-400 text-sm">({test.code})</span>
+              </h2>
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-500">Price</label>
+                <input
+                  type="number"
+                  className="border rounded px-2 py-1 w-24 text-sm"
+                  value={test.price ?? ""}
+                  onChange={(e) => updatePrice(test.code, e.target.value)}
+                />
+              </div>
+            </div>
+
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-left text-gray-500 border-b">
+                  <th className="py-1 pr-4">Parameter</th>
+                  <th className="py-1 pr-4">Unit</th>
+                  <th className="py-1 pr-4">Reference Range</th>
+                </tr>
+              </thead>
+              <tbody>
+                {test.parameters.map((param, i) => (
+                  <tr key={i} className="border-b last:border-0">
+                    <td className="py-1 pr-4">{param.name}</td>
+                    <td className="py-1 pr-4">
+                      <input
+                        className="border rounded px-2 py-1 w-full"
+                        value={param.unit}
+                        onChange={(e) =>
+                          updateParameter(test.code, i, "unit", e.target.value)
+                        }
+                      />
+                    </td>
+                    <td className="py-1 pr-4">
+                      <input
+                        className="border rounded px-2 py-1 w-full"
+                        value={param.referenceRange}
+                        onChange={(e) =>
+                          updateParameter(test.code, i, "referenceRange", e.target.value)
+                        }
+                      />
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        ))}
       </div>
-    </main>
+
+      <button
+        onClick={saveAll}
+        disabled={saving}
+        className="mt-6 px-4 py-2 bg-black text-white rounded disabled:opacity-50"
+      >
+        {saving ? "Saving..." : "Save All Changes"}
+      </button>
+    </div>
   );
 }
