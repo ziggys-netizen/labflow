@@ -3,7 +3,6 @@
 import { useEffect, useState } from "react";
 import { db } from "../lib/firebase";
 import { collection, getDocs, orderBy, query } from "firebase/firestore";
-import ProtectedRoute from "../lib/ProtectedRoute";
 
 interface Order {
   id: string;
@@ -46,7 +45,6 @@ export default function Orders() {
   }, []);
 
   return (
-    <ProtectedRoute>
     <main className="min-h-screen bg-white px-6 py-16">
       <div className="max-w-3xl mx-auto">
         <h1 className="text-2xl font-semibold text-gray-900 mb-6">Test orders</h1>
@@ -56,7 +54,11 @@ export default function Orders() {
 
         <div className="space-y-3">
           {orders.map((o) => (
-            <div key={o.id} className="border border-gray-200 rounded-lg p-4">
+            <a
+              key={o.id}
+              href={`/orders/${o.id}`}
+              className="block border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition"
+            >
               <div className="flex items-center justify-between mb-2">
                 <span className="font-medium text-gray-900">{o.patientName}</span>
                 <span className="text-xs uppercase tracking-wide text-gray-500">{o.status}</span>
@@ -65,11 +67,10 @@ export default function Orders() {
               <p className="text-sm text-gray-700">
                 Tests: {o.tests.map((t) => t.name).join(", ")}
               </p>
-            </div>
+            </a>
           ))}
         </div>
       </div>
     </main>
-    </ProtectedRoute>
   );
 }
