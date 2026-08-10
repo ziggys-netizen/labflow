@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { db } from "../../../lib/firebase";
-import { doc, getDoc, collection, addDoc } from "firebase/firestore";
+import { doc, getDoc, collection, addDoc, getDocs, query, orderBy } from "firebase/firestore";
 import { TEST_CATALOG, LabTest } from "../../../lib/testCatalog";
 import ProtectedRoute from "../../../lib/ProtectedRoute";
 
@@ -18,6 +18,25 @@ export default function NewOrder() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTests, setSelectedTests] = useState<LabTest[]>([]);
   const [status, setStatus] = useState("");
+  const [catalog, setCatalog] = useState<LabTest[]>([]);
+
+  useEffect(() => {
+    async function loadCatalog() {
+      try {
+        const q = query(collection(db, "testCatalog"), orderBy("name"));
+        const snapshot = await getDocs(q);
+        if (snapshot.empty) {
+          setCatalog(TEST_CATALOG);
+        } else {
+          setCatalog(snapshot.docs.map((d) => d.data() as LabTest));
+        }
+      } catch (err) {
+        console.error(err);
+        setCatalog(TEST_CATALOG);
+      }
+    }
+    loadCatalog();
+  }, []);
 
   useEffect(() => {
     async function loadPatient() {
@@ -37,7 +56,7 @@ export default function NewOrder() {
     loadPatient();
   }, [patientId]);
 
-  const filteredTests = TEST_CATALOG.filter(
+  const filteredTests = catalog.filter(
     (t) =>
       t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       t.code.toLowerCase().includes(searchTerm.toLowerCase())

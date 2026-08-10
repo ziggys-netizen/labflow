@@ -26,16 +26,15 @@ export default function Settings() {
       try {
         const q = query(collection(db, "testCatalog"), orderBy("name"));
         const snapshot = await getDocs(q);
-
-        const existingCodes = snapshot.docs.map((d) => d.id);
-        const missingTests = TEST_CATALOG.filter((t) => !existingCodes.includes(t.code));
-        for (const test of missingTests) {
-          await setDoc(doc(db, "testCatalog", test.code), test);
+        if (snapshot.empty) {
+          // First time: seed Firestore from the hardcoded catalog
+          for (const test of TEST_CATALOG) {
+            await setDoc(doc(db, "testCatalog", test.code), test);
+          }
+          setTests(TEST_CATALOG);
+        } else {
+          setTests(snapshot.docs.map((d) => d.data() as LabTest));
         }
-        const finalSnapshot = missingTests.length > 0
-          ? await getDocs(query(collection(db, "testCatalog"), orderBy("name")))
-          : snapshot;
-        setTests(finalSnapshot.docs.map((d) => d.data() as LabTest));
       } catch (err) {
         console.error(err);
       } finally {
@@ -105,7 +104,7 @@ export default function Settings() {
                   <label className="text-sm text-gray-600">Price (D):</label>
                   <input
                     type="number"
-                    defaultValue={test.price || 0}
+                    defaultValue={(test as any).price || 0}
                     onChange={(e) => updatePrice(test.code, e.target.value)}
                     className="w-24 border border-gray-300 rounded px-2 py-1 text-sm"
                   />
