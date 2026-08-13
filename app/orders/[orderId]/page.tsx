@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams } from "next/navigation";
+import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
 import { doc, getDoc, setDoc, collection, getDocs, query as fsQuery } from "firebase/firestore";
 import { TEST_CATALOG, LabTest } from "../../lib/testCatalog";
+import ProtectedRoute from "../../lib/ProtectedRoute";
 
 interface OrderTest {
   code: string;
@@ -18,18 +20,25 @@ interface OrderData {
   tests: OrderTest[];
   status: string;
   createdAt: string;
+  clinicId?: string;
   results?: Record<string, Record<string, string>>;
+  resultsEnteredBy?: string | null;
+  resultsEnteredAt?: string;
+  reviewedBy?: string | null;
+  reviewedAt?: string;
+  reviewNotes?: string;
 }
 
-export default function OrderDetail() {
+function OrderDetailContent() {
   const params = useParams();
-  const router = useRouter();
+  const { user, role } = useAuth();
   const orderId = params.orderId as string;
 
   const [order, setOrder] = useState<OrderData | null>(null);
   const [catalog, setCatalog] = useState<LabTest[]>(TEST_CATALOG);
   const [loading, setLoading] = useState(true);
   const [results, setResults] = useState<Record<string, Record<string, string>>>({});
+  const [reviewNotes, setReviewNotes] = useState("");
   const [status, setStatus] = useState("");
   const [expandedTest, setExpandedTest] = useState<string | null>(null);
 
@@ -60,7 +69,10 @@ export default function OrderDetail() {
     return catalog.find((t) => t.code === code);
   }
 
+  const resultsEditable = order && (order.status === "pending" || order.status === "results_entered" || order.status === "needs_correction");
+
   function updateResultValue(testCode: string, paramName: string, value: string) {
+    if (!resultsEditable) return;
     setResults((prev) => ({
       ...prev,
       [testCode]: {
@@ -70,38 +82,76 @@ export default function OrderDetail() {
     }));
   }
 
-  async function saveResults() {
-    setStatus("Saving results...");
+  async function submitForReview() {
+    if (!user) return;
+    setStatus("Submitting results for review...");
     try {
-      await setDoc(doc(db, "orders", orderId), { results }, { merge: true });
-      setStatus("Results saved.");
+      const updates = {
+        results,
+        status: "results_entered",
+        resultsEnteredBy: user.email,
+        resultsEnteredAt: new Date().toISOString(),
+        clinicId: order?.clinicId || "default-clinic",
+      };
+      await setDoc(doc(db, "orders", orderId), updates, { merge: true });
+      setOrder((prev) => (prev ? { ...prev, ...updates } : prev));
+      setStatus("Results submitted for review.");
       setTimeout(() => setStatus(""), 2500);
     } catch (err) {
       console.error(err);
-      setStatus("Failed to save results.");
+      setStatus("Failed to submit results.");
     }
   }
 
-  async function markCompleted() {
-    setStatus("Updating status...");
+  async function approveAndRelease() {
+    if (!user) return;
+    setStatus("Approving...");
     try {
-      await setDoc(doc(db, "orders", orderId), { status: "completed", results }, { merge: true });
-      setOrder((prev) => (prev ? { ...prev, status: "completed" } : prev));
-      setStatus("Order marked as completed.");
+      const updates = {
+        status: "approved",
+        reviewedBy: user.email,
+        reviewedAt: new Date().toISOString(),
+        reviewNotes: "",
+      };
+      await setDoc(doc(db, "orders", orderId), updates, { merge: true });
+      setOrder((prev) => (prev ? { ...prev, ...updates } : prev));
+      setStatus("Results approved and released.");
       setTimeout(() => setStatus(""), 2500);
     } catch (err) {
       console.error(err);
-      setStatus("Failed to update status.");
+      setStatus("Failed to approve.");
+    }
+  }
+
+  async function sendBackForCorrection() {
+    if (!user) return;
+    setStatus("Sending back...");
+    try {
+      const updates = {
+        status: "needs_correction",
+        reviewedBy: user.email,
+        reviewedAt: new Date().toISOString(),
+        reviewNotes: reviewNotes.trim(),
+      };
+      await setDoc(doc(db, "orders", orderId), updates, { merge: true });
+      setOrder((prev) => (prev ? { ...prev, ...updates } : prev));
+      setReviewNotes("");
+      setStatus("Sent back for correction.");
+      setTimeout(() => setStatus(""), 2500);
+    } catch (err) {
+      console.error(err);
+      setStatus("Failed to send back.");
     }
   }
 
   if (loading) {
     return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading order...</main>;
   }
-
   if (!order) {
     return <main className="min-h-screen flex items-center justify-center text-gray-600">Order not found.</main>;
   }
+
+  const canReview = role === "admin";
 
   return (
     <main className="min-h-screen bg-white px-6 py-16">
@@ -109,21 +159,28 @@ export default function OrderDetail() {
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-2xl font-semibold text-gray-900">Order details</h1>
           <span className="text-xs uppercase tracking-wide text-gray-500 border border-gray-300 rounded px-2 py-1">
-            {order.status}
+            {order.status.replace("_", " ")}
           </span>
         </div>
         <p className="text-gray-600 mb-1">
           {order.patientName} — Lab ID: {order.patientLabId}
         </p>
-        <p className="text-sm text-gray-400 mb-6">
+        <p className="text-sm text-gray-400 mb-2">
           Ordered {new Date(order.createdAt).toLocaleString()}
         </p>
+        {order.resultsEnteredBy && (
+          <p className="text-xs text-gray-400 mb-1">
+            Results entered by {order.resultsEnteredBy} at {new Date(order.resultsEnteredAt!).toLocaleString()}
+          </p>
+        )}
+        {order.reviewedBy && (
+          <p className="text-xs text-gray-400 mb-6">
+            Reviewed by {order.reviewedBy} at {new Date(order.reviewedAt!).toLocaleString()}
+            {order.reviewNotes ? ` — Note: ${order.reviewNotes}` : ""}
+          </p>
+        )}
 
-        <a href={`/orders/new/${order.patientId}`} className="text-sm text-gray-900 underline mb-6 inline-block">
-          + Add another order for this patient
-        </a>
-
-        <div className="space-y-3">
+        <div className="space-y-3 mt-4">
           {order.tests.map((t) => {
             const definition = getTestDefinition(t.code);
             const isExpanded = expandedTest === t.code;
@@ -134,7 +191,7 @@ export default function OrderDetail() {
                   className="w-full flex items-center justify-between text-left"
                 >
                   <span className="font-medium text-gray-900">{t.name}</span>
-                  <span className="text-sm text-gray-500">{isExpanded ? "Hide" : "Enter results"}</span>
+                  <span className="text-sm text-gray-500">{isExpanded ? "Hide" : "View / enter results"}</span>
                 </button>
 
                 {isExpanded && definition && (
@@ -151,8 +208,9 @@ export default function OrderDetail() {
                           type="text"
                           value={results[t.code]?.[p.name] || ""}
                           onChange={(e) => updateResultValue(t.code, p.name, e.target.value)}
+                          disabled={!resultsEditable}
                           placeholder="Result"
-                          className="border border-gray-300 rounded px-2 py-1 text-sm col-span-2"
+                          className="border border-gray-300 rounded px-2 py-1 text-sm col-span-2 disabled:bg-gray-50 disabled:text-gray-500"
                         />
                       </div>
                     ))}
@@ -169,25 +227,61 @@ export default function OrderDetail() {
           })}
         </div>
 
-        <div className="flex items-center gap-3 mt-6">
+        {resultsEditable && (
           <button
-            onClick={saveResults}
-            className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 transition"
+            onClick={submitForReview}
+            className="w-full bg-gray-900 text-white rounded-lg py-2 font-medium hover:bg-gray-800 transition mt-6"
           >
-            Save results
+            Submit results for review
           </button>
-          {order.status !== "completed" && (
-            <button
-              onClick={markCompleted}
-              className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50 transition"
-            >
-              Mark order as completed
-            </button>
-          )}
-        </div>
+        )}
+
+        {canReview && order.status === "results_entered" && (
+          <div className="border border-gray-200 rounded-lg p-4 mt-6">
+            <h2 className="text-sm font-medium text-gray-900 mb-2">Supervisor review</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              Review the results above, then approve to release them or send back for correction.
+            </p>
+            <textarea
+              value={reviewNotes}
+              onChange={(e) => setReviewNotes(e.target.value)}
+              placeholder="Notes (required if sending back for correction)"
+              rows={2}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
+            />
+            <div className="flex gap-3">
+              <button
+                onClick={approveAndRelease}
+                className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 transition"
+              >
+                Approve & release
+              </button>
+              <button
+                onClick={sendBackForCorrection}
+                className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50 transition"
+              >
+                Send back for correction
+              </button>
+            </div>
+          </div>
+        )}
+
+        {order.status === "approved" && (
+          <p className="text-sm text-green-700 mt-6 font-medium">
+            ✓ Results approved and released — locked from further edits.
+          </p>
+        )}
 
         {status && <p className="text-sm text-gray-600 mt-3">{status}</p>}
       </div>
     </main>
+  );
+}
+
+export default function OrderDetail() {
+  return (
+    <ProtectedRoute>
+      <OrderDetailContent />
+    </ProtectedRoute>
   );
 }

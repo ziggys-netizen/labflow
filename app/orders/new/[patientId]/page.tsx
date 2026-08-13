@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import { db } from "../../../lib/firebase";
 import { doc, getDoc, collection, addDoc, query, where, getDocs } from "firebase/firestore";
 import { TEST_CATALOG, LabTest } from "../../../lib/testCatalog";
+import ProtectedRoute from "../../../lib/ProtectedRoute";
 
 interface ExistingOrder {
   id: string;
@@ -13,7 +14,7 @@ interface ExistingOrder {
   createdAt: string;
 }
 
-export default function NewOrder() {
+function NewOrderContent() {
   const params = useParams();
   const router = useRouter();
   const patientId = params.patientId as string;
@@ -123,6 +124,7 @@ export default function NewOrder() {
         tests: selectedTests.map((t) => ({ code: t.code, name: t.name })),
         status: "pending",
         createdAt: new Date().toISOString(),
+        clinicId: "default-clinic",
       });
       setStatus("Order created successfully.");
       router.push(`/orders/${docRef.id}`);
@@ -144,7 +146,6 @@ export default function NewOrder() {
           {patientName} — Lab ID: {patientLabId}
         </p>
 
-        {/* Existing pending orders */}
         {loadingPending && <p className="text-sm text-gray-500 mb-4">Checking for existing orders...</p>}
 
         {!loadingPending && pendingOrders.length > 0 && (
@@ -178,7 +179,6 @@ export default function NewOrder() {
           </button>
         )}
 
-        {/* New order form: always shown if no pending orders, otherwise only after clicking above */}
         {(pendingOrders.length === 0 || showNewOrderForm) && (
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Search for a test</label>
@@ -235,5 +235,13 @@ export default function NewOrder() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function NewOrder() {
+  return (
+    <ProtectedRoute>
+      <NewOrderContent />
+    </ProtectedRoute>
   );
 }
