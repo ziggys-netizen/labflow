@@ -9,6 +9,8 @@ import { TEST_CATALOG, LabTest } from "../../lib/testCatalog";
 import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
 import { clinicCollectionQuery, isOwner } from "../../lib/clinicScope";
+import { canRecordSampleCollection } from "../../lib/permissions";
+import { toDateTimeLocal, fromDateTimeLocal } from "../../lib/datetime";
 
 interface OrderTest {
   code: string;
@@ -23,6 +25,8 @@ interface OrderData {
   status: string;
   createdAt: string;
   clinicId?: string;
+  sampleCollectedAt?: string | null;
+  sampleCollectedBy?: string | null;
   results?: Record<string, Record<string, string>>;
   resultsEnteredBy?: string | null;
   resultsEnteredAt?: string;
@@ -43,6 +47,8 @@ function OrderDetailContent() {
   const [reviewNotes, setReviewNotes] = useState("");
   const [status, setStatus] = useState("");
   const [expandedTest, setExpandedTest] = useState<string | null>(null);
+  const [collectionTime, setCollectionTime] = useState("");
+  const [editingCollection, setEditingCollection] = useState(false);
 
   useEffect(() => {
     async function load() {
@@ -86,6 +92,26 @@ function OrderDetailContent() {
         [paramName]: value,
       },
     }));
+  }
+
+  async function recordSampleCollection(iso: string | null) {
+    if (!user || !iso) return;
+    setStatus("Recording sample collection...");
+    try {
+      const updates = {
+        sampleCollectedAt: iso,
+        sampleCollectedBy: user.email,
+        clinicId: order?.clinicId || clinicId || undefined,
+      };
+      await setDoc(doc(db, "orders", orderId), updates, { merge: true });
+      setOrder((prev) => (prev ? { ...prev, ...updates } : prev));
+      setEditingCollection(false);
+      setStatus("Sample collection recorded.");
+      setTimeout(() => setStatus(""), 2500);
+    } catch (err) {
+      console.error(err);
+      setStatus("Failed to record sample collection.");
+    }
   }
 
   async function submitForReview() {
@@ -168,6 +194,8 @@ function OrderDetailContent() {
   }
 
   const canReview = role === "admin";
+  const canCollect = canRecordSampleCollection(role);
+  const awaitingSample = !order.sampleCollectedAt;
 
   return (
     <main className="min-h-screen bg-white">
@@ -176,7 +204,7 @@ function OrderDetailContent() {
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-2xl font-semibold text-gray-900">Order details</h1>
           <span className="text-xs uppercase tracking-wide text-gray-500 border border-gray-300 rounded px-2 py-1">
-            {order.status.replace("_", " ")}
+            {!order.sampleCollectedAt ? "Awaiting sample" : order.status.replace("_", " ")}
           </span>
         </div>
         <p className="text-gray-600 mb-1">
@@ -196,6 +224,73 @@ function OrderDetailContent() {
             {order.reviewNotes ? ` — Note: ${order.reviewNotes}` : ""}
           </p>
         )}
+
+        <div className="border border-gray-200 rounded-lg p-4 mt-4">
+          <h2 className="text-sm font-medium text-gray-900 mb-1">Sample collection</h2>
+          {awaitingSample ? (
+            <p className="text-sm text-gray-600 mb-3">
+              No sample recorded yet. Turnaround time is measured from collection, so record it when
+              the sample is physically taken.
+            </p>
+          ) : (
+            <p className="text-sm text-gray-600 mb-3">
+              Collected {new Date(order.sampleCollectedAt!).toLocaleString()}
+              {order.sampleCollectedBy ? ` by ${order.sampleCollectedBy}` : ""}
+            </p>
+          )}
+
+          {canCollect && !editingCollection && (
+            <div className="flex gap-3">
+              {awaitingSample && (
+                <button
+                  onClick={() => recordSampleCollection(new Date().toISOString())}
+                  className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 transition"
+                >
+                  Collected now
+                </button>
+              )}
+              <button
+                onClick={() => {
+                  setCollectionTime(toDateTimeLocal(order.sampleCollectedAt));
+                  setEditingCollection(true);
+                }}
+                className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50 transition"
+              >
+                {awaitingSample ? "Enter another time" : "Change time"}
+              </button>
+            </div>
+          )}
+
+          {canCollect && editingCollection && (
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="datetime-local"
+                value={collectionTime}
+                onChange={(e) => setCollectionTime(e.target.value)}
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              />
+              <button
+                onClick={() => recordSampleCollection(fromDateTimeLocal(collectionTime))}
+                disabled={!collectionTime}
+                className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50"
+              >
+                Save
+              </button>
+              <button
+                onClick={() => setEditingCollection(false)}
+                className="text-sm font-medium text-gray-700 underline"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+
+          {!canCollect && awaitingSample && (
+            <p className="text-xs text-gray-400">
+              Only a technician, lab manager or owner can record sample collection.
+            </p>
+          )}
+        </div>
 
         <div className="space-y-3 mt-4">
           {order.tests.map((t) => {

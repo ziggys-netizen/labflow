@@ -13,6 +13,7 @@ interface Order {
   tests: { code: string; name: string }[];
   status: string;
   createdAt: string;
+  sampleCollectedAt?: string | null;
 }
 
 function OrdersContent() {
@@ -37,6 +38,7 @@ function OrdersContent() {
               tests: data.tests || [],
               status: data.status,
               createdAt: data.createdAt,
+              sampleCollectedAt: data.sampleCollectedAt || null,
             };
           })
         );
@@ -67,7 +69,9 @@ function OrdersContent() {
             >
               <div className="flex items-center justify-between mb-2">
                 <span className="font-medium text-gray-900">{o.patientName}</span>
-                <span className="text-xs uppercase tracking-wide text-gray-500">{o.status}</span>
+                <span className="text-xs uppercase tracking-wide text-gray-500">
+                  {o.sampleCollectedAt ? o.status : "Awaiting sample"}
+                </span>
               </div>
               <p className="text-sm text-gray-500 mb-2">Lab ID: {o.patientLabId}</p>
               <p className="text-sm text-gray-700">

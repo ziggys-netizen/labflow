@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "./AuthContext";
+import { canViewDashboard } from "./permissions";
 
 export default function AppNav() {
   const { user, role, logout } = useAuth();
@@ -18,6 +19,11 @@ export default function AppNav() {
           <a href="/orders" className="text-sm font-medium text-gray-700 hover:text-gray-900">
             Orders
           </a>
+          {canViewDashboard(role) && (
+            <a href="/dashboard" className="text-sm font-medium text-gray-700 hover:text-gray-900">
+              Dashboard
+            </a>
+          )}
           {role === "admin" && (
             <a href="/settings" className="text-sm font-medium text-gray-700 hover:text-gray-900">
               Clinic Settings
