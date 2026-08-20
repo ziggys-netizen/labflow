@@ -4,9 +4,11 @@ import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
-import { doc, getDoc, setDoc, collection, getDocs, query as fsQuery } from "firebase/firestore";
+import { doc, getDoc, setDoc, getDocs } from "firebase/firestore";
 import { TEST_CATALOG, LabTest } from "../../lib/testCatalog";
 import ProtectedRoute from "../../lib/ProtectedRoute";
+import AppNav from "../../lib/AppNav";
+import { clinicCollectionQuery, isOwner } from "../../lib/clinicScope";
 
 interface OrderTest {
   code: string;
@@ -31,7 +33,7 @@ interface OrderData {
 
 function OrderDetailContent() {
   const params = useParams();
-  const { user, role } = useAuth();
+  const { user, role, clinicId } = useAuth();
   const orderId = params.orderId as string;
 
   const [order, setOrder] = useState<OrderData | null>(null);
@@ -48,11 +50,15 @@ function OrderDetailContent() {
         const orderSnap = await getDoc(doc(db, "orders", orderId));
         if (orderSnap.exists()) {
           const data = orderSnap.data() as OrderData;
-          setOrder(data);
-          setResults(data.results || {});
+          if (!isOwner(role) && clinicId && data.clinicId && data.clinicId !== clinicId) {
+            setOrder(null);
+          } else {
+            setOrder(data);
+            setResults(data.results || {});
+          }
         }
 
-        const catalogSnap = await getDocs(fsQuery(collection(db, "testCatalog")));
+        const catalogSnap = await getDocs(clinicCollectionQuery("testCatalog", role, clinicId));
         if (!catalogSnap.empty) {
           setCatalog(catalogSnap.docs.map((d) => d.data() as LabTest));
         }
@@ -63,7 +69,7 @@ function OrderDetailContent() {
       }
     }
     load();
-  }, [orderId]);
+  }, [orderId, role, clinicId]);
 
   function getTestDefinition(code: string): LabTest | undefined {
     return catalog.find((t) => t.code === code);
@@ -91,7 +97,7 @@ function OrderDetailContent() {
         status: "results_entered",
         resultsEnteredBy: user.email,
         resultsEnteredAt: new Date().toISOString(),
-        clinicId: order?.clinicId || "default-clinic",
+        clinicId: order?.clinicId || clinicId || undefined,
       };
       await setDoc(doc(db, "orders", orderId), updates, { merge: true });
       setOrder((prev) => (prev ? { ...prev, ...updates } : prev));
@@ -145,17 +151,28 @@ function OrderDetailContent() {
   }
 
   if (loading) {
-    return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading order...</main>;
+    return (
+      <main className="min-h-screen bg-white">
+        <AppNav />
+        <div className="min-h-[50vh] flex items-center justify-center text-gray-600">Loading order...</div>
+      </main>
+    );
   }
   if (!order) {
-    return <main className="min-h-screen flex items-center justify-center text-gray-600">Order not found.</main>;
+    return (
+      <main className="min-h-screen bg-white">
+        <AppNav />
+        <div className="min-h-[50vh] flex items-center justify-center text-gray-600">Order not found.</div>
+      </main>
+    );
   }
 
   const canReview = role === "admin";
 
   return (
-    <main className="min-h-screen bg-white px-6 py-16">
-      <div className="max-w-2xl mx-auto">
+    <main className="min-h-screen bg-white">
+      <AppNav />
+      <div className="max-w-2xl mx-auto px-6 py-16">
         <div className="flex items-center justify-between mb-1">
           <h1 className="text-2xl font-semibold text-gray-900">Order details</h1>
           <span className="text-xs uppercase tracking-wide text-gray-500 border border-gray-300 rounded px-2 py-1">

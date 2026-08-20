@@ -2,8 +2,11 @@
 
 import { useEffect, useState } from "react";
 import { db } from "../lib/firebase";
-import { collection, getDocs, orderBy, query, deleteDoc, doc } from "firebase/firestore";
+import { deleteDoc, doc } from "firebase/firestore";
 import ProtectedRoute from "../lib/ProtectedRoute";
+import AppNav from "../lib/AppNav";
+import { useAuth } from "../lib/AuthContext";
+import { getClinicDocs } from "../lib/clinicScope";
 
 interface Patient {
   id: string;
@@ -20,7 +23,8 @@ interface Patient {
   createdAt: string;
 }
 
-export default function Patients() {
+function PatientsContent() {
+  const { role, clinicId } = useAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -28,9 +32,11 @@ export default function Patients() {
 
   async function fetchPatients() {
     try {
-      const q = query(collection(db, "patients"), orderBy("createdAt", "desc"));
-      const snapshot = await getDocs(q);
-      const results: Patient[] = snapshot.docs.map((docSnap) => {
+      const docs = await getClinicDocs("patients", role, clinicId, {
+        sortBy: "createdAt",
+        direction: "desc",
+      });
+      const results: Patient[] = docs.map((docSnap) => {
         const data = docSnap.data();
         return {
           id: docSnap.id,
@@ -50,7 +56,8 @@ export default function Patients() {
       setPatients(results);
     } catch (err) {
       console.error(err);
-      setError("Could not load patients.");
+      const detail = err instanceof Error ? ` ${err.message}` : "";
+      setError(`Could not load patients.${detail}`);
     } finally {
       setLoading(false);
     }
@@ -58,7 +65,7 @@ export default function Patients() {
 
   useEffect(() => {
     fetchPatients();
-  }, []);
+  }, [role, clinicId]);
 
   async function handleDelete(id: string, name: string) {
     const confirmed = window.confirm(`Delete ${name}? This cannot be undone.`);
@@ -77,9 +84,9 @@ export default function Patients() {
   }
 
   return (
-    <ProtectedRoute>
-    <main className="min-h-screen bg-white px-6 py-16">
-      <div className="max-w-6xl mx-auto">
+    <main className="min-h-screen bg-white">
+      <AppNav />
+      <div className="max-w-6xl mx-auto px-6 py-16">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold text-gray-900">Patients</h1>
           <a href="/register" className="text-sm font-medium text-gray-900 underline">
@@ -145,6 +152,13 @@ export default function Patients() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function Patients() {
+  return (
+    <ProtectedRoute>
+      <PatientsContent />
     </ProtectedRoute>
   );
 }

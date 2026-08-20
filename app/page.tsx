@@ -1,39 +1,11 @@
 "use client";
 
-import { useAuth } from "./lib/AuthContext";
+import AppNav from "./lib/AppNav";
 
 export default function Home() {
-  const { user, role, logout } = useAuth();
-
   return (
     <main className="min-h-screen bg-white">
-      <nav className="border-b border-gray-200 px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <span className="text-lg font-semibold text-gray-900">LabFlow</span>
-          <div className="flex items-center gap-4">
-            <a href="/patients" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-              View patients
-            </a>
-            {role === "admin" && (
-              <a href="/settings" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                Clinic Settings
-              </a>
-            )}
-            {user ? (
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-gray-600">{user.email}</span>
-                <button onClick={logout} className="text-sm font-medium text-gray-700 hover:text-gray-900 underline">
-                  Sign out
-                </button>
-              </div>
-            ) : (
-              <a href="/login" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                Sign in
-              </a>
-            )}
-          </div>
-        </div>
-      </nav>
+      <AppNav />
 
       <section className="max-w-5xl mx-auto px-6 py-24 text-center">
         <h1 className="text-4xl sm:text-5xl font-semibold text-gray-900 tracking-tight">

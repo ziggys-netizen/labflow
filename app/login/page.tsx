@@ -4,20 +4,26 @@ import { useAuth } from "../lib/AuthContext";
 import { useState } from "react";
 
 export default function Login() {
-  const { user, login, loading } = useAuth();
+  const { user, login, loading, popupBlocked, authError } = useAuth();
   const [error, setError] = useState("");
+  const [signingIn, setSigningIn] = useState(false);
 
   async function handleLogin() {
     setError("");
+    setSigningIn(true);
     try {
       await login();
     } catch (err: any) {
       console.error(err);
       setError(err?.message || "Sign-in failed. Please try again.");
+    } finally {
+      setSigningIn(false);
     }
   }
 
-  if (loading) {
+  const failureMessage = authError || error;
+
+  if (loading && !failureMessage && !signingIn) {
     return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading...</main>;
   }
 
@@ -43,9 +49,9 @@ export default function Login() {
           onClick={handleLogin}
           className="w-full bg-gray-900 text-white rounded-lg py-2 font-medium hover:bg-gray-800 transition"
         >
-          Sign in with Google
+          {failureMessage || popupBlocked ? "Continue with Google" : "Sign in with Google"}
         </button>
-        {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
+        {failureMessage && <p className="text-sm text-red-600 mt-3">{failureMessage}</p>}
       </div>
     </main>
   );

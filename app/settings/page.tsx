@@ -4,13 +4,20 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../lib/AuthContext";
 import { useRouter } from "next/navigation";
 import { db } from "../lib/firebase";
-import { collection, getDocs, doc, setDoc, query, orderBy } from "firebase/firestore";
+import { doc, setDoc } from "firebase/firestore";
 import { TEST_CATALOG, LabTest, TestParameter } from "../lib/testCatalog";
+import AppNav from "../lib/AppNav";
+import { getClinicDocs, isOwner } from "../lib/clinicScope";
+
+interface CatalogRow extends LabTest {
+  firestoreId: string;
+  clinicId?: string | null;
+}
 
 export default function Settings() {
-  const { user, role, loading } = useAuth();
+  const { user, role, clinicId, loading } = useAuth();
   const router = useRouter();
-  const [tests, setTests] = useState<LabTest[]>([]);
+  const [tests, setTests] = useState<CatalogRow[]>([]);
   const [loadingTests, setLoadingTests] = useState(true);
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [status, setStatus] = useState("");
@@ -34,19 +41,25 @@ export default function Settings() {
   useEffect(() => {
     async function loadCatalog() {
       try {
-        const q = query(collection(db, "testCatalog"), orderBy("name"));
-        const snapshot = await getDocs(q);
+        const catalogDocs = await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" });
 
-        const existingCodes = snapshot.docs.map((d) => d.id);
+        const existingCodes = catalogDocs.map((d) => (d.data().code as string) || d.id);
         const missingTests = TEST_CATALOG.filter((t) => !existingCodes.includes(t.code));
-        for (const test of missingTests) {
-          await setDoc(doc(db, "testCatalog", test.code), test);
+        if (clinicId) {
+          for (const test of missingTests) {
+            await setDoc(doc(db, "testCatalog", `${clinicId}_${test.code}`), { ...test, clinicId });
+          }
         }
-        const finalSnapshot =
-          missingTests.length > 0
-            ? await getDocs(query(collection(db, "testCatalog"), orderBy("name")))
-            : snapshot;
-        setTests(finalSnapshot.docs.map((d) => d.data() as LabTest));
+        const finalDocs =
+          missingTests.length > 0 && clinicId
+            ? await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" })
+            : catalogDocs;
+        setTests(
+          finalDocs.map((d) => {
+            const data = d.data() as LabTest;
+            return { ...data, firestoreId: d.id };
+          })
+        );
       } catch (err) {
         console.error(err);
       } finally {
@@ -54,7 +67,7 @@ export default function Settings() {
       }
     }
     if (role === "admin") loadCatalog();
-  }, [role]);
+  }, [role, clinicId]);
 
   async function updateParameter(
     testCode: string,
@@ -83,7 +96,14 @@ export default function Settings() {
     if (!test) return;
     setStatus("Saving...");
     try {
-      await setDoc(doc(db, "testCatalog", testCode), test);
+      await setDoc(doc(db, "testCatalog", test.firestoreId), {
+        code: test.code,
+        name: test.name,
+        category: test.category,
+        parameters: test.parameters,
+        price: test.price || 0,
+        clinicId: test.clinicId || clinicId || null,
+      });
       setStatus("Saved.");
       setEditingCode(null);
     } catch (err) {
@@ -144,7 +164,8 @@ export default function Settings() {
     }
 
     const code = generateTestCode(newTestName);
-    const newTest: LabTest = {
+    const newTest: CatalogRow = {
+      firestoreId: clinicId ? `${clinicId}_${code}` : code,
       code,
       name: newTestName.trim(),
       category: newTestCategory.trim() || "Other",
@@ -154,7 +175,18 @@ export default function Settings() {
 
     setAddStatus("Saving...");
     try {
-      await setDoc(doc(db, "testCatalog", code), newTest);
+      if (!clinicId && !isOwner(role)) {
+        setAddStatus("Your account is not linked to a clinic yet.");
+        return;
+      }
+      await setDoc(doc(db, "testCatalog", newTest.firestoreId), {
+        code: newTest.code,
+        name: newTest.name,
+        category: newTest.category,
+        parameters: newTest.parameters,
+        price: newTest.price,
+        clinicId: clinicId || null,
+      });
       setTests((prev) => [...prev, newTest].sort((a, b) => a.name.localeCompare(b.name)));
       setNewTestName("");
       setNewTestCategory("");
@@ -170,13 +202,19 @@ export default function Settings() {
   }
 
   if (loading || loadingTests) {
-    return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading...</main>;
+    return (
+      <main className="min-h-screen bg-white">
+        <AppNav />
+        <div className="min-h-[50vh] flex items-center justify-center text-gray-600">Loading...</div>
+      </main>
+    );
   }
   if (!user || role !== "admin") return null;
 
   return (
-    <main className="min-h-screen bg-white px-6 py-16">
-      <div className="max-w-3xl mx-auto">
+    <main className="min-h-screen bg-white">
+      <AppNav />
+      <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">Clinic Settings</h1>
         <p className="text-gray-600 mb-6">Edit test units, reference ranges, and pricing.</p>
 
@@ -282,7 +320,7 @@ export default function Settings() {
 
         <div className="space-y-4">
           {tests.map((test) => (
-            <div key={test.code} className="border border-gray-200 rounded-lg p-4">
+            <div key={test.firestoreId} className="border border-gray-200 rounded-lg p-4">
               <div className="flex items-center justify-between mb-3">
                 <div>
                   <h2 className="font-medium text-gray-900">{test.name}</h2>

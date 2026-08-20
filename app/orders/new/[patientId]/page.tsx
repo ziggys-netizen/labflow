@@ -6,6 +6,9 @@ import { db } from "../../../lib/firebase";
 import { doc, getDoc, collection, addDoc, query, where, getDocs } from "firebase/firestore";
 import { TEST_CATALOG, LabTest } from "../../../lib/testCatalog";
 import ProtectedRoute from "../../../lib/ProtectedRoute";
+import AppNav from "../../../lib/AppNav";
+import { useAuth } from "../../../lib/AuthContext";
+import { clinicCollectionQuery, isOwner } from "../../../lib/clinicScope";
 
 interface ExistingOrder {
   id: string;
@@ -17,6 +20,7 @@ interface ExistingOrder {
 function NewOrderContent() {
   const params = useParams();
   const router = useRouter();
+  const { role, clinicId } = useAuth();
   const patientId = params.patientId as string;
 
   const [patientName, setPatientName] = useState("");
@@ -38,8 +42,13 @@ function NewOrderContent() {
         const snap = await getDoc(doc(db, "patients", patientId));
         if (snap.exists()) {
           const data = snap.data();
-          setPatientName(data.name);
-          setPatientLabId(data.labId);
+          if (!isOwner(role) && clinicId && data.clinicId && data.clinicId !== clinicId) {
+            setPatientName("");
+            setPatientLabId("");
+          } else {
+            setPatientName(data.name);
+            setPatientLabId(data.labId);
+          }
         }
       } catch (err) {
         console.error(err);
@@ -48,16 +57,15 @@ function NewOrderContent() {
       }
     }
     loadPatient();
-  }, [patientId]);
+  }, [patientId, role, clinicId]);
 
   useEffect(() => {
     async function loadPendingOrders() {
       try {
-        const q = query(
-          collection(db, "orders"),
-          where("patientId", "==", patientId),
-          where("status", "==", "pending")
-        );
+        const constraints = [where("patientId", "==", patientId), where("status", "==", "pending")];
+        const q = isOwner(role)
+          ? query(collection(db, "orders"), ...constraints)
+          : clinicCollectionQuery("orders", role, clinicId, constraints);
         const snapshot = await getDocs(q);
         setPendingOrders(
           snapshot.docs.map((d) => {
@@ -77,12 +85,12 @@ function NewOrderContent() {
       }
     }
     loadPendingOrders();
-  }, [patientId]);
+  }, [patientId, role, clinicId]);
 
   useEffect(() => {
     async function loadCatalog() {
       try {
-        const snapshot = await getDocs(collection(db, "testCatalog"));
+        const snapshot = await getDocs(clinicCollectionQuery("testCatalog", role, clinicId));
         if (!snapshot.empty) {
           setCatalog(snapshot.docs.map((d) => d.data() as LabTest));
         }
@@ -91,7 +99,7 @@ function NewOrderContent() {
       }
     }
     loadCatalog();
-  }, []);
+  }, [role, clinicId]);
 
   const filteredTests = catalog.filter(
     (t) =>
@@ -115,6 +123,14 @@ function NewOrderContent() {
       setStatus("Select at least one test.");
       return;
     }
+    if (!clinicId && !isOwner(role)) {
+      setStatus("Your account is not linked to a clinic yet.");
+      return;
+    }
+    if (!clinicId && isOwner(role)) {
+      setStatus("Owner accounts are not assigned to a clinic. Use a clinic staff account to create orders.");
+      return;
+    }
     setStatus("Creating order...");
     try {
       const docRef = await addDoc(collection(db, "orders"), {
@@ -124,7 +140,7 @@ function NewOrderContent() {
         tests: selectedTests.map((t) => ({ code: t.code, name: t.name })),
         status: "pending",
         createdAt: new Date().toISOString(),
-        clinicId: "default-clinic",
+        clinicId,
       });
       setStatus("Order created successfully.");
       router.push(`/orders/${docRef.id}`);
@@ -135,12 +151,18 @@ function NewOrderContent() {
   }
 
   if (loadingPatient) {
-    return <main className="min-h-screen bg-white px-6 py-16 text-center text-gray-600">Loading patient...</main>;
+    return (
+      <main className="min-h-screen bg-white">
+        <AppNav />
+        <div className="px-6 py-16 text-center text-gray-600">Loading patient...</div>
+      </main>
+    );
   }
 
   return (
-    <main className="min-h-screen bg-white px-6 py-16">
-      <div className="max-w-lg mx-auto">
+    <main className="min-h-screen bg-white">
+      <AppNav />
+      <div className="max-w-lg mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Order tests</h1>
         <p className="text-gray-600 mb-6">
           {patientName} — Lab ID: {patientLabId}

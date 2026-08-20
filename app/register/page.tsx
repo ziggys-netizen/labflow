@@ -2,8 +2,11 @@
 
 import { useState } from "react";
 import { db } from "../lib/firebase";
-import { collection, addDoc, query, where, getDocs } from "firebase/firestore";
+import { collection, addDoc, where, getDocs } from "firebase/firestore";
 import ProtectedRoute from "../lib/ProtectedRoute";
+import AppNav from "../lib/AppNav";
+import { useAuth } from "../lib/AuthContext";
+import { clinicCollectionQuery, isOwner } from "../lib/clinicScope";
 
 const COUNTRY_CODES = [
   { code: "+93", label: "🇦🇫 Afghanistan (+93)" },
@@ -191,6 +194,7 @@ const PHONE_DIGITS_REGEX = /^[0-9]{6,10}$/;
 const NATIONAL_ID_REGEX = /^[a-zA-Z0-9\-]{4,30}$/;
 
 export default function Register() {
+  const { role, clinicId } = useAuth();
   const [name, setName] = useState("");
   const [preferredName, setPreferredName] = useState("");
   const [sex, setSex] = useState("");
@@ -251,7 +255,7 @@ export default function Register() {
     const matches: string[] = [];
 
     // Check 1: same name + same date of birth
-    const dobQuery = query(collection(db, "patients"), where("dob", "==", dob));
+    const dobQuery = clinicCollectionQuery("patients", role, clinicId, [where("dob", "==", dob)]);
     const dobSnapshot = await getDocs(dobQuery);
     dobSnapshot.forEach((docSnap) => {
       const data = docSnap.data();
@@ -261,7 +265,7 @@ export default function Register() {
     });
 
     // Check 2: same phone number
-    const phoneQuery = query(collection(db, "patients"), where("phone", "==", fullPhone));
+    const phoneQuery = clinicCollectionQuery("patients", role, clinicId, [where("phone", "==", fullPhone)]);
     const phoneSnapshot = await getDocs(phoneQuery);
     phoneSnapshot.forEach((docSnap) => {
       const data = docSnap.data();
@@ -292,6 +296,15 @@ export default function Register() {
       }
     }
 
+    if (!clinicId && !isOwner(role)) {
+      setStatus("Your account is not linked to a clinic yet.");
+      return;
+    }
+    if (!clinicId && isOwner(role)) {
+      setStatus("Owner accounts are not assigned to a clinic. Use a clinic staff account to register patients.");
+      return;
+    }
+
     setStatus("Saving...");
     const labId = generateLabId();
     const fullPhone = `${countryCode}${phoneLocal.trim()}`;
@@ -314,6 +327,7 @@ export default function Register() {
         reasonForVisit: reasonForVisit.trim() || null,
         consentGiven: true,
         createdAt: new Date().toISOString(),
+        clinicId,
       });
       setStatus("Patient registered successfully.");
       setLastLabId(labId);
@@ -337,8 +351,9 @@ export default function Register() {
 
   return (
     <ProtectedRoute>
-    <main className="min-h-screen bg-white px-6 py-16">
-      <div className="max-w-md mx-auto">
+    <main className="min-h-screen bg-white">
+      <AppNav />
+      <div className="max-w-md mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-6">Register a patient</h1>
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
