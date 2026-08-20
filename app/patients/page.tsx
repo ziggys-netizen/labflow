@@ -2,13 +2,19 @@
 
 import { useEffect, useState } from "react";
 import { db } from "../lib/firebase";
-import { deleteDoc, doc, setDoc } from "firebase/firestore";
+import { deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import PrintIcon from "../lib/PrintIcon";
 import { useAuth } from "../lib/AuthContext";
 import { getClinicDocs } from "../lib/clinicScope";
 import { canRecordSampleCollection } from "../lib/permissions";
+import {
+  SAMPLE_COLLECTED_SOURCE,
+  getPatientCollectionCheckboxState,
+  sampleCollectedSourceFromData,
+  type OrderCollectionFields,
+} from "../lib/sampleCollection";
 
 interface Patient {
   id: string;
@@ -24,18 +30,36 @@ interface Patient {
   nextOfKin: string;
   referringClinician: string;
   createdAt: string;
-  sampleCollectedAt: string | null;
 }
 
-interface OrderSample {
-  id: string;
-  sampleCollectedAt: string | null;
+function sampleActionTitle(
+  canCollect: boolean,
+  state: ReturnType<typeof getPatientCollectionCheckboxState>
+) {
+  if (!canCollect) {
+    return "Only a technician, lab manager or owner can record sample collection";
+  }
+  if (state.currentOrders.length === 0) {
+    return "No current order is available; create or open an order to record collection";
+  }
+  if (state.uncollectedOrders.length === 1) {
+    return "Record collection on the one current order still awaiting a sample";
+  }
+  if (state.uncollectedOrders.length > 1) {
+    return "Multiple current orders await samples; open the intended order to record collection";
+  }
+  if (state.reversibleOrders.length === 1) {
+    return "Undo the collection recorded from this patient-list checkbox";
+  }
+  return "Collection is recorded on the orders; open the intended order to change it";
 }
 
 function PatientsContent() {
   const { user, role, clinicId } = useAuth();
   const [patients, setPatients] = useState<Patient[]>([]);
-  const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderSample[]>>({});
+  const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderCollectionFields[]>>(
+    {}
+  );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
@@ -65,17 +89,18 @@ function PatientsContent() {
           nextOfKin: data.nextOfKin || "—",
           referringClinician: data.referringClinician || "—",
           createdAt: data.createdAt,
-          sampleCollectedAt: data.sampleCollectedAt || null,
         };
       });
 
-      const grouped: Record<string, OrderSample[]> = {};
+      const grouped: Record<string, OrderCollectionFields[]> = {};
       for (const orderDoc of orderDocs) {
         const data = orderDoc.data();
         if (!data.patientId) continue;
         (grouped[data.patientId] ||= []).push({
           id: orderDoc.id,
           sampleCollectedAt: data.sampleCollectedAt || null,
+          status: data.status || "pending",
+          sampleCollectedSource: sampleCollectedSourceFromData(data),
         });
       }
 
@@ -94,53 +119,62 @@ function PatientsContent() {
     fetchPatients();
   }, [role, clinicId]);
 
-  function isSampleCollected(patient: Patient) {
-    if (patient.sampleCollectedAt) return true;
-    return (ordersByPatient[patient.id] || []).some((o) => o.sampleCollectedAt);
-  }
-
-  /**
-   * The patient record holds the collection time so the checkbox survives a refresh even
-   * before any test is ordered. It is also stamped onto that patient's orders still
-   * awaiting a sample, because turnaround time is measured per order (PRD 5.4).
-   * Unchecking only clears order stamps that match the time written here, so a collection
-   * time entered by hand on the order page is never overwritten.
-   */
   async function toggleSampleCollected(patient: Patient, collected: boolean) {
     if (!user || !canCollect) return;
+    const state = getPatientCollectionCheckboxState(ordersByPatient[patient.id] || []);
+    const target = collected
+      ? state.uncollectedOrders.length === 1
+        ? state.uncollectedOrders[0]
+        : undefined
+      : state.checked && state.reversibleOrders.length === 1
+        ? state.reversibleOrders[0]
+        : undefined;
+
+    if (!target) return;
+
     setSavingSampleId(patient.id);
-    const previous = patient.sampleCollectedAt;
     const timestamp = collected ? new Date().toISOString() : null;
+    const source = collected ? SAMPLE_COLLECTED_SOURCE.patientCheckbox : null;
+
     try {
+      const orderRef = doc(db, "orders", target.id);
+      const snapshot = await getDoc(orderRef);
+      const current = snapshot.exists() ? snapshot.data() : null;
+      const stillCurrent = current && (current.status || "pending") !== "approved";
+      const canApply = collected
+        ? Boolean(stillCurrent && current && !current.sampleCollectedAt)
+        : Boolean(
+            stillCurrent &&
+              current?.sampleCollectedAt &&
+              sampleCollectedSourceFromData(current) === SAMPLE_COLLECTED_SOURCE.patientCheckbox
+          );
+
+      if (!canApply) {
+        await fetchPatients();
+        return;
+      }
+
       await setDoc(
-        doc(db, "patients", patient.id),
-        { sampleCollectedAt: timestamp, sampleCollectedBy: collected ? user.email : null },
+        orderRef,
+        {
+          sampleCollectedAt: timestamp,
+          sampleCollectedBy: collected ? user.email : null,
+          sampleCollectedSource: source,
+          sampleCollectionQuickAction: null,
+        },
         { merge: true }
       );
 
-      const orders = ordersByPatient[patient.id] || [];
-      const affected = collected
-        ? orders.filter((o) => !o.sampleCollectedAt)
-        : orders.filter((o) => o.sampleCollectedAt && o.sampleCollectedAt === previous);
-
-      await Promise.all(
-        affected.map((o) =>
-          setDoc(
-            doc(db, "orders", o.id),
-            { sampleCollectedAt: timestamp, sampleCollectedBy: collected ? user.email : null },
-            { merge: true }
-          )
-        )
-      );
-
-      const affectedIds = new Set(affected.map((o) => o.id));
-      setPatients((prev) =>
-        prev.map((p) => (p.id === patient.id ? { ...p, sampleCollectedAt: timestamp } : p))
-      );
       setOrdersByPatient((prev) => ({
         ...prev,
-        [patient.id]: orders.map((o) =>
-          affectedIds.has(o.id) ? { ...o, sampleCollectedAt: timestamp } : o
+        [patient.id]: (prev[patient.id] || []).map((order) =>
+          order.id === target.id
+            ? {
+                ...order,
+                sampleCollectedAt: timestamp,
+                sampleCollectedSource: source,
+              }
+            : order
         ),
       }));
     } catch (err) {
@@ -206,69 +240,77 @@ function PatientsContent() {
                 </tr>
               </thead>
               <tbody>
-                {patients.map((p) => (
-                  <tr key={p.id} className="border-b border-gray-100">
-                    <td className="py-2 pr-2 align-middle">
-                      <a
-                        href={`/patients/${p.id}/print`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        title={`Print record for ${p.name}`}
-                        aria-label={`Print record for ${p.name}`}
-                        className="inline-flex text-gray-500 hover:text-gray-900"
+                {patients.map((p) => {
+                  const sampleState = getPatientCollectionCheckboxState(
+                    ordersByPatient[p.id] || []
+                  );
+                  const sampleDisabled =
+                    !canCollect || !sampleState.canToggle || savingSampleId === p.id;
+                  return (
+                    <tr key={p.id} className="border-b border-gray-100">
+                      <td className="py-2 pr-2 align-middle">
+                        <a
+                          href={`/patients/${p.id}/print`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          title={`Print record for ${p.name}`}
+                          aria-label={`Print record for ${p.name}`}
+                          className="inline-flex text-gray-500 hover:text-gray-900"
+                        >
+                          <PrintIcon />
+                        </a>
+                      </td>
+                      <td
+                        className="py-2 pr-4 text-gray-600 whitespace-nowrap font-mono text-xs"
+                        title={p.clinicId}
                       >
-                        <PrintIcon />
-                      </a>
-                    </td>
-                    <td
-                      className="py-2 pr-4 text-gray-600 whitespace-nowrap font-mono text-xs"
-                      title={p.clinicId}
-                    >
-                      {p.clinicId || "—"}
-                    </td>
-                    <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">{p.labId}</td>
-                    <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">{p.name}</td>
-                    <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.preferredName}</td>
-                    <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.sex}</td>
-                    <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.dob}</td>
-                    <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.phone}</td>
-                    <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.address}</td>
-                    <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.nationalId}</td>
-                    <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.nextOfKin}</td>
-                    <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.referringClinician}</td>
-                    <td className="py-2 pr-4 whitespace-nowrap">
-                      <a href={`/orders/new/${p.id}`} className="text-gray-900 underline mr-3">
-                        Order tests
-                      </a>
-                      <button
-                        onClick={() => handleDelete(p.id, p.name)}
-                        disabled={deletingId === p.id}
-                        className="text-red-600 hover:text-red-800 disabled:opacity-50"
-                      >
-                        {deletingId === p.id ? "Deleting..." : "Delete"}
-                      </button>
-                      <label
-                        className={`inline-flex items-center gap-1.5 ml-3 ${
-                          canCollect ? "cursor-pointer" : "cursor-not-allowed opacity-60"
-                        }`}
-                        title={
-                          canCollect
-                            ? "Mark that this patient's sample has been collected"
-                            : "Only a technician, lab manager or owner can record sample collection"
-                        }
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isSampleCollected(p)}
-                          disabled={!canCollect || savingSampleId === p.id}
-                          onChange={(e) => toggleSampleCollected(p, e.target.checked)}
-                          className="h-4 w-4 accent-gray-900 disabled:opacity-50"
-                        />
-                        <span className="text-gray-700">Sample collected</span>
-                      </label>
-                    </td>
-                  </tr>
-                ))}
+                        {p.clinicId || "—"}
+                      </td>
+                      <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">{p.labId}</td>
+                      <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">{p.name}</td>
+                      <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.preferredName}</td>
+                      <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.sex}</td>
+                      <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.dob}</td>
+                      <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.phone}</td>
+                      <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.address}</td>
+                      <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.nationalId}</td>
+                      <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.nextOfKin}</td>
+                      <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.referringClinician}</td>
+                      <td className="py-2 pr-4 whitespace-nowrap">
+                        <a href={`/orders/new/${p.id}`} className="text-gray-900 underline mr-3">
+                          Order tests
+                        </a>
+                        <button
+                          onClick={() => handleDelete(p.id, p.name)}
+                          disabled={deletingId === p.id}
+                          className="text-red-600 hover:text-red-800 disabled:opacity-50"
+                        >
+                          {deletingId === p.id ? "Deleting..." : "Delete"}
+                        </button>
+                        <label
+                          className={`inline-flex items-center gap-1.5 ml-3 ${
+                            canCollect && sampleState.canToggle
+                              ? "cursor-pointer"
+                              : "cursor-not-allowed"
+                          } ${canCollect ? "" : "opacity-60"}`}
+                          title={sampleActionTitle(canCollect, sampleState)}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={sampleState.checked}
+                            ref={(el) => {
+                              if (el) el.indeterminate = sampleState.indeterminate;
+                            }}
+                            disabled={sampleDisabled}
+                            onChange={(e) => toggleSampleCollected(p, e.target.checked)}
+                            className="h-4 w-4 accent-gray-900 disabled:opacity-50"
+                          />
+                          <span className="text-gray-700">Sample collected</span>
+                        </label>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>

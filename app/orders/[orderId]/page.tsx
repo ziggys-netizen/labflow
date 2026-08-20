@@ -10,6 +10,7 @@ import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
 import { clinicCollectionQuery, isOwner } from "../../lib/clinicScope";
 import { canRecordSampleCollection } from "../../lib/permissions";
+import { SAMPLE_COLLECTED_SOURCE } from "../../lib/sampleCollection";
 import { toDateTimeLocal, fromDateTimeLocal } from "../../lib/datetime";
 
 interface OrderTest {
@@ -27,6 +28,7 @@ interface OrderData {
   clinicId?: string;
   sampleCollectedAt?: string | null;
   sampleCollectedBy?: string | null;
+  sampleCollectedSource?: string | null;
   results?: Record<string, Record<string, string>>;
   resultsEnteredBy?: string | null;
   resultsEnteredAt?: string;
@@ -101,9 +103,14 @@ function OrderDetailContent() {
       const updates = {
         sampleCollectedAt: iso,
         sampleCollectedBy: user.email,
+        sampleCollectedSource: SAMPLE_COLLECTED_SOURCE.order,
         clinicId: order?.clinicId || clinicId || undefined,
       };
-      await setDoc(doc(db, "orders", orderId), updates, { merge: true });
+      await setDoc(
+        doc(db, "orders", orderId),
+        { ...updates, sampleCollectionQuickAction: null },
+        { merge: true }
+      );
       setOrder((prev) => (prev ? { ...prev, ...updates } : prev));
       setEditingCollection(false);
       setStatus("Sample collection recorded.");

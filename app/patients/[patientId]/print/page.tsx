@@ -24,8 +24,6 @@ interface PatientRecord {
   referringClinician?: string;
   reasonForVisit?: string | null;
   createdAt?: string;
-  sampleCollectedAt?: string | null;
-  sampleCollectedBy?: string | null;
 }
 
 interface ClinicRecord {
@@ -164,9 +162,6 @@ function PatientPrintContent() {
     );
   }
 
-  const sampleCollectedAt =
-    patient.sampleCollectedAt || orders.find((o) => o.sampleCollectedAt)?.sampleCollectedAt || null;
-
   return (
     <main className="min-h-screen bg-gray-100 py-8 print:bg-white print:py-0">
       <style>{PRINT_CSS}</style>
@@ -215,8 +210,6 @@ function PatientPrintContent() {
             <Field label="Referring clinician" value={patient.referringClinician} />
             <Field label="Reason for visit" value={patient.reasonForVisit} />
             <Field label="Registered" value={formatDateTime(patient.createdAt)} />
-            <Field label="Sample collected" value={formatDateTime(sampleCollectedAt)} />
-            <Field label="Collected by" value={patient.sampleCollectedBy} />
           </div>
         </section>
 
