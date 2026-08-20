@@ -1,52 +1,79 @@
 "use client";
 
-import { useAuth } from "../lib/AuthContext";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { db } from "../lib/firebase";
+import { collection, getDocs, orderBy, query } from "firebase/firestore";
+import ProtectedRoute from "../lib/ProtectedRoute";
 
-export default function Login() {
-  const { user, login, loading } = useAuth();
-  const [error, setError] = useState("");
+interface Order {
+  id: string;
+  patientName: string;
+  patientLabId: string;
+  tests: { code: string; name: string }[];
+  status: string;
+  createdAt: string;
+}
 
-  async function handleLogin() {
-    setError("");
-    try {
-      await login();
-    } catch (err: any) {
-      console.error(err);
-      setError(err?.message || "Sign-in failed. Please try again.");
+export default function Orders() {
+  const [orders, setOrders] = useState<Order[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchOrders() {
+      try {
+        const q = query(collection(db, "orders"), orderBy("createdAt", "desc"));
+        const snapshot = await getDocs(q);
+        setOrders(
+          snapshot.docs.map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              id: docSnap.id,
+              patientName: data.patientName,
+              patientLabId: data.patientLabId,
+              tests: data.tests || [],
+              status: data.status,
+              createdAt: data.createdAt,
+            };
+          })
+        );
+      } catch (err) {
+        console.error(err);
+      } finally {
+        setLoading(false);
+      }
     }
-  }
-
-  if (loading) {
-    return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading...</main>;
-  }
-
-  if (user) {
-    return (
-      <main className="min-h-screen bg-white flex items-center justify-center px-6">
-        <div className="max-w-sm w-full text-center">
-          <p className="text-gray-600 mb-4">You're already signed in as {user.email}.</p>
-          <a href="/patients" className="text-gray-900 underline font-medium">
-            Go to Patients
-          </a>
-        </div>
-      </main>
-    );
-  }
+    fetchOrders();
+  }, []);
 
   return (
-    <main className="min-h-screen bg-white flex items-center justify-center px-6">
-      <div className="max-w-sm w-full text-center">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-2">LabFlow Staff Login</h1>
-        <p className="text-gray-600 mb-6">Sign in with your Google account to continue.</p>
-        <button
-          onClick={handleLogin}
-          className="w-full bg-gray-900 text-white rounded-lg py-2 font-medium hover:bg-gray-800 transition"
-        >
-          Sign in with Google
-        </button>
-        {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
-      </div>
-    </main>
+    <ProtectedRoute>
+      <main className="min-h-screen bg-white px-6 py-16">
+        <div className="max-w-3xl mx-auto">
+          <h1 className="text-2xl font-semibold text-gray-900 mb-6">Test orders</h1>
+
+          {loading && <p className="text-gray-600">Loading...</p>}
+          {!loading && orders.length === 0 && <p className="text-gray-600">No orders yet.</p>}
+
+          <div className="space-y-3">
+            {orders.map((o) => (
+              <a
+                key={o.id}
+                href={`/orders/${o.id}`}
+                className="block border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition"
+              >
+                <div className="flex items-center justify-between mb-2">
+                  <span className="font-medium text-gray-900">{o.patientName}</span>
+                  <span className="text-xs uppercase tracking-wide text-gray-500">{o.status}</span>
+                </div>
+                <p className="text-sm text-gray-500 mb-2">Lab ID: {o.patientLabId}</p>
+                <p className="text-sm text-gray-700">
+                  Tests: {o.tests.map((t) => t.name).join(", ")}
+                </p>
+              </a>
+            ))}
+          </div>
+        </div>
+      </main>
+    </ProtectedRoute>
   );
 }
