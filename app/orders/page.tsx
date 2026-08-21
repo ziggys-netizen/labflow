@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import { useAuth } from "../lib/AuthContext";
 import { getClinicDocs } from "../lib/clinicScope";
+import { canBrowseOrders, landingPathForRole } from "../lib/permissions";
 
 interface Order {
   id: string;
@@ -18,10 +20,20 @@ interface Order {
 
 function OrdersContent() {
   const { role, clinicId } = useAuth();
+  const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
+  const allowed = canBrowseOrders(role);
 
   useEffect(() => {
+    if (!allowed) router.replace(landingPathForRole(role));
+  }, [allowed, role, router]);
+
+  useEffect(() => {
+    if (!allowed) {
+      setLoading(false);
+      return;
+    }
     async function fetchOrders() {
       try {
         const docs = await getClinicDocs("orders", role, clinicId, {
@@ -49,7 +61,7 @@ function OrdersContent() {
       }
     }
     fetchOrders();
-  }, [role, clinicId]);
+  }, [allowed, role, clinicId]);
 
   return (
     <main className="min-h-screen bg-white">

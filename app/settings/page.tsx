@@ -7,7 +7,10 @@ import { db } from "../lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
 import { TEST_CATALOG, LabTest, TestParameter } from "../lib/testCatalog";
 import AppNav from "../lib/AppNav";
+import ProtectedRoute from "../lib/ProtectedRoute";
+import ActingClinicPrompt from "../lib/ActingClinicPrompt";
 import { getClinicDocs, isOwner } from "../lib/clinicScope";
+import { canEditCatalogue, landingPathForRole } from "../lib/permissions";
 
 interface CatalogRow extends LabTest {
   firestoreId: string;
@@ -15,12 +18,21 @@ interface CatalogRow extends LabTest {
 }
 
 export default function Settings() {
-  const { user, role, clinicId, loading } = useAuth();
+  return (
+    <ProtectedRoute>
+      <SettingsContent />
+    </ProtectedRoute>
+  );
+}
+
+function SettingsContent() {
+  const { role, clinicId, loading } = useAuth();
   const router = useRouter();
   const [tests, setTests] = useState<CatalogRow[]>([]);
   const [loadingTests, setLoadingTests] = useState(true);
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const allowed = canEditCatalogue(role);
 
   // --- Add New Test state ---
   const [showAddForm, setShowAddForm] = useState(false);
@@ -33,10 +45,10 @@ export default function Settings() {
   const [addStatus, setAddStatus] = useState("");
 
   useEffect(() => {
-    if (!loading && (!user || role !== "admin")) {
-      router.push("/patients");
+    if (!loading && !allowed) {
+      router.replace(landingPathForRole(role));
     }
-  }, [user, role, loading, router]);
+  }, [role, loading, allowed, router]);
 
   useEffect(() => {
     async function loadCatalog() {
@@ -66,8 +78,9 @@ export default function Settings() {
         setLoadingTests(false);
       }
     }
-    if (role === "admin") loadCatalog();
-  }, [role, clinicId]);
+    if (allowed) loadCatalog();
+    else setLoadingTests(false);
+  }, [role, clinicId, allowed]);
 
   async function updateParameter(
     testCode: string,
@@ -175,8 +188,12 @@ export default function Settings() {
 
     setAddStatus("Saving...");
     try {
-      if (!clinicId && !isOwner(role)) {
-        setAddStatus("Your account is not linked to a clinic yet.");
+      if (!clinicId) {
+        setAddStatus(
+          isOwner(role)
+            ? "Select a clinic in the header before adding a test."
+            : "Your account is not linked to a clinic yet."
+        );
         return;
       }
       await setDoc(doc(db, "testCatalog", newTest.firestoreId), {
@@ -185,7 +202,7 @@ export default function Settings() {
         category: newTest.category,
         parameters: newTest.parameters,
         price: newTest.price,
-        clinicId: clinicId || null,
+        clinicId,
       });
       setTests((prev) => [...prev, newTest].sort((a, b) => a.name.localeCompare(b.name)));
       setNewTestName("");
@@ -209,7 +226,7 @@ export default function Settings() {
       </main>
     );
   }
-  if (!user || role !== "admin") return null;
+  if (!allowed) return null;
 
   return (
     <main className="min-h-screen bg-white">
@@ -217,6 +234,7 @@ export default function Settings() {
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">Clinic Settings</h1>
         <p className="text-gray-600 mb-6">Edit test units, reference ranges, and pricing.</p>
+        {isOwner(role) && !clinicId && <ActingClinicPrompt action="edit this clinic's test catalogue" />}
 
         {/* --- Add New Test section --- */}
         <div className="mb-8">

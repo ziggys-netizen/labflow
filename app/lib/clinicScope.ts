@@ -1,5 +1,7 @@
 import {
   collection,
+  doc,
+  getDoc,
   getDocs,
   query,
   where,
@@ -19,7 +21,9 @@ export function clinicCollectionQuery(
   extra: QueryConstraint[] = []
 ) {
   const col = collection(db, collectionName);
-  if (isOwner(role)) {
+  // Owner with no acting clinic reads across tenants. Once they pick a clinic
+  // in session, queries are scoped the same way staff queries are.
+  if (isOwner(role) && !clinicId) {
     return extra.length ? query(col, ...extra) : query(col);
   }
   if (!clinicId) {
@@ -58,4 +62,27 @@ export async function getClinicDocs(
     if (bv === undefined || bv === null) return -1;
     return (av < bv ? -1 : 1) * factor;
   });
+}
+
+/**
+ * Clinic ID to clinic name, for labelling records without leaking the existence
+ * of other clinics: the owner reads every clinic, anyone else reads only the
+ * clinics they are scoped to.
+ */
+export async function loadClinicNames(
+  role: string | null,
+  clinicIds: (string | null)[]
+): Promise<Record<string, string>> {
+  const names: Record<string, string> = {};
+  if (isOwner(role)) {
+    const snapshot = await getDocs(collection(db, "clinics"));
+    for (const d of snapshot.docs) names[d.id] = (d.data().name as string) || d.id;
+    return names;
+  }
+  const unique = [...new Set(clinicIds.filter((id): id is string => !!id))];
+  const snaps = await Promise.all(unique.map((id) => getDoc(doc(db, "clinics", id))));
+  snaps.forEach((snap, index) => {
+    names[unique[index]] = snap.exists() ? (snap.data().name as string) || unique[index] : unique[index];
+  });
+  return names;
 }

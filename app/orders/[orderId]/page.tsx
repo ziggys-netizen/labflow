@@ -9,7 +9,7 @@ import { TEST_CATALOG, LabTest } from "../../lib/testCatalog";
 import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
 import { clinicCollectionQuery, isOwner } from "../../lib/clinicScope";
-import { canRecordSampleCollection } from "../../lib/permissions";
+import { canApproveResults, canRecordSampleCollection } from "../../lib/permissions";
 import { SAMPLE_COLLECTED_SOURCE } from "../../lib/sampleCollection";
 import { toDateTimeLocal, fromDateTimeLocal } from "../../lib/datetime";
 
@@ -143,7 +143,7 @@ function OrderDetailContent() {
   }
 
   async function approveAndRelease() {
-    if (!user) return;
+    if (!user || !canApproveResults(role)) return;
     setStatus("Approving...");
     try {
       const updates = {
@@ -163,7 +163,7 @@ function OrderDetailContent() {
   }
 
   async function sendBackForCorrection() {
-    if (!user) return;
+    if (!user || !canApproveResults(role)) return;
     setStatus("Sending back...");
     try {
       const updates = {
@@ -200,7 +200,7 @@ function OrderDetailContent() {
     );
   }
 
-  const canReview = role === "admin";
+  const canReview = canApproveResults(role);
   const canCollect = canRecordSampleCollection(role);
   const awaitingSample = !order.sampleCollectedAt;
 
@@ -294,7 +294,7 @@ function OrderDetailContent() {
 
           {!canCollect && awaitingSample && (
             <p className="text-xs text-gray-400">
-              Only a technician, lab manager or owner can record sample collection.
+              Only a technician, laboratory lead, or owner can record sample collection.
             </p>
           )}
         </div>
@@ -357,9 +357,10 @@ function OrderDetailContent() {
 
         {canReview && order.status === "results_entered" && (
           <div className="border border-gray-200 rounded-lg p-4 mt-6">
-            <h2 className="text-sm font-medium text-gray-900 mb-2">Supervisor review</h2>
+            <h2 className="text-sm font-medium text-gray-900 mb-2">Release results</h2>
             <p className="text-sm text-gray-600 mb-3">
-              Review the results above, then approve to release them or send back for correction.
+              These results are waiting in the review queue. Check the values above, then release
+              them to the patient record or send them back for correction.
             </p>
             <textarea
               value={reviewNotes}
@@ -373,7 +374,7 @@ function OrderDetailContent() {
                 onClick={approveAndRelease}
                 className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 transition"
               >
-                Approve & release
+                Release results
               </button>
               <button
                 onClick={sendBackForCorrection}

@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { db } from "../lib/firebase";
 import { deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
+import { useRouter } from "next/navigation";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import PrintIcon from "../lib/PrintIcon";
 import { useAuth } from "../lib/AuthContext";
 import { getClinicDocs } from "../lib/clinicScope";
-import { canRecordSampleCollection } from "../lib/permissions";
+import { canRecordSampleCollection, canBrowsePatients, landingPathForRole } from "../lib/permissions";
 import {
   SAMPLE_COLLECTED_SOURCE,
   getPatientCollectionCheckboxState,
@@ -36,8 +37,8 @@ function sampleActionTitle(
   canCollect: boolean,
   state: ReturnType<typeof getPatientCollectionCheckboxState>
 ) {
-  if (!canCollect) {
-    return "Only a technician, lab manager or owner can record sample collection";
+    if (!canCollect) {
+    return "Only a technician, laboratory lead, or owner can record sample collection";
   }
   if (state.currentOrders.length === 0) {
     return "No current order is available; create or open an order to record collection";
@@ -56,6 +57,7 @@ function sampleActionTitle(
 
 function PatientsContent() {
   const { user, role, clinicId } = useAuth();
+  const router = useRouter();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderCollectionFields[]>>(
     {}
@@ -66,6 +68,11 @@ function PatientsContent() {
   const [savingSampleId, setSavingSampleId] = useState<string | null>(null);
 
   const canCollect = canRecordSampleCollection(role);
+  const allowed = canBrowsePatients(role);
+
+  useEffect(() => {
+    if (!allowed) router.replace(landingPathForRole(role));
+  }, [allowed, role, router]);
 
   async function fetchPatients() {
     try {
@@ -116,8 +123,12 @@ function PatientsContent() {
   }
 
   useEffect(() => {
+    if (!allowed) {
+      setLoading(false);
+      return;
+    }
     fetchPatients();
-  }, [role, clinicId]);
+  }, [role, clinicId, allowed]);
 
   async function toggleSampleCollected(patient: Patient, collected: boolean) {
     if (!user || !canCollect) return;

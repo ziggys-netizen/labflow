@@ -6,7 +6,7 @@ import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import { useAuth } from "../lib/AuthContext";
 import { getClinicDocs } from "../lib/clinicScope";
-import { canViewDashboard } from "../lib/permissions";
+import { canExportReports, canViewDashboard, landingPathForRole } from "../lib/permissions";
 import { getTimeWindow, isWithin, median, TimeWindowKey } from "../lib/datetime";
 
 interface OrderRecord {
@@ -47,8 +47,10 @@ function DashboardContent() {
   const allowed = canViewDashboard(role);
 
   useEffect(() => {
-    if (!authLoading && !allowed) router.replace("/patients");
-  }, [authLoading, allowed, router]);
+    // The storekeeper has their own workspace; sending them to /patients would
+    // land them somewhere the PRD 3.3 matrix gives them no access to.
+    if (!authLoading && !allowed) router.replace(landingPathForRole(role));
+  }, [authLoading, allowed, role, router]);
 
   useEffect(() => {
     if (!allowed) return;
@@ -227,8 +229,9 @@ function DashboardContent() {
             </div>
 
             <p className="text-xs text-gray-400">
-              Reporting beyond the current week is by Excel export, which is not built yet — it
-              depends on an email delivery provider being chosen.
+              {canExportReports(role)
+                ? "Reporting beyond the current week is by Excel export, which is not built yet — it depends on an email delivery provider being chosen."
+                : "Excel export is not available for this role. Ask a clinic admin, lab manager, or the owner if a report is needed."}
             </p>
           </>
         )}

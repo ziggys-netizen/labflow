@@ -1,6 +1,7 @@
 "use client";
 
 import { useAuth } from "./AuthContext";
+import { capabilityRedirect } from "./permissions";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
@@ -8,13 +9,16 @@ function getDestination(
   user: { uid: string } | null,
   role: string | null,
   status: string | null,
-  clinicId: string | null
+  clinicId: string | null,
+  pathname: string
 ): string | null {
   if (!user) return "/login";
   if (role === "owner") return null;
   if (status === "pending" && !clinicId) return "/join";
   if (status === "pending" && clinicId) return "/pending";
   if (status === "rejected") return "/pending";
+  const locked = capabilityRedirect(role, pathname);
+  if (locked && pathname !== locked) return locked;
   return null;
 }
 
@@ -25,7 +29,7 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   const hasRedirected = useRef(false);
   const lastDest = useRef<string | null | undefined>(undefined);
 
-  const dest = loading ? null : getDestination(user, role, status, clinicId);
+  const dest = loading ? null : getDestination(user, role, status, clinicId, pathname);
 
   useEffect(() => {
     if (lastDest.current !== dest) {

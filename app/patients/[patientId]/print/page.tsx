@@ -194,7 +194,6 @@ function PatientPrintContent() {
         <section className="avoid-break mb-6">
           <div className="flex items-baseline justify-between mb-3">
             <h2 className="text-base font-semibold text-gray-900">Patient record</h2>
-            <p className="text-sm text-gray-600">Lab ID: {patient.labId || "—"}</p>
           </div>
           <div className="grid grid-cols-3 gap-x-6 gap-y-3">
             <Field label="Clinic ID" value={patient.clinicId} />

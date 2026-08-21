@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { useAuth } from "../lib/AuthContext";
 import { db } from "../lib/firebase";
@@ -14,6 +15,8 @@ import {
 } from "firebase/firestore";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
+import StaffPanel from "../lib/StaffPanel";
+import { resolveIdentity } from "../lib/membership";
 
 interface Clinic {
   id: string;
@@ -47,12 +50,13 @@ async function uniqueJoinCode(): Promise<string> {
 }
 
 function OwnerContent() {
-  const { user, role } = useAuth();
+  const { user, role, username } = useAuth();
   const canAccess = role === "owner";
 
   const [clinics, setClinics] = useState<Clinic[]>([]);
   const [loadingClinics, setLoadingClinics] = useState(true);
   const [status, setStatus] = useState("");
+  const [createdClinicId, setCreatedClinicId] = useState("");
 
   const [name, setName] = useState("");
   const [address, setAddress] = useState("");
@@ -64,9 +68,6 @@ function OwnerContent() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminClinicId, setAdminClinicId] = useState("");
   const [assigning, setAssigning] = useState(false);
-
-  const [migrateClinicId, setMigrateClinicId] = useState("");
-  const [migrating, setMigrating] = useState(false);
 
   async function loadClinics() {
     try {
@@ -96,8 +97,11 @@ function OwnerContent() {
   }
 
   useEffect(() => {
-    if (canAccess) loadClinics();
-    else setLoadingClinics(false);
+    const timer = window.setTimeout(() => {
+      if (canAccess) loadClinics();
+      else setLoadingClinics(false);
+    }, 0);
+    return () => window.clearTimeout(timer);
   }, [canAccess]);
 
   async function handleCreateClinic(e: React.FormEvent) {
@@ -108,6 +112,7 @@ function OwnerContent() {
       return;
     }
     setCreating(true);
+    setCreatedClinicId("");
     setStatus("Creating clinic...");
     try {
       const joinCode = await uniqueJoinCode();
@@ -129,7 +134,7 @@ function OwnerContent() {
       setTin("");
       setBusinessRegNumber("");
       setResponsiblePerson("");
-      setMigrateClinicId((prev) => prev || docRef.id);
+      setCreatedClinicId(docRef.id);
       await loadClinics();
     } catch (err) {
       console.error(err);
@@ -161,16 +166,33 @@ function OwnerContent() {
         return;
       }
       const userSnap = snapshot.docs[0];
-      if (userSnap.data().role === "owner") {
+      const identity = resolveIdentity(userSnap.data());
+      if (identity.role === "owner") {
         setStatus("The owner account cannot be assigned to a clinic.");
         return;
       }
+      const approvedAt = new Date().toISOString();
+      const existing = identity.memberships.find((m) => m.clinicId === adminClinicId);
+      const clinicIds = [...new Set([...identity.memberships.map((m) => m.clinicId), adminClinicId])];
       await updateDoc(doc(db, "users", userSnap.id), {
+        [`clinicRoles.${adminClinicId}`]: {
+          role: "clinic_admin",
+          status: "approved",
+          createdAt: existing?.createdAt ?? identity.memberships[0]?.createdAt ?? approvedAt,
+          approvedByUid: user.uid,
+          approvedByUsername: username ?? null,
+          approvedByEmail: user.email ?? null,
+          approvedAt,
+        },
+        clinicIds,
         role: "clinic_admin",
         clinicId: adminClinicId,
         status: "approved",
-        approvedBy: user.email,
-        approvedAt: new Date().toISOString(),
+        activeClinicId: adminClinicId,
+        approvedBy: user.email ?? null,
+        approvedByUid: user.uid,
+        approvedByUsername: username ?? null,
+        approvedAt,
       });
       setStatus("Clinic administrator assigned.");
       setAdminEmail("");
@@ -179,53 +201,6 @@ function OwnerContent() {
       setStatus("Failed to assign clinic administrator.");
     } finally {
       setAssigning(false);
-    }
-  }
-
-  async function stampCollection(name: string, clinicId: string) {
-    const snapshot = await getDocs(collection(db, name));
-    let updated = 0;
-    for (const d of snapshot.docs) {
-      const current = d.data().clinicId;
-      if (!current || current === "default-clinic") {
-        await updateDoc(doc(db, name, d.id), { clinicId });
-        updated += 1;
-      }
-    }
-    return updated;
-  }
-
-  async function handleMigrate() {
-    if (!user) return;
-    const clinicId = migrateClinicId.trim();
-    if (!clinicId) {
-      setStatus("Enter a clinic ID to stamp onto existing records.");
-      return;
-    }
-    const exists = clinics.some((c) => c.id === clinicId);
-    if (!exists) {
-      setStatus("That clinic ID is not in the list. Create the clinic first, then paste its ID.");
-      return;
-    }
-    setMigrating(true);
-    setStatus("Running migration...");
-    try {
-      const patients = await stampCollection("patients", clinicId);
-      const orders = await stampCollection("orders", clinicId);
-      const catalog = await stampCollection("testCatalog", clinicId);
-      await updateDoc(doc(db, "users", user.uid), {
-        role: "owner",
-        status: "approved",
-        clinicId: null,
-      });
-      setStatus(
-        `Migration complete. Updated patients: ${patients}, orders: ${orders}, test catalog: ${catalog}. Your account is now owner.`
-      );
-    } catch (err) {
-      console.error(err);
-      setStatus("Migration failed. Please try again.");
-    } finally {
-      setMigrating(false);
     }
   }
 
@@ -248,8 +223,27 @@ function OwnerContent() {
       <AppNav />
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Owner</h1>
-        <p className="text-gray-600 mb-6">Create clinics, issue join codes, and assign the first clinic administrator.</p>
+        <p className="text-gray-600 mb-6">
+          Create clinics, issue join codes, assign the first clinic administrator, and onboard data.
+          Open a clinic to manage its staff. Pending approvals stay here so they are not buried.
+        </p>
         {status && <p className="text-sm text-gray-600 mb-4">{status}</p>}
+        {createdClinicId && (
+          <Link
+            href={`/owner/clinics/${createdClinicId}/migration`}
+            className="mb-6 inline-flex rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white"
+          >
+            Continue to Data Migration
+          </Link>
+        )}
+
+        <section className="border border-gray-200 rounded-lg p-4 mb-6">
+          <h2 className="font-medium text-gray-900 mb-3">Pending staff approvals</h2>
+          <p className="text-sm text-gray-600 mb-4">
+            People waiting to work are listed here first. Approved staff live under each clinic.
+          </p>
+          <StaffPanel pendingOnly embedded />
+        </section>
 
         <section className="border border-gray-200 rounded-lg p-4 mb-6">
           <h2 className="font-medium text-gray-900 mb-3">Create a clinic</h2>
@@ -308,12 +302,37 @@ function OwnerContent() {
           <div className="space-y-3">
             {clinics.map((c) => (
               <div key={c.id} className="border border-gray-100 rounded-lg p-3">
-                <p className="font-medium text-gray-900">{c.name}</p>
+                <Link
+                  href={`/owner/clinics/${c.id}`}
+                  className="font-medium text-gray-900 underline"
+                >
+                  {c.name}
+                </Link>
                 <p className="text-sm text-gray-600">{c.address}</p>
                 <p className="text-sm text-gray-500 mt-1">
                   Join code: <span className="font-mono text-gray-900">{c.joinCode}</span>
                 </p>
                 <p className="text-xs text-gray-400 mt-1">ID: {c.id}</p>
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <Link
+                    href={`/owner/clinics/${c.id}/staff`}
+                    className="text-sm font-medium text-gray-900 underline"
+                  >
+                    Manage staff
+                  </Link>
+                  <Link
+                    href={`/owner/clinics/${c.id}/migration`}
+                    className="text-sm font-medium text-gray-900 underline"
+                  >
+                    Run migration
+                  </Link>
+                  <Link
+                    href={`/owner/clinics/${c.id}/migration`}
+                    className="text-sm font-medium text-gray-900 underline"
+                  >
+                    + Add Data
+                  </Link>
+                </div>
               </div>
             ))}
           </div>
@@ -351,27 +370,6 @@ function OwnerContent() {
           </form>
         </section>
 
-        <section className="border border-gray-200 rounded-lg p-4">
-          <h2 className="font-medium text-gray-900 mb-2">One-time data migration</h2>
-          <p className="text-sm text-gray-600 mb-3">
-            Stamps this clinic ID onto existing patients, orders, and test catalog records that have no clinicId or clinicId
-            &quot;default-clinic&quot;, then sets your account to owner.
-          </p>
-          <input
-            type="text"
-            value={migrateClinicId}
-            onChange={(e) => setMigrateClinicId(e.target.value)}
-            placeholder="Clinic ID from the list above"
-            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
-          />
-          <button
-            onClick={handleMigrate}
-            disabled={migrating}
-            className="bg-gray-900 text-white text-sm rounded-lg px-4 py-2 disabled:opacity-50"
-          >
-            {migrating ? "Migrating..." : "Run migration"}
-          </button>
-        </section>
       </div>
     </main>
   );

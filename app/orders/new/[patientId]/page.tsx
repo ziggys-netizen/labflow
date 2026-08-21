@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import { db } from "../../../lib/firebase";
-import { doc, getDoc, collection, addDoc, query, where, getDocs } from "firebase/firestore";
+import { doc, getDoc, collection, addDoc, where, getDocs } from "firebase/firestore";
 import { TEST_CATALOG, LabTest } from "../../../lib/testCatalog";
 import ProtectedRoute from "../../../lib/ProtectedRoute";
 import AppNav from "../../../lib/AppNav";
 import { useAuth } from "../../../lib/AuthContext";
 import { clinicCollectionQuery, isOwner } from "../../../lib/clinicScope";
+import ActingClinicPrompt from "../../../lib/ActingClinicPrompt";
 
 interface ExistingOrder {
   id: string;
@@ -63,10 +64,7 @@ function NewOrderContent() {
     async function loadPendingOrders() {
       try {
         const constraints = [where("patientId", "==", patientId), where("status", "==", "pending")];
-        const q = isOwner(role)
-          ? query(collection(db, "orders"), ...constraints)
-          : clinicCollectionQuery("orders", role, clinicId, constraints);
-        const snapshot = await getDocs(q);
+        const snapshot = await getDocs(clinicCollectionQuery("orders", role, clinicId, constraints));
         setPendingOrders(
           snapshot.docs.map((d) => {
             const data = d.data();
@@ -123,12 +121,12 @@ function NewOrderContent() {
       setStatus("Select at least one test.");
       return;
     }
-    if (!clinicId && !isOwner(role)) {
-      setStatus("Your account is not linked to a clinic yet.");
-      return;
-    }
-    if (!clinicId && isOwner(role)) {
-      setStatus("Owner accounts are not assigned to a clinic. Use a clinic staff account to create orders.");
+    if (!clinicId) {
+      setStatus(
+        isOwner(role)
+          ? "Select a clinic in the header to create orders."
+          : "Your account is not linked to a clinic yet."
+      );
       return;
     }
     setStatus("Creating order...");
@@ -164,6 +162,7 @@ function NewOrderContent() {
       <AppNav />
       <div className="max-w-lg mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Order tests</h1>
+        {isOwner(role) && !clinicId && <ActingClinicPrompt action="create orders" />}
         <p className="text-gray-600 mb-6">
           {patientName} — Lab ID: {patientLabId}
         </p>

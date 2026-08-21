@@ -5,6 +5,7 @@ import { db } from "../lib/firebase";
 import { collection, addDoc, where, getDocs } from "firebase/firestore";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
+import ActingClinicPrompt from "../lib/ActingClinicPrompt";
 import { useAuth } from "../lib/AuthContext";
 import { clinicCollectionQuery, isOwner } from "../lib/clinicScope";
 
@@ -296,12 +297,12 @@ export default function Register() {
       }
     }
 
-    if (!clinicId && !isOwner(role)) {
-      setStatus("Your account is not linked to a clinic yet.");
-      return;
-    }
-    if (!clinicId && isOwner(role)) {
-      setStatus("Owner accounts are not assigned to a clinic. Use a clinic staff account to register patients.");
+    if (!clinicId) {
+      setStatus(
+        isOwner(role)
+          ? "Select a clinic in the header to register patients."
+          : "Your account is not linked to a clinic yet."
+      );
       return;
     }
 
@@ -355,6 +356,7 @@ export default function Register() {
       <AppNav />
       <div className="max-w-md mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-6">Register a patient</h1>
+        {isOwner(role) && !clinicId && <ActingClinicPrompt action="register patients" />}
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
@@ -514,6 +516,11 @@ export default function Register() {
           {lastLabId && (
             <p className="text-sm text-gray-900 font-medium mt-1">
               Lab ID assigned: {lastLabId}
+            </p>
+          )}
+          {lastLabId && role === "intern" && (
+            <p className="text-sm text-gray-600 mt-2">
+              Give this Lab ID to the clinician. Interns cannot browse the patient list or order tests.
             </p>
           )}
         </form>
