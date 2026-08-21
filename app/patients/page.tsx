@@ -1,15 +1,26 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import Link from "next/link";
+import { startTransition, useCallback, useEffect, useState } from "react";
 import { db } from "../lib/firebase";
-import { deleteDoc, doc, getDoc, setDoc } from "firebase/firestore";
-import { useRouter } from "next/navigation";
+import { doc, getDoc, setDoc } from "firebase/firestore";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import PrintIcon from "../lib/PrintIcon";
 import { useAuth } from "../lib/AuthContext";
 import { getClinicDocs } from "../lib/clinicScope";
-import { canRecordSampleCollection, canBrowsePatients, landingPathForRole } from "../lib/permissions";
+import {
+  isOrderForDeletedPatient,
+  isPatientDeleted,
+  softDeletePatient,
+} from "../lib/patientSoftDelete";
+import {
+  canDeletePatient,
+  canOrderTests,
+  canRecordSampleCollection,
+  canRegisterPatient,
+  canViewPatients,
+} from "../lib/permissions";
 import {
   SAMPLE_COLLECTED_SOURCE,
   getPatientCollectionCheckboxState,
@@ -57,7 +68,6 @@ function sampleActionTitle(
 
 function PatientsContent() {
   const { user, role, clinicId } = useAuth();
-  const router = useRouter();
   const [patients, setPatients] = useState<Patient[]>([]);
   const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderCollectionFields[]>>(
     {}
@@ -66,43 +76,46 @@ function PatientsContent() {
   const [error, setError] = useState("");
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [savingSampleId, setSavingSampleId] = useState<string | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [deletionReason, setDeletionReason] = useState("");
+  const [deleteError, setDeleteError] = useState("");
 
   const canCollect = canRecordSampleCollection(role);
-  const allowed = canBrowsePatients(role);
+  const canDelete = canDeletePatient(role);
+  const canOrder = canOrderTests(role);
+  const canRegister = canRegisterPatient(role);
 
-  useEffect(() => {
-    if (!allowed) router.replace(landingPathForRole(role));
-  }, [allowed, role, router]);
-
-  async function fetchPatients() {
+  const fetchPatients = useCallback(async () => {
     try {
       const [docs, orderDocs] = await Promise.all([
         getClinicDocs("patients", role, clinicId, { sortBy: "createdAt", direction: "desc" }),
         getClinicDocs("orders", role, clinicId),
       ]);
-      const results: Patient[] = docs.map((docSnap) => {
-        const data = docSnap.data();
-        return {
-          id: docSnap.id,
-          clinicId: data.clinicId || "",
-          labId: data.labId || "—",
-          name: data.name,
-          preferredName: data.preferredName || "—",
-          sex: data.sex || "—",
-          dob: data.dob,
-          phone: data.phone,
-          address: data.address || "—",
-          nationalId: data.nationalId || "—",
-          nextOfKin: data.nextOfKin || "—",
-          referringClinician: data.referringClinician || "—",
-          createdAt: data.createdAt,
-        };
-      });
+      const results: Patient[] = docs
+        .filter((docSnap) => !isPatientDeleted(docSnap.data()))
+        .map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            clinicId: data.clinicId || "",
+            labId: data.labId || "—",
+            name: data.name,
+            preferredName: data.preferredName || "—",
+            sex: data.sex || "—",
+            dob: data.dob,
+            phone: data.phone,
+            address: data.address || "—",
+            nationalId: data.nationalId || "—",
+            nextOfKin: data.nextOfKin || "—",
+            referringClinician: data.referringClinician || "—",
+            createdAt: data.createdAt,
+          };
+        });
 
       const grouped: Record<string, OrderCollectionFields[]> = {};
       for (const orderDoc of orderDocs) {
         const data = orderDoc.data();
-        if (!data.patientId) continue;
+        if (!data.patientId || isOrderForDeletedPatient(data)) continue;
         (grouped[data.patientId] ||= []).push({
           id: orderDoc.id,
           sampleCollectedAt: data.sampleCollectedAt || null,
@@ -111,24 +124,28 @@ function PatientsContent() {
         });
       }
 
-      setPatients(results);
-      setOrdersByPatient(grouped);
+      startTransition(() => {
+        setPatients(results);
+        setOrdersByPatient(grouped);
+      });
     } catch (err) {
       console.error(err);
       const detail = err instanceof Error ? ` ${err.message}` : "";
-      setError(`Could not load patients.${detail}`);
+      startTransition(() => {
+        setError(`Could not load patients.${detail}`);
+      });
     } finally {
-      setLoading(false);
+      startTransition(() => {
+        setLoading(false);
+      });
     }
-  }
+  }, [role, clinicId]);
 
   useEffect(() => {
-    if (!allowed) {
-      setLoading(false);
-      return;
-    }
-    fetchPatients();
-  }, [role, clinicId, allowed]);
+    startTransition(() => {
+      void fetchPatients();
+    });
+  }, [fetchPatients]);
 
   async function toggleSampleCollected(patient: Patient, collected: boolean) {
     if (!user || !canCollect) return;
@@ -196,17 +213,44 @@ function PatientsContent() {
     }
   }
 
-  async function handleDelete(id: string, name: string) {
-    const confirmed = window.confirm(`Delete ${name}? This cannot be undone.`);
-    if (!confirmed) return;
+  function openDelete(id: string, name: string) {
+    if (!canDelete) return;
+    setPendingDelete({ id, name });
+    setDeletionReason("");
+    setDeleteError("");
+  }
 
-    setDeletingId(id);
+  function closeDelete() {
+    if (deletingId) return;
+    setPendingDelete(null);
+    setDeletionReason("");
+    setDeleteError("");
+  }
+
+  async function confirmDelete() {
+    if (!canDelete || !user || !pendingDelete) return;
+    const reason = deletionReason.trim();
+    if (!reason) {
+      setDeleteError("A reason is required.");
+      return;
+    }
+
+    setDeletingId(pendingDelete.id);
+    setDeleteError("");
     try {
-      await deleteDoc(doc(db, "patients", id));
-      setPatients((prev) => prev.filter((p) => p.id !== id));
+      await softDeletePatient({
+        patientId: pendingDelete.id,
+        reason,
+        actor: { uid: user.uid, email: user.email, role },
+        role,
+        clinicId,
+      });
+      setPatients((prev) => prev.filter((p) => p.id !== pendingDelete.id));
+      setPendingDelete(null);
+      setDeletionReason("");
     } catch (err) {
       console.error(err);
-      alert("Could not delete patient. Please try again.");
+      setDeleteError("Could not remove patient. Please try again.");
     } finally {
       setDeletingId(null);
     }
@@ -218,9 +262,18 @@ function PatientsContent() {
       <div className="max-w-6xl mx-auto px-6 py-16">
         <div className="flex items-center justify-between mb-6">
           <h1 className="text-2xl font-semibold text-gray-900">Patients</h1>
-          <a href="/register" className="text-sm font-medium text-gray-900 underline">
-            Register a patient
-          </a>
+          <div className="flex items-center gap-4">
+            {canDelete && (
+              <Link href="/patients/deleted" className="text-sm font-medium text-gray-700 underline">
+                Recycle bin
+              </Link>
+            )}
+            {canRegister && (
+              <Link href="/register" className="text-sm font-medium text-gray-900 underline">
+                Register a patient
+              </Link>
+            )}
+          </div>
         </div>
 
         {loading && <p className="text-gray-600">Loading...</p>}
@@ -260,7 +313,7 @@ function PatientsContent() {
                   return (
                     <tr key={p.id} className="border-b border-gray-100">
                       <td className="py-2 pr-2 align-middle">
-                        <a
+                        <Link
                           href={`/patients/${p.id}/print`}
                           target="_blank"
                           rel="noopener noreferrer"
@@ -269,7 +322,7 @@ function PatientsContent() {
                           className="inline-flex text-gray-500 hover:text-gray-900"
                         >
                           <PrintIcon />
-                        </a>
+                        </Link>
                       </td>
                       <td
                         className="py-2 pr-4 text-gray-600 whitespace-nowrap font-mono text-xs"
@@ -288,16 +341,20 @@ function PatientsContent() {
                       <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.nextOfKin}</td>
                       <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.referringClinician}</td>
                       <td className="py-2 pr-4 whitespace-nowrap">
-                        <a href={`/orders/new/${p.id}`} className="text-gray-900 underline mr-3">
-                          Order tests
-                        </a>
-                        <button
-                          onClick={() => handleDelete(p.id, p.name)}
-                          disabled={deletingId === p.id}
-                          className="text-red-600 hover:text-red-800 disabled:opacity-50"
-                        >
-                          {deletingId === p.id ? "Deleting..." : "Delete"}
-                        </button>
+                        {canOrder && (
+                          <Link href={`/orders/new/${p.id}`} className="text-gray-900 underline mr-3">
+                            Order tests
+                          </Link>
+                        )}
+                        {canDelete && (
+                          <button
+                            onClick={() => openDelete(p.id, p.name)}
+                            disabled={deletingId === p.id}
+                            className="text-red-600 hover:text-red-800 disabled:opacity-50"
+                          >
+                            {deletingId === p.id ? "Removing..." : "Delete"}
+                          </button>
+                        )}
                         <label
                           className={`inline-flex items-center gap-1.5 ml-3 ${
                             canCollect && sampleState.canToggle
@@ -327,13 +384,65 @@ function PatientsContent() {
           </div>
         )}
       </div>
+      {pendingDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4">
+          <form
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="delete-patient-title"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void confirmDelete();
+            }}
+            className="w-full max-w-md rounded-lg bg-white p-6 shadow-lg"
+          >
+            <h2 id="delete-patient-title" className="text-lg font-semibold text-gray-900">
+              Remove {pendingDelete.name}?
+            </h2>
+            <p className="mt-2 text-sm text-gray-600">
+              The record is retained and recoverable. This action is logged. There is no permanent
+              delete for any role.
+            </p>
+            <label className="mt-4 block text-sm font-medium text-gray-700" htmlFor="deletion-reason">
+              Reason <span className="font-normal text-red-600">(required)</span>
+            </label>
+            <textarea
+              id="deletion-reason"
+              value={deletionReason}
+              onChange={(e) => setDeletionReason(e.target.value)}
+              rows={3}
+              required
+              autoFocus
+              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
+            />
+            {deleteError && <p className="mt-2 text-sm text-red-600">{deleteError}</p>}
+            <div className="mt-5 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={closeDelete}
+                disabled={!!deletingId}
+                className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                disabled={!!deletingId || !deletionReason.trim()}
+                className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
+              >
+                {deletingId ? "Removing..." : "Confirm"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
     </main>
   );
 }
 
 export default function Patients() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canViewPatients}>
       <PatientsContent />
     </ProtectedRoute>
   );

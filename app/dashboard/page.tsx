@@ -1,12 +1,12 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import { useAuth } from "../lib/AuthContext";
 import { getClinicDocs } from "../lib/clinicScope";
-import { canExportReports, canViewDashboard, landingPathForRole } from "../lib/permissions";
+import { canExportData, canViewDashboard } from "../lib/permissions";
+import { isOrderForDeletedPatient, isPatientDeleted } from "../lib/patientSoftDelete";
 import { getTimeWindow, isWithin, median, TimeWindowKey } from "../lib/datetime";
 
 interface OrderRecord {
@@ -35,8 +35,7 @@ function Metric({ label, value, hint }: { label: string; value: string; hint?: s
 }
 
 function DashboardContent() {
-  const { role, clinicId, loading: authLoading } = useAuth();
-  const router = useRouter();
+  const { role, clinicId } = useAuth();
 
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [patientDates, setPatientDates] = useState<string[]>([]);
@@ -47,12 +46,6 @@ function DashboardContent() {
   const allowed = canViewDashboard(role);
 
   useEffect(() => {
-    // The storekeeper has their own workspace; sending them to /patients would
-    // land them somewhere the PRD 3.3 matrix gives them no access to.
-    if (!authLoading && !allowed) router.replace(landingPathForRole(role));
-  }, [authLoading, allowed, role, router]);
-
-  useEffect(() => {
     if (!allowed) return;
     async function load() {
       try {
@@ -61,19 +54,26 @@ function DashboardContent() {
           getClinicDocs("patients", role, clinicId),
         ]);
         setOrders(
-          orderDocs.map((d) => {
-            const data = d.data();
-            return {
-              id: d.id,
-              status: data.status || "pending",
-              createdAt: data.createdAt,
-              tests: data.tests || [],
-              sampleCollectedAt: data.sampleCollectedAt || null,
-              reviewedAt: data.reviewedAt || null,
-            };
-          })
+          orderDocs
+            .filter((d) => !isOrderForDeletedPatient(d.data()))
+            .map((d) => {
+              const data = d.data();
+              return {
+                id: d.id,
+                status: data.status || "pending",
+                createdAt: data.createdAt,
+                tests: data.tests || [],
+                sampleCollectedAt: data.sampleCollectedAt || null,
+                reviewedAt: data.reviewedAt || null,
+              };
+            })
         );
-        setPatientDates(patientDocs.map((d) => d.data().createdAt).filter(Boolean));
+        setPatientDates(
+          patientDocs
+            .filter((d) => !isPatientDeleted(d.data()))
+            .map((d) => d.data().createdAt)
+            .filter(Boolean)
+        );
       } catch (err) {
         console.error(err);
         const detail = err instanceof Error ? ` ${err.message}` : "";
@@ -229,7 +229,7 @@ function DashboardContent() {
             </div>
 
             <p className="text-xs text-gray-400">
-              {canExportReports(role)
+              {canExportData(role)
                 ? "Reporting beyond the current week is by Excel export, which is not built yet — it depends on an email delivery provider being chosen."
                 : "Excel export is not available for this role. Ask a clinic admin, lab manager, or the owner if a report is needed."}
             </p>
@@ -242,7 +242,7 @@ function DashboardContent() {
 
 export default function Dashboard() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canViewDashboard}>
       <DashboardContent />
     </ProtectedRoute>
   );

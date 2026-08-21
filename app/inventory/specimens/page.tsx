@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
 import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
@@ -9,7 +8,7 @@ import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
 import { getClinicDocs, isOwner } from "../../lib/clinicScope";
 import { actorLabel, makeActorStamp } from "../../lib/identity";
-import { canRecordSpecimenMovement, canViewInventory, landingPathForRole } from "../../lib/permissions";
+import { canRecordSpecimenMovement, canViewInventory } from "../../lib/permissions";
 import { fromDateTimeLocal, toDateTimeLocal } from "../../lib/datetime";
 import ActingClinicPrompt from "../../lib/ActingClinicPrompt";
 import {
@@ -46,8 +45,7 @@ function Td({ children }: { children: React.ReactNode }) {
 }
 
 function SpecimensContent() {
-  const { user, role, clinicId, username, loading: authLoading } = useAuth();
-  const router = useRouter();
+  const { user, role, clinicId, writeClinicId, username } = useAuth();
   const owner = isOwner(role);
   const allowed = canViewInventory(role);
   const canRecord = canRecordSpecimenMovement(role);
@@ -73,10 +71,6 @@ function SpecimensContent() {
   const [filterDirection, setFilterDirection] = useState("");
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
-
-  useEffect(() => {
-    if (!authLoading && !allowed) router.replace(landingPathForRole(role));
-  }, [authLoading, allowed, router]);
 
   useEffect(() => {
     if (!allowed) return;
@@ -120,13 +114,13 @@ function SpecimensContent() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!user) return;
+    if (!user || !canRecord) return;
     setStatus("");
 
-    if (!clinicId) {
+    if (!writeClinicId) {
       setStatus(
         owner
-          ? "Select a clinic in the header to log a specimen against that clinic."
+          ? "Select a clinic from the menu above to create records."
           : "Your account is not linked to a clinic yet."
       );
       return;
@@ -149,7 +143,7 @@ function SpecimensContent() {
     setSaving(true);
     try {
       await addDoc(collection(db, "specimenMovements"), {
-        clinicId,
+        clinicId: writeClinicId,
         direction,
         specimenType,
         container,
@@ -214,8 +208,8 @@ function SpecimensContent() {
         </p>
 
         {status && <p className="text-sm text-gray-600 mb-4">{status}</p>}
-        {owner && !clinicId && canRecord && (
-          <ActingClinicPrompt action="record specimen movements" />
+        {owner && !writeClinicId && canRecord && (
+          <ActingClinicPrompt />
         )}
 
         {canRecord && (
@@ -468,7 +462,7 @@ function SpecimensContent() {
 
 export default function Specimens() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canViewInventory}>
       <SpecimensContent />
     </ProtectedRoute>
   );

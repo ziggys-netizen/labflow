@@ -1,9 +1,8 @@
 /**
- * Role capabilities from PRD v0.2 section 3.3 (permissions matrix), extended
- * 21 August 2026 with `lab_supervisor`, `intern`, and `technician_assistant`.
+ * Role capabilities — single source of truth.
  *
- * `admin` is not a role — it was split into `clinic_admin` (administration)
- * and `lab_manager` (laboratory judgement). Do not gate anything on `"admin"`.
+ * Pages must call these predicates. Do not compare role strings in UI except
+ * `role === "owner"` for the Owner nav link. `admin` is not a role.
  */
 
 export const ROLES = [
@@ -20,7 +19,7 @@ export const ROLES = [
 
 export type Role = (typeof ROLES)[number];
 
-/** Roles an administrator may assign. `owner` is never offered — PRD 3.5. */
+/** Roles an administrator may assign. `owner` is never offered. */
 export const ASSIGNABLE_ROLES = [
   "clinic_admin",
   "lab_manager",
@@ -33,20 +32,27 @@ export const ASSIGNABLE_ROLES = [
 
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
 
+export const SHIFTS = ["morning", "afternoon", "night"] as const;
+
+export type Shift = (typeof SHIFTS)[number];
+
 export function isAssignableRole(role: string | null | undefined): role is AssignableRole {
   return ASSIGNABLE_ROLES.includes(role as AssignableRole);
 }
 
-/**
- * Display wording, kept in one place so the label can change without touching
- * the stored value. `storekeeper` follows the PRD, which names both the role
- * and section 6 "Storekeeper"; "Stockkeeper" is the same role by another name.
- */
-export const ROLE_LABELS: Record<string, string> = {
-  owner: "Owner",
-  clinic_admin: "Clinic Admin",
+export function isShift(value: string | null | undefined): value is Shift {
+  return SHIFTS.includes(value as Shift);
+}
+
+export function roleRequiresShift(role: string | null | undefined) {
+  return role === "lab_supervisor";
+}
+
+export const ROLE_LABELS: Record<Role, string> = {
+  owner: "Platform Owner",
+  clinic_admin: "Clinic Administrator",
   lab_manager: "Lab Manager",
-  lab_supervisor: "Lab Supervisor",
+  lab_supervisor: "Shift Supervisor",
   technician: "Technician",
   technician_assistant: "Technician Assistant",
   intern: "Intern",
@@ -54,130 +60,188 @@ export const ROLE_LABELS: Record<string, string> = {
   pending: "Pending",
 };
 
+export const SHIFT_LABELS: Record<Shift, string> = {
+  morning: "Morning",
+  afternoon: "Afternoon",
+  night: "Night",
+};
+
 export function roleLabel(role: string | null | undefined): string {
   if (!role) return "—";
-  return ROLE_LABELS[role] ?? role;
+  return ROLE_LABELS[role as Role] ?? role;
 }
 
-export function isIntern(role: string | null | undefined) {
-  return role === "intern";
+export function shiftLabel(shift: string | null | undefined): string {
+  if (!shift || !isShift(shift)) return "";
+  return SHIFT_LABELS[shift];
 }
 
-/**
- * technician_assistant: the founder did not specify this role. It is treated as
- * identical to `technician` — bench work (patients, orders, results entry,
- * sample collection) with no result approval, catalogue editing, staff
- * management, dashboard, or export.
- */
-export function isTechnicianBench(role: string | null | undefined) {
-  return role === "technician" || role === "technician_assistant";
+/** e.g. "Shift Supervisor — Night". Other roles omit the shift. */
+export function roleDisplay(role: string | null | undefined, shift?: string | null): string {
+  const label = roleLabel(role);
+  if (roleRequiresShift(role) && shift && isShift(shift)) {
+    return `${label} — ${shiftLabel(shift)}`;
+  }
+  return label;
 }
 
-/** Laboratory judgement roles: manager and supervisor share clinical authority. */
-export function isLaboratoryLead(role: string | null | undefined) {
-  return role === "lab_manager" || role === "lab_supervisor";
+function allows(role: string | null | undefined, ...allowed: Role[]): boolean {
+  return !!role && (allowed as readonly string[]).includes(role);
 }
 
-/** Management dashboard and statistics — PRD 3.3, 5.2. Supervisor included. */
-export function canViewDashboard(role: string | null | undefined) {
-  return role === "owner" || role === "clinic_admin" || isLaboratoryLead(role);
+export function canRegisterPatient(role: string | null | undefined) {
+  return allows(
+    role,
+    "owner",
+    "lab_manager",
+    "lab_supervisor",
+    "technician",
+    "technician_assistant",
+    "intern"
+  );
 }
 
-/** Recording that a sample was physically taken — PRD 5.4. */
+export function canViewPatients(role: string | null | undefined) {
+  return allows(
+    role,
+    "owner",
+    "clinic_admin",
+    "lab_manager",
+    "lab_supervisor",
+    "technician",
+    "technician_assistant"
+  );
+}
+
+export function canOrderTests(role: string | null | undefined) {
+  return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");
+}
+
 export function canRecordSampleCollection(role: string | null | undefined) {
-  return role === "owner" || isLaboratoryLead(role) || isTechnicianBench(role);
+  return allows(
+    role,
+    "owner",
+    "lab_manager",
+    "lab_supervisor",
+    "technician",
+    "technician_assistant"
+  );
 }
 
-/**
- * Approve / release results, or send them back for correction.
- * PRD 3.3 / 3.4: owner and laboratory leads only. `clinic_admin` must not
- * approve — administration is separated from laboratory judgement.
- */
+export function canEnterResults(role: string | null | undefined) {
+  return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");
+}
+
 export function canApproveResults(role: string | null | undefined) {
-  return role === "owner" || isLaboratoryLead(role);
+  return allows(role, "owner", "lab_manager", "lab_supervisor");
 }
 
-/** Edit test catalogue (units, ranges, prices) — same laboratory judgement as approval. */
-export function canEditCatalogue(role: string | null | undefined) {
-  return role === "owner" || isLaboratoryLead(role);
+export function canSendBackForCorrection(role: string | null | undefined) {
+  return canApproveResults(role);
 }
 
-/**
- * Excel export of reports — PRD 3.3. `lab_supervisor` matches `lab_manager`
- * except this flag, which is false. Export UI is not built yet; keep the
- * helper so it cannot be granted by accident later.
- */
-export function canExportReports(role: string | null | undefined) {
-  return role === "owner" || role === "clinic_admin" || role === "lab_manager";
+export function canEditTestCatalogue(role: string | null | undefined) {
+  return allows(role, "owner", "lab_manager", "lab_supervisor");
 }
 
-/** Approve/reject staff and assign roles within a clinic — PRD 3.3. */
+export function canViewDashboard(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
+}
+
+/** lab_supervisor matches lab_manager except this flag. */
+export function canExportData(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin", "lab_manager");
+}
+
 export function canManageStaff(role: string | null | undefined) {
-  return role === "owner" || role === "clinic_admin";
-}
-
-export function isStorekeeper(role: string | null | undefined) {
-  return role === "storekeeper";
+  return allows(role, "owner", "clinic_admin");
 }
 
 /**
- * Patient directory, orders list, and print. Interns may register a patient
- * but must not browse the patient table afterwards.
+ * Nested clinic profile/staff pages under `/owner/clinics/[id]`.
+ * Owner: any clinic. clinic_admin: only the clinic currently active on their account.
  */
-export function canBrowsePatients(role: string | null | undefined) {
-  if (!role || role === "pending" || isIntern(role) || isStorekeeper(role)) return false;
-  return true;
+export function canAccessClinicWorkspace(
+  role: string | null | undefined,
+  actorClinicId: string | null | undefined,
+  targetClinicId: string | null | undefined
+) {
+  if (!targetClinicId) return false;
+  if (role === "owner") return true;
+  return role === "clinic_admin" && actorClinicId === targetClinicId;
 }
 
-export function canBrowseOrders(role: string | null | undefined) {
-  return canBrowsePatients(role);
+export function canViewJoinCode(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin");
 }
 
-/** "View stock balances" is granted to every role in the PRD 3.3 matrix except intern. */
+export function canEditClinicProfile(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin");
+}
+
+export function canImportData(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin");
+}
+
+export function canDeletePatient(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin", "lab_manager");
+}
+
 export function canViewInventory(role: string | null | undefined) {
-  return (
-    role === "owner" ||
-    role === "clinic_admin" ||
-    isLaboratoryLead(role) ||
-    isTechnicianBench(role) ||
-    role === "storekeeper"
+  return allows(
+    role,
+    "owner",
+    "clinic_admin",
+    "lab_manager",
+    "lab_supervisor",
+    "technician",
+    "technician_assistant",
+    "storekeeper"
   );
 }
 
-/** "Record stock in / out" — PRD 3.3 grants this to owner, lab_manager, storekeeper. Supervisor matches manager. */
 export function canRecordStockMovement(role: string | null | undefined) {
-  return role === "owner" || isLaboratoryLead(role) || role === "storekeeper";
+  return allows(role, "owner", "lab_manager", "lab_supervisor", "storekeeper");
 }
 
-/**
- * Maintaining the item master (products, packaging, minimum stock levels).
- * Not a separate line in the PRD matrix; it is treated as part of keeping the
- * stock record, so it follows "record stock in / out".
- */
 export function canManageInventoryItems(role: string | null | undefined) {
-  return canRecordStockMovement(role);
+  return allows(role, "owner", "lab_manager", "storekeeper");
 }
 
-/**
- * Logging specimens into and out of the laboratory. Not in the PRD matrix
- * either; granted to the roles that physically handle specimens. `clinic_admin`
- * is excluded to keep administration out of the laboratory (PRD 3.4).
- */
 export function canRecordSpecimenMovement(role: string | null | undefined) {
-  return (
-    role === "owner" ||
-    isLaboratoryLead(role) ||
-    isTechnicianBench(role) ||
-    role === "storekeeper"
+  return allows(
+    role,
+    "owner",
+    "lab_manager",
+    "lab_supervisor",
+    "technician",
+    "technician_assistant",
+    "storekeeper"
   );
 }
 
-/** Where a role should land after sign-in, so each role sees its own workspace first. */
-export function landingPathForRole(role: string | null | undefined): string {
-  if (isIntern(role)) return "/register";
-  if (isStorekeeper(role)) return "/inventory";
-  if (canViewDashboard(role)) return "/dashboard";
-  return "/patients";
+export function landingPathForRole(
+  role: string | null | undefined,
+  clinicId?: string | null
+): string {
+  switch (role) {
+    case "owner":
+      return "/owner";
+    case "clinic_admin":
+      return clinicId ? `/owner/clinics/${clinicId}/staff` : "/patients";
+    case "lab_manager":
+    case "lab_supervisor":
+      return "/dashboard";
+    case "technician":
+    case "technician_assistant":
+      return "/patients";
+    case "intern":
+      return "/register";
+    case "storekeeper":
+      return "/inventory";
+    default:
+      return "/patients";
+  }
 }
 
 /**
@@ -193,7 +257,7 @@ export function capabilityRedirect(
   role: string | null | undefined,
   pathname: string
 ): string | null {
-  if (isIntern(role) && !internAllowedPath(pathname)) {
+  if (role === "intern" && !internAllowedPath(pathname)) {
     return "/register";
   }
   return null;

@@ -2,60 +2,43 @@
 
 import { Suspense, useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { doc, getDoc } from "firebase/firestore";
-import { useState } from "react";
 import ProtectedRoute from "../lib/ProtectedRoute";
-import StaffPanel from "../lib/StaffPanel";
 import { useAuth } from "../lib/AuthContext";
 import { isOwner } from "../lib/clinicScope";
-import { db } from "../lib/firebase";
+import { canManageStaff, landingPathForRole } from "../lib/permissions";
 
-function StaffContent() {
+function StaffRedirect() {
   const { role, clinicId } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
-  const owner = isOwner(role);
   const queryClinicId = searchParams.get("clinicId");
-  const [joinCode, setJoinCode] = useState("");
 
   useEffect(() => {
-    if (owner && !queryClinicId) {
-      router.replace("/owner");
+    if (isOwner(role)) {
+      router.replace(queryClinicId ? `/owner/clinics/${queryClinicId}/staff` : "/owner");
+      return;
     }
-  }, [owner, queryClinicId, router]);
-
-  useEffect(() => {
-    if (role !== "clinic_admin" || !clinicId) return;
-    let cancelled = false;
-    getDoc(doc(db, "clinics", clinicId))
-      .then((snap) => {
-        if (!cancelled && snap.exists()) setJoinCode(snap.data().joinCode || "");
-      })
-      .catch((err) => console.error(err));
-    return () => {
-      cancelled = true;
-    };
-  }, [role, clinicId]);
-
-  if (owner && !queryClinicId) return null;
+    if (role === "clinic_admin") {
+      router.replace(clinicId ? `/owner/clinics/${clinicId}/staff` : "/patients");
+      return;
+    }
+    router.replace(landingPathForRole(role, clinicId));
+  }, [role, clinicId, queryClinicId, router]);
 
   return (
-    <StaffPanel
-      scopeClinicId={owner ? queryClinicId : clinicId}
-      joinCode={role === "clinic_admin" ? joinCode : undefined}
-    />
+    <main className="min-h-screen flex items-center justify-center text-gray-600">Redirecting...</main>
   );
 }
 
 export default function Staff() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canManageStaff}>
       <Suspense
         fallback={
           <main className="min-h-screen flex items-center justify-center text-gray-600">Loading...</main>
         }
       >
-        <StaffContent />
+        <StaffRedirect />
       </Suspense>
     </ProtectedRoute>
   );

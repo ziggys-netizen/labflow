@@ -5,7 +5,7 @@ import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import { useAuth } from "../lib/AuthContext";
 import { loadClinicNames } from "../lib/clinicScope";
-import { roleLabel } from "../lib/permissions";
+import { roleDisplay } from "../lib/permissions";
 import {
   USERNAME_RULES,
   UsernameTakenError,
@@ -161,7 +161,7 @@ function ProfileContent() {
                         {clinicNames[m.clinicId] || m.clinicId}
                       </p>
                       <p className="text-sm text-gray-500">
-                        {roleLabel(m.role)} · {m.status}
+                        {roleDisplay(m.role, m.shift)} · {m.status}
                       </p>
                       <p className="text-xs text-gray-400 mt-1">Clinic ID: {m.clinicId}</p>
                       {m.approvedAt && (

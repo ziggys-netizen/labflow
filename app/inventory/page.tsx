@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import { useAuth } from "../lib/AuthContext";
@@ -12,7 +11,6 @@ import {
   canRecordSpecimenMovement,
   canRecordStockMovement,
   canViewInventory,
-  landingPathForRole,
 } from "../lib/permissions";
 import {
   BATCH_STATE_CLASSES,
@@ -86,8 +84,7 @@ function Td({ children }: { children: React.ReactNode }) {
 }
 
 function InventoryContent() {
-  const { role, clinicId, loading: authLoading } = useAuth();
-  const router = useRouter();
+  const { role, clinicId } = useAuth();
   const owner = isOwner(role);
   const allowed = canViewInventory(role);
 
@@ -107,10 +104,6 @@ function InventoryContent() {
   const [expiryFilter, setExpiryFilter] = useState("");
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
-
-  useEffect(() => {
-    if (!authLoading && !allowed) router.replace(landingPathForRole(role));
-  }, [authLoading, allowed, router]);
 
   useEffect(() => {
     if (!allowed) return;
@@ -822,7 +815,7 @@ function InventoryContent() {
 
 export default function Inventory() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canViewInventory}>
       <InventoryContent />
     </ProtectedRoute>
   );

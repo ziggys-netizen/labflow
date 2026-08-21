@@ -1,15 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
 import { collection, doc, writeBatch } from "firebase/firestore";
 import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
 import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
-import { getClinicDocs, isOwner } from "../../lib/clinicScope";
+import { getClinicDocs, isOwner, ownerActingCreateFields } from "../../lib/clinicScope";
 import { actorLabel, makeActorStamp } from "../../lib/identity";
-import { canRecordStockMovement, canViewInventory, landingPathForRole } from "../../lib/permissions";
+import { canRecordStockMovement, canViewInventory } from "../../lib/permissions";
 import { fromDateTimeLocal, toDateTimeLocal } from "../../lib/datetime";
 import {
   ADJUSTMENT_REASONS,
@@ -60,8 +59,7 @@ function Td({ children }: { children: React.ReactNode }) {
 }
 
 function MovementsContent() {
-  const { user, role, clinicId, username, loading: authLoading } = useAuth();
-  const router = useRouter();
+  const { user, role, clinicId, writeClinicId, username } = useAuth();
   const owner = isOwner(role);
   const allowed = canViewInventory(role);
   const canRecord = canRecordStockMovement(role);
@@ -103,10 +101,6 @@ function MovementsContent() {
   const [filterType, setFilterType] = useState("");
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
-
-  useEffect(() => {
-    if (!authLoading && !allowed) router.replace(landingPathForRole(role));
-  }, [authLoading, allowed, router]);
 
   useEffect(() => {
     if (!allowed) return;
@@ -194,11 +188,12 @@ function MovementsContent() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!user || !selectedItem) {
+    if (!user || !canRecord) return;
+    if (!selectedItem) {
       setStatus("Choose an item first.");
       return;
     }
-    const targetClinicId = selectedItem.clinicId ?? clinicId;
+    const targetClinicId = selectedItem.clinicId ?? writeClinicId;
     if (!targetClinicId) {
       setStatus("This item is not linked to a clinic.");
       return;
@@ -269,6 +264,7 @@ function MovementsContent() {
             acceptance,
             createdAt: new Date().toISOString(),
             createdBy: makeActorStamp(user, username),
+            ...ownerActingCreateFields(role),
           });
         }
       } else {
@@ -322,6 +318,7 @@ function MovementsContent() {
         destination: type === "transfer" ? destination.trim() || null : null,
         reason: type === "disposal" || type === "adjustment" || type === "return" ? reason || null : null,
         note: note.trim() || null,
+        ...ownerActingCreateFields(role),
       });
 
       await write.commit();
@@ -753,7 +750,7 @@ function MovementsContent() {
 
 export default function InventoryMovements() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canViewInventory}>
       <MovementsContent />
     </ProtectedRoute>
   );

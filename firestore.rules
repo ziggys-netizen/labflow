@@ -1,0 +1,479 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ------------------------------------------------------------------
+    // Identity helpers. Owner clinicId is null; actingClinicId lives in
+    // the browser session only and is invisible to these rules. Owner
+    // creates are allowed via isOwner() without sameClinic(), but the
+    // incoming clinicId must be a non-empty string.
+    // ------------------------------------------------------------------
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function userExists() {
+      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function isOwner() {
+      return userExists() && userDoc().role == "owner";
+    }
+
+    function myClinicId() {
+      return userDoc().get("clinicId", null);
+    }
+
+    function myRole() {
+      return userDoc().get("role", "");
+    }
+
+    function approved() {
+      return userExists() && userDoc().get("status", "") == "approved";
+    }
+
+    function sameClinic(data) {
+      return myClinicId() is string
+        && myClinicId().size() > 0
+        && data.get("clinicId", "") == myClinicId();
+    }
+
+    function hasClinicId(data) {
+      return data.clinicId is string && data.clinicId.size() > 0;
+    }
+
+    // Owner may stamp any clinic; staff must stamp their membership clinic.
+    function scopedCreate() {
+      return hasClinicId(request.resource.data)
+        && (isOwner() || (approved() && request.resource.data.clinicId == myClinicId()));
+    }
+
+    function clinicIdStable() {
+      return request.resource.data.get("clinicId", null) == resource.data.get("clinicId", null)
+        || (
+          isOwner()
+          && hasClinicId(request.resource.data)
+          && (
+            !("clinicId" in resource.data)
+            || resource.data.get("clinicId", null) == null
+            || resource.data.get("clinicId", "") == ""
+            || resource.data.get("clinicId", "") == "default-clinic"
+          )
+        );
+    }
+
+    function scopedUpdate() {
+      return hasClinicId(request.resource.data)
+        && clinicIdStable()
+        && (isOwner() || (approved() && sameClinic(resource.data)));
+    }
+
+    function clinicRead(data) {
+      return isOwner() || (approved() && sameClinic(data));
+    }
+
+    function changedKeys() {
+      return request.resource.data.diff(resource.data).affectedKeys();
+    }
+
+    // ------------------------------------------------------------------
+    // P1 capability matrix (app/lib/permissions.ts)
+    // ------------------------------------------------------------------
+    function canRegisterPatient() {
+      return isOwner()
+        || myRole() in ["lab_manager", "lab_supervisor", "technician", "technician_assistant", "intern"];
+    }
+
+    function canViewPatients() {
+      return isOwner()
+        || myRole() in ["clinic_admin", "lab_manager", "lab_supervisor", "technician", "technician_assistant"];
+    }
+
+    function canOrderTests() {
+      return isOwner() || myRole() in ["lab_manager", "lab_supervisor", "technician"];
+    }
+
+    function canRecordSampleCollection() {
+      return isOwner()
+        || myRole() in ["lab_manager", "lab_supervisor", "technician", "technician_assistant"];
+    }
+
+    function canEnterResults() {
+      return isOwner() || myRole() in ["lab_manager", "lab_supervisor", "technician"];
+    }
+
+    function canApproveResults() {
+      return isOwner() || myRole() in ["lab_manager", "lab_supervisor"];
+    }
+
+    function canEditTestCatalogue() {
+      return isOwner() || myRole() in ["lab_manager", "lab_supervisor"];
+    }
+
+    function canManageStaff() {
+      return isOwner() || myRole() == "clinic_admin";
+    }
+
+    function canEditClinicProfile() {
+      return isOwner() || myRole() == "clinic_admin";
+    }
+
+    function canImportData() {
+      return isOwner() || myRole() == "clinic_admin";
+    }
+
+    function canDeletePatient() {
+      return isOwner() || myRole() in ["clinic_admin", "lab_manager"];
+    }
+
+    function canViewInventory() {
+      return isOwner()
+        || myRole() in [
+          "clinic_admin",
+          "lab_manager",
+          "lab_supervisor",
+          "technician",
+          "technician_assistant",
+          "storekeeper"
+        ];
+    }
+
+    function canRecordStockMovement() {
+      return isOwner() || myRole() in ["lab_manager", "lab_supervisor", "storekeeper"];
+    }
+
+    function canManageInventoryItems() {
+      return isOwner() || myRole() in ["lab_manager", "storekeeper"];
+    }
+
+    function canRecordSpecimenMovement() {
+      return isOwner()
+        || myRole() in [
+          "lab_manager",
+          "lab_supervisor",
+          "technician",
+          "technician_assistant",
+          "storekeeper"
+        ];
+    }
+
+    function canViewTestCatalog() {
+      return canViewPatients() || canViewInventory() || canOrderTests() || canEditTestCatalogue();
+    }
+
+    function canViewOrders() {
+      return canViewPatients()
+        || canOrderTests()
+        || canEnterResults()
+        || canApproveResults()
+        || canRecordSampleCollection();
+    }
+
+    // ------------------------------------------------------------------
+    // users/{uid}
+    // ------------------------------------------------------------------
+    function isSelf() {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    function userInMyClinic(data) {
+      return myClinicId() is string
+        && (
+          data.get("clinicId", "") == myClinicId()
+          || data.get("clinicIds", []).hasAny([myClinicId()])
+        );
+    }
+
+    function setsTopLevelOwnerRole() {
+      return changedKeys().hasAny(["role"]) && request.resource.data.role == "owner";
+    }
+
+    function nestedRole(cid) {
+      return cid is string
+        && request.resource.data.get("clinicRoles", {}).get(cid, {}).get("role", "") == "owner";
+    }
+
+    function setsAnyOwnerRole() {
+      return setsTopLevelOwnerRole()
+        || nestedRole(request.resource.data.get("clinicId", null))
+        || nestedRole(request.resource.data.get("activeClinicId", null))
+        || nestedRole(myClinicId());
+    }
+
+    function isSelfCreate() {
+      return isSelf()
+        && request.resource.data.role == "pending"
+        && request.resource.data.status == "pending"
+        && request.resource.data.get("clinicId", null) == null
+        && request.resource.data.role != "owner"
+        && request.resource.data.get("clinicRoles", {}).size() == 0;
+    }
+
+    function isSelfProfileUpdate() {
+      return isSelf()
+        && !setsAnyOwnerRole()
+        && changedKeys().hasOnly(["username", "usernameUpdatedAt", "activeClinicId"]);
+    }
+
+    // App-compatible: /join writes only clinicId on a pending account.
+    function isJoinClinicId() {
+      return isSelf()
+        && resource.data.get("role", "") == "pending"
+        && resource.data.get("status", "") == "pending"
+        && (resource.data.get("clinicId", null) == null || resource.data.get("clinicId", "") == "")
+        && changedKeys().hasOnly(["clinicId"])
+        && request.resource.data.clinicId is string
+        && request.resource.data.clinicId.size() > 0
+        && request.resource.data.role == "pending"
+        && request.resource.data.status == "pending"
+        && !setsAnyOwnerRole();
+    }
+
+    // App-compatible: setActiveClinic writes the legacy mirror of an
+    // already-approved membership. Role cannot be invented or set to owner.
+    function isActiveClinicSwitch() {
+      return isSelf()
+        && !isOwner()
+        && !setsAnyOwnerRole()
+        && changedKeys().hasOnly(["role", "clinicId", "status", "activeClinicId"])
+        && request.resource.data.clinicId is string
+        && request.resource.data.clinicId.size() > 0
+        && request.resource.data.activeClinicId == request.resource.data.clinicId
+        && request.resource.data.role != "owner"
+        && request.resource.data.status == "approved"
+        && resource.data.get("clinicRoles", {}).get(request.resource.data.clinicId, {}).get("role", "")
+          == request.resource.data.role
+        && resource.data.get("clinicRoles", {}).get(request.resource.data.clinicId, {}).get("status", "")
+          == "approved";
+    }
+
+    function clinicRolesOnlyOwnChanged() {
+      return request.resource.data.get("clinicRoles", {})
+        .diff(resource.data.get("clinicRoles", {}))
+        .affectedKeys()
+        .hasOnly([myClinicId()]);
+    }
+
+    function clinicIdsOnlyOwnChanged() {
+      let before = resource.data.get("clinicIds", []);
+      let after = request.resource.data.get("clinicIds", []);
+      let beforeList = before is list ? before : [];
+      let afterList = after is list ? after : [];
+      return beforeList.removeAll([myClinicId()]).hasAll(afterList.removeAll([myClinicId()]))
+        && afterList.removeAll([myClinicId()]).hasAll(beforeList.removeAll([myClinicId()]));
+    }
+
+    function staffMirrorSafeForAdmin() {
+      let afterId = request.resource.data.get("clinicId", null);
+      return !changedKeys().hasAny(["role", "clinicId", "status", "activeClinicId"])
+        || afterId == myClinicId()
+        || afterId == null
+        || (
+          afterId is string
+          && request.resource.data.get("role", "") != "owner"
+          && request.resource.data.get("clinicRoles", {}).get(afterId, {}).get("role", "")
+            == request.resource.data.get("role", "")
+        );
+    }
+
+    function isStaffMembershipWrite() {
+      return canManageStaff()
+        && !setsAnyOwnerRole()
+        && (
+          isOwner()
+          || (
+            approved()
+            && myClinicId() is string
+            && clinicRolesOnlyOwnChanged()
+            && clinicIdsOnlyOwnChanged()
+            && staffMirrorSafeForAdmin()
+          )
+        );
+    }
+
+    match /users/{uid} {
+      allow read: if isSelf()
+        || isOwner()
+        || (canManageStaff() && approved() && userInMyClinic(resource.data));
+
+      allow create: if isSelfCreate();
+
+      allow update: if !setsAnyOwnerRole()
+        && (isSelfProfileUpdate() || isJoinClinicId() || isActiveClinicSwitch() || isStaffMembershipWrite());
+
+      allow delete: if false;
+    }
+
+    // ------------------------------------------------------------------
+    // clinics/{id}
+    // Join-code lookup: rules cannot see query constraints, so any signed-in
+    // user may read every clinic document. joinCode is the secret. Leak:
+    // clinic names, addresses, and other profile fields are visible to any
+    // signed-in pending user. Cloud Functions were not used.
+    // ------------------------------------------------------------------
+    match /clinics/{clinicId} {
+      allow read: if signedIn();
+      allow create: if isOwner();
+      allow update: if isOwner()
+        || (canEditClinicProfile() && approved() && myClinicId() == clinicId);
+      allow delete: if isOwner();
+    }
+
+    // ------------------------------------------------------------------
+    // Clinical collections
+    // Intern: canRegisterPatient is true, canViewPatients is false — create
+    // allowed, list/get denied. Hard delete of patients is denied for P5.
+    // ------------------------------------------------------------------
+    function patientSoftDeleteKeys() {
+      return changedKeys().hasOnly([
+        "deleted",
+        "deletedAt",
+        "deletedBy",
+        "deletedByUid",
+        "deletedByRole",
+        "deletionReason",
+        "restoredBy",
+        "restoredAt"
+      ]);
+    }
+
+    match /patients/{id} {
+      allow read: if clinicRead(resource.data) && canViewPatients();
+      allow create: if scopedCreate() && canRegisterPatient();
+      allow update: if scopedUpdate() && (
+        canRegisterPatient()
+        || (canDeletePatient() && patientSoftDeleteKeys())
+      );
+      allow delete: if false;
+    }
+
+    function orderApprovalTouched() {
+      return changedKeys().hasAny([
+          "reviewedBy",
+          "reviewedAt",
+          "reviewedByRole",
+          "reviewedByShift",
+          "reviewedByUid",
+          "reviewNotes",
+          "actingAsOwner"
+        ])
+        || (
+          request.resource.data.get("status", "") == "approved"
+          && resource.data.get("status", "") != "approved"
+        )
+        || (
+          request.resource.data.get("status", "") == "needs_correction"
+          && resource.data.get("status", "") != "needs_correction"
+        );
+    }
+
+    function orderResultsTouched() {
+      return changedKeys().hasAny(["results", "resultsEnteredBy", "resultsEnteredAt"])
+        || (
+          request.resource.data.get("status", "") == "results_entered"
+          && resource.data.get("status", "") != "results_entered"
+        );
+    }
+
+    function orderSampleTouched() {
+      return changedKeys().hasAny([
+        "sampleCollectedAt",
+        "sampleCollectedBy",
+        "sampleCollectedSource",
+        "sampleCollectionQuickAction"
+      ]);
+    }
+
+    function orderCreateClean() {
+      return isOwner()
+        || (
+          request.resource.data.get("status", "") == "pending"
+          && request.resource.data.get("reviewedBy", null) == null
+          && request.resource.data.get("reviewedAt", null) == null
+          && request.resource.data.get("reviewedByRole", null) == null
+          && request.resource.data.get("reviewedByShift", null) == null
+        );
+    }
+
+    function orderPatientDeletedKeys() {
+      return changedKeys().hasOnly(["patientDeleted", "restoredBy", "restoredAt"]);
+    }
+
+    match /orders/{id} {
+      allow read: if clinicRead(resource.data) && canViewOrders();
+      allow create: if scopedCreate() && canOrderTests() && orderCreateClean();
+      allow update: if scopedUpdate()
+        && (!orderApprovalTouched() || canApproveResults())
+        && (!orderResultsTouched() || canEnterResults())
+        && (!orderSampleTouched() || canRecordSampleCollection())
+        && (
+          orderApprovalTouched()
+          || orderResultsTouched()
+          || orderSampleTouched()
+          || canOrderTests()
+          || (canDeletePatient() && orderPatientDeletedKeys())
+        );
+      allow delete: if false;
+    }
+
+    match /testCatalog/{id} {
+      allow read: if clinicRead(resource.data) && canViewTestCatalog();
+      allow create: if scopedCreate() && canEditTestCatalogue();
+      allow update: if scopedUpdate() && canEditTestCatalogue();
+      allow delete: if false;
+    }
+
+    match /inventoryItems/{id} {
+      allow read: if clinicRead(resource.data) && canViewInventory();
+      allow create: if scopedCreate() && canManageInventoryItems();
+      allow update: if scopedUpdate() && canManageInventoryItems();
+      allow delete: if false;
+    }
+
+    match /inventoryBatches/{id} {
+      allow read: if clinicRead(resource.data) && canViewInventory();
+      allow create: if scopedCreate() && canRecordStockMovement();
+      allow update: if scopedUpdate() && canRecordStockMovement();
+      allow delete: if false;
+    }
+
+    match /inventoryMovements/{id} {
+      allow read: if clinicRead(resource.data) && canViewInventory();
+      allow create: if scopedCreate() && canRecordStockMovement();
+      allow update, delete: if false;
+    }
+
+    match /specimenMovements/{id} {
+      allow read: if clinicRead(resource.data) && canViewInventory();
+      allow create: if scopedCreate() && canRecordSpecimenMovement();
+      allow update: if scopedUpdate() && canRecordSpecimenMovement();
+      allow delete: if false;
+    }
+
+    match /usernames/{username} {
+      allow read: if signedIn();
+      allow create: if signedIn()
+        && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn()
+        && resource.data.uid == request.auth.uid
+        && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    match /migrationHistory/{id} {
+      allow read: if isOwner()
+        || (canImportData() && approved() && sameClinic(resource.data));
+      allow create: if canImportData()
+        && hasClinicId(request.resource.data)
+        && (isOwner() || (approved() && request.resource.data.clinicId == myClinicId()));
+      allow update, delete: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

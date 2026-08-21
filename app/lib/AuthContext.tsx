@@ -11,6 +11,7 @@ import {
   legacyMirror,
   resolveIdentity,
 } from "./membership";
+import { writeClinicId as resolveWriteClinicId } from "./clinicScope";
 
 const ACTING_CLINIC_KEY = "labflow.actingClinicId";
 
@@ -24,7 +25,7 @@ function readActingClinic(): string | null {
   }
 }
 
-function writeActingClinic(clinicId: string | null) {
+function persistActingClinic(clinicId: string | null) {
   try {
     if (clinicId) sessionStorage.setItem(ACTING_CLINIC_KEY, clinicId);
     else sessionStorage.removeItem(ACTING_CLINIC_KEY);
@@ -38,11 +39,23 @@ interface AuthContextType {
   /** Role held at the active clinic. `owner` is global and has no clinic membership. */
   role: string | null;
   /**
-   * The clinic this session is scoped to. For staff this is their membership.
-   * For the owner this is a session-only acting clinic — never written onto the
-   * user document (PRD 3.5).
+   * Membership clinic for this session. Always null for the owner — never the
+   * acting clinic. Pass this to getClinicDocs / clinicCollectionQuery.
    */
   clinicId: string | null;
+  /**
+   * Session-only clinic the owner is writing into. Null for every other role.
+   * Persisted in sessionStorage, never written onto the user document.
+   */
+  actingClinicId: string | null;
+  actingClinicName: string | null;
+  /**
+   * Clinic new records must land in: acting clinic for the owner, membership
+   * clinic for staff. Use this on create paths, not on list queries.
+   */
+  writeClinicId: string | null;
+  /** Supervisor shift on the active membership; null for every other role. */
+  shift: string | null;
   status: string | null;
   /** Display identity. Falls back to nothing — never to the email address. */
   username: string | null;
@@ -54,6 +67,7 @@ interface AuthContextType {
   login: () => Promise<void>;
   logout: () => Promise<void>;
   setActiveClinic: (clinicId: string) => Promise<void>;
+  setActingClinic: (clinicId: string | null) => void;
 }
 
 const SIGN_IN_ERRORS: Record<string, string> = {
@@ -71,6 +85,10 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   role: null,
   clinicId: null,
+  actingClinicId: null,
+  actingClinicName: null,
+  writeClinicId: null,
+  shift: null,
   status: null,
   username: null,
   memberships: [],
@@ -80,6 +98,7 @@ const AuthContext = createContext<AuthContextType>({
   login: async () => {},
   logout: async () => {},
   setActiveClinic: async () => {},
+  setActingClinic: () => {},
 });
 
 export function useAuth() {
@@ -89,11 +108,20 @@ export function useAuth() {
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [identity, setIdentity] = useState<ResolvedIdentity>(EMPTY_IDENTITY);
-  const [actingClinicId, setActingClinicId] = useState<string | null>(null);
+  const [actingClinicId, setActingClinicIdState] = useState<string | null>(null);
+  const [actingClinicName, setActingClinicName] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const unsubDocRef = useRef<(() => void) | null>(null);
+  const actingHydratedRef = useRef(false);
+
+  const clearActingClinic = useCallback(() => {
+    actingHydratedRef.current = false;
+    setActingClinicIdState(null);
+    setActingClinicName(null);
+    persistActingClinic(null);
+  }, []);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
@@ -103,7 +131,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(firebaseUser);
       if (!firebaseUser) {
         setIdentity(EMPTY_IDENTITY);
-        setActingClinicId(null);
+        clearActingClinic();
         setLoading(false);
         return;
       }
@@ -132,7 +160,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           (snap) => {
             const next = resolveIdentity(snap.data());
             setIdentity(next);
-            setActingClinicId(next.role === "owner" ? readActingClinic() : null);
+            if (next.role === "owner") {
+              if (!actingHydratedRef.current) {
+                actingHydratedRef.current = true;
+                setActingClinicIdState(readActingClinic());
+              }
+            } else {
+              clearActingClinic();
+            }
             setLoading(false);
           },
           (err) => {
@@ -150,7 +185,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       unsubscribe();
       unsubDocRef.current?.();
     };
-  }, []);
+  }, [clearActingClinic]);
+
+  useEffect(() => {
+    if (identity.role !== "owner" || !actingClinicId) {
+      setActingClinicName(null);
+      return;
+    }
+    setActingClinicName(actingClinicId);
+    let cancelled = false;
+    getDoc(doc(db, "clinics", actingClinicId))
+      .then((snap) => {
+        if (cancelled) return;
+        const name =
+          snap.exists() && typeof snap.data().name === "string" && snap.data().name.trim()
+            ? snap.data().name.trim()
+            : actingClinicId;
+        setActingClinicName(name);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setActingClinicName(actingClinicId);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [identity.role, actingClinicId]);
 
   /**
    * Switches which clinic the session is scoped to.
@@ -159,23 +219,32 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    * and the legacy top-level fields are rewritten so untouched readers see the
    * same active clinic.
    *
-   * Owner: session-only acting clinic. Nothing is written to `users/{uid}` —
-   * PRD 3.5 forbids assigning the owner account to a clinic role. Pass an
-   * empty string to clear the acting clinic and read across all clinics again.
+   * Owner: no-op. The owner account must not gain a clinicId on the user
+   * document (PRD 3.5). Use setActingClinic instead.
    */
   const setActiveClinic = useCallback(async (nextClinicId: string) => {
     const currentUser = auth.currentUser;
     if (!currentUser) return;
-    if (identity.role === "owner") {
-      const next = nextClinicId.trim() ? nextClinicId.trim() : null;
-      setActingClinicId(next);
-      writeActingClinic(next);
-      return;
-    }
+    if (identity.role === "owner") return;
     const membership = identity.memberships.find((m) => m.clinicId === nextClinicId);
     if (!membership) throw new Error("You are not assigned to that clinic.");
     await updateDoc(doc(db, "users", currentUser.uid), legacyMirror(membership));
   }, [identity.role, identity.memberships]);
+
+  /**
+   * Session-only acting clinic for the owner. Nothing is written to `users/{uid}`.
+   * Pass null or an empty string to clear it.
+   */
+  const setActingClinic = useCallback(
+    (clinicId: string | null) => {
+      if (identity.role !== "owner") return;
+      const next = clinicId && clinicId.trim() ? clinicId.trim() : null;
+      actingHydratedRef.current = true;
+      setActingClinicIdState(next);
+      persistActingClinic(next);
+    },
+    [identity.role]
+  );
 
   async function login() {
     setPopupBlocked(false);
@@ -196,15 +265,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }
 
   async function logout() {
+    clearActingClinic();
     await signOut(auth);
   }
+
+  const exposedActingClinicId = identity.role === "owner" ? actingClinicId : null;
 
   return (
     <AuthContext.Provider
       value={{
         user,
         role: identity.role,
-        clinicId: identity.role === "owner" ? actingClinicId : identity.clinicId,
+        clinicId: identity.clinicId,
+        actingClinicId: exposedActingClinicId,
+        actingClinicName: identity.role === "owner" ? actingClinicName : null,
+        writeClinicId: resolveWriteClinicId(identity.role, identity.clinicId, actingClinicId),
+        shift: identity.shift,
         status: identity.status,
         username: identity.username,
         memberships: identity.memberships,
@@ -214,6 +290,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         login,
         logout,
         setActiveClinic,
+        setActingClinic,
       }}
     >
       {children}

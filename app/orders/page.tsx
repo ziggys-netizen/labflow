@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
-import { useRouter } from "next/navigation";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import { useAuth } from "../lib/AuthContext";
 import { getClinicDocs } from "../lib/clinicScope";
-import { canBrowseOrders, landingPathForRole } from "../lib/permissions";
+import { canEnterResults, canOrderTests } from "../lib/permissions";
+import { isOrderForDeletedPatient } from "../lib/patientSoftDelete";
 
 interface Order {
   id: string;
@@ -20,20 +21,12 @@ interface Order {
 
 function OrdersContent() {
   const { role, clinicId } = useAuth();
-  const router = useRouter();
   const [orders, setOrders] = useState<Order[]>([]);
   const [loading, setLoading] = useState(true);
-  const allowed = canBrowseOrders(role);
+  const allowed = canOrderTests(role) || canEnterResults(role);
 
   useEffect(() => {
-    if (!allowed) router.replace(landingPathForRole(role));
-  }, [allowed, role, router]);
-
-  useEffect(() => {
-    if (!allowed) {
-      setLoading(false);
-      return;
-    }
+    if (!allowed) return;
     async function fetchOrders() {
       try {
         const docs = await getClinicDocs("orders", role, clinicId, {
@@ -41,18 +34,20 @@ function OrdersContent() {
           direction: "desc",
         });
         setOrders(
-          docs.map((docSnap) => {
-            const data = docSnap.data();
-            return {
-              id: docSnap.id,
-              patientName: data.patientName,
-              patientLabId: data.patientLabId,
-              tests: data.tests || [],
-              status: data.status,
-              createdAt: data.createdAt,
-              sampleCollectedAt: data.sampleCollectedAt || null,
-            };
-          })
+          docs
+            .filter((docSnap) => !isOrderForDeletedPatient(docSnap.data()))
+            .map((docSnap) => {
+              const data = docSnap.data();
+              return {
+                id: docSnap.id,
+                patientName: data.patientName,
+                patientLabId: data.patientLabId,
+                tests: data.tests || [],
+                status: data.status,
+                createdAt: data.createdAt,
+                sampleCollectedAt: data.sampleCollectedAt || null,
+              };
+            })
         );
       } catch (err) {
         console.error(err);
@@ -74,7 +69,7 @@ function OrdersContent() {
 
         <div className="space-y-3">
           {orders.map((o) => (
-            <a
+            <Link
               key={o.id}
               href={`/orders/${o.id}`}
               className="block border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition"
@@ -89,7 +84,7 @@ function OrdersContent() {
               <p className="text-sm text-gray-700">
                 Tests: {o.tests.map((t) => t.name).join(", ")}
               </p>
-            </a>
+            </Link>
           ))}
         </div>
       </div>
@@ -99,7 +94,7 @@ function OrdersContent() {
 
 export default function Orders() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={(role) => canOrderTests(role) || canEnterResults(role)}>
       <OrdersContent />
     </ProtectedRoute>
   );

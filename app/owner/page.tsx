@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "../lib/AuthContext";
 import { db } from "../lib/firebase";
 import {
@@ -17,43 +17,22 @@ import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import StaffPanel from "../lib/StaffPanel";
 import { resolveIdentity } from "../lib/membership";
-
-interface Clinic {
-  id: string;
-  name: string;
-  address: string;
-  tin: string;
-  businessRegNumber: string;
-  responsiblePerson: string;
-  joinCode: string;
-  createdAt: string;
-  active: boolean;
-}
-
-const CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
-
-function generateJoinCode() {
-  let code = "";
-  for (let i = 0; i < 7; i++) {
-    code += CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)];
-  }
-  return code;
-}
-
-async function uniqueJoinCode(): Promise<string> {
-  for (let attempt = 0; attempt < 20; attempt++) {
-    const code = generateJoinCode();
-    const snap = await getDocs(query(collection(db, "clinics"), where("joinCode", "==", code)));
-    if (snap.empty) return code;
-  }
-  throw new Error("Could not generate a unique join code.");
-}
+import {
+  ClinicRecord,
+  loadAllClinics,
+  loadPatientCountsByClinic,
+  uniqueJoinCode,
+} from "../lib/clinics";
+import { loadStaffRows, staffCountsByClinic, subscribeStaffChanged } from "../lib/staffOps";
 
 function OwnerContent() {
   const { user, role, username } = useAuth();
   const canAccess = role === "owner";
 
-  const [clinics, setClinics] = useState<Clinic[]>([]);
+  const [clinics, setClinics] = useState<ClinicRecord[]>([]);
+  const [staffCounts, setStaffCounts] = useState<Record<string, number>>({});
+  const [patientCounts, setPatientCounts] = useState<Record<string, number>>({});
+  const [clinicQuery, setClinicQuery] = useState("");
   const [loadingClinics, setLoadingClinics] = useState(true);
   const [status, setStatus] = useState("");
   const [createdClinicId, setCreatedClinicId] = useState("");
@@ -71,23 +50,14 @@ function OwnerContent() {
 
   async function loadClinics() {
     try {
-      const snapshot = await getDocs(collection(db, "clinics"));
-      const list: Clinic[] = snapshot.docs.map((d) => {
-        const data = d.data();
-        return {
-          id: d.id,
-          name: data.name || "",
-          address: data.address || "",
-          tin: data.tin || "",
-          businessRegNumber: data.businessRegNumber || "",
-          responsiblePerson: data.responsiblePerson || "",
-          joinCode: data.joinCode || "",
-          createdAt: data.createdAt || "",
-          active: data.active !== false,
-        };
-      });
-      list.sort((a, b) => a.name.localeCompare(b.name));
+      const [list, staffResult, patients] = await Promise.all([
+        loadAllClinics(),
+        loadStaffRows({ role: "owner", clinicId: null }),
+        loadPatientCountsByClinic(),
+      ]);
       setClinics(list);
+      setStaffCounts(staffCountsByClinic(staffResult.rows));
+      setPatientCounts(patients);
     } catch (err) {
       console.error(err);
       setStatus("Could not load clinics.");
@@ -102,6 +72,13 @@ function OwnerContent() {
       else setLoadingClinics(false);
     }, 0);
     return () => window.clearTimeout(timer);
+  }, [canAccess]);
+
+  useEffect(() => {
+    if (!canAccess) return;
+    return subscribeStaffChanged(() => {
+      loadClinics();
+    });
   }, [canAccess]);
 
   async function handleCreateClinic(e: React.FormEvent) {
@@ -204,7 +181,15 @@ function OwnerContent() {
     }
   }
 
-    if (!canAccess) {
+  const filteredClinics = useMemo(() => {
+    const q = clinicQuery.trim().toLowerCase();
+    if (!q) return clinics;
+    return clinics.filter(
+      (c) => c.name.toLowerCase().includes(q) || c.address.toLowerCase().includes(q)
+    );
+  }, [clinics, clinicQuery]);
+
+  if (!canAccess) {
     return (
       <main className="min-h-screen bg-white">
         <AppNav />
@@ -230,19 +215,59 @@ function OwnerContent() {
         {status && <p className="text-sm text-gray-600 mb-4">{status}</p>}
         {createdClinicId && (
           <Link
-            href={`/owner/clinics/${createdClinicId}/migration`}
-            className="mb-6 inline-flex rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white"
+            href={`/owner/clinics/${createdClinicId}`}
+            className="mb-6 mr-3 inline-flex rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white"
           >
-            Continue to Data Migration
+            Open clinic profile
           </Link>
         )}
 
+        <StaffPanel pendingOnly embedded />
+
         <section className="border border-gray-200 rounded-lg p-4 mb-6">
-          <h2 className="font-medium text-gray-900 mb-3">Pending staff approvals</h2>
-          <p className="text-sm text-gray-600 mb-4">
-            People waiting to work are listed here first. Approved staff live under each clinic.
-          </p>
-          <StaffPanel pendingOnly embedded />
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+            <h2 className="font-medium text-gray-900">Clinics</h2>
+            <p className="text-sm text-gray-500">{clinics.length} total</p>
+          </div>
+          <input
+            type="search"
+            value={clinicQuery}
+            onChange={(e) => setClinicQuery(e.target.value)}
+            placeholder="Search clinics"
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-3"
+          />
+          {loadingClinics && <p className="text-sm text-gray-500">Loading...</p>}
+          {!loadingClinics && clinics.length === 0 && (
+            <p className="text-sm text-gray-500">No clinics yet.</p>
+          )}
+          {!loadingClinics && clinics.length > 0 && filteredClinics.length === 0 && (
+            <p className="text-sm text-gray-500">No clinics match that search.</p>
+          )}
+          {!loadingClinics && filteredClinics.length > 0 && (
+            <div className="max-h-[32rem] overflow-y-auto border border-gray-100 rounded-lg divide-y divide-gray-100">
+              {filteredClinics.map((c) => (
+                <Link
+                  key={c.id}
+                  href={`/owner/clinics/${c.id}`}
+                  className="flex items-center justify-between gap-4 px-3 py-3 hover:bg-gray-50"
+                >
+                  <div className="min-w-0">
+                    <p className="font-medium text-gray-900 truncate">
+                      {c.name || c.id}
+                      {!c.active && (
+                        <span className="ml-2 text-xs font-normal uppercase tracking-wide text-gray-500">
+                          Inactive
+                        </span>
+                      )}
+                    </p>
+                  </div>
+                  <p className="text-sm text-gray-500 whitespace-nowrap">
+                    {staffCounts[c.id] ?? 0} staff · {patientCounts[c.id] ?? 0} patients
+                  </p>
+                </Link>
+              ))}
+            </div>
+          )}
         </section>
 
         <section className="border border-gray-200 rounded-lg p-4 mb-6">
@@ -294,51 +319,6 @@ function OwnerContent() {
         </section>
 
         <section className="border border-gray-200 rounded-lg p-4 mb-6">
-          <h2 className="font-medium text-gray-900 mb-3">Clinics</h2>
-          {loadingClinics && <p className="text-sm text-gray-500">Loading...</p>}
-          {!loadingClinics && clinics.length === 0 && (
-            <p className="text-sm text-gray-500">No clinics yet.</p>
-          )}
-          <div className="space-y-3">
-            {clinics.map((c) => (
-              <div key={c.id} className="border border-gray-100 rounded-lg p-3">
-                <Link
-                  href={`/owner/clinics/${c.id}`}
-                  className="font-medium text-gray-900 underline"
-                >
-                  {c.name}
-                </Link>
-                <p className="text-sm text-gray-600">{c.address}</p>
-                <p className="text-sm text-gray-500 mt-1">
-                  Join code: <span className="font-mono text-gray-900">{c.joinCode}</span>
-                </p>
-                <p className="text-xs text-gray-400 mt-1">ID: {c.id}</p>
-                <div className="mt-3 flex flex-wrap gap-3">
-                  <Link
-                    href={`/owner/clinics/${c.id}/staff`}
-                    className="text-sm font-medium text-gray-900 underline"
-                  >
-                    Manage staff
-                  </Link>
-                  <Link
-                    href={`/owner/clinics/${c.id}/migration`}
-                    className="text-sm font-medium text-gray-900 underline"
-                  >
-                    Run migration
-                  </Link>
-                  <Link
-                    href={`/owner/clinics/${c.id}/migration`}
-                    className="text-sm font-medium text-gray-900 underline"
-                  >
-                    + Add Data
-                  </Link>
-                </div>
-              </div>
-            ))}
-          </div>
-        </section>
-
-        <section className="border border-gray-200 rounded-lg p-4 mb-6">
           <h2 className="font-medium text-gray-900 mb-3">Set clinic administrator</h2>
           <form onSubmit={handleAssignAdmin} className="space-y-3">
             <input
@@ -377,7 +357,7 @@ function OwnerContent() {
 
 export default function Owner() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={(role) => role === "owner"}>
       <OwnerContent />
     </ProtectedRoute>
   );

@@ -2,15 +2,14 @@
 
 import Link from "next/link";
 import { useParams } from "next/navigation";
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  addDoc,
   collection,
   doc,
   getDoc,
   getDocs,
   query,
-  updateDoc,
+  setDoc,
   where,
   writeBatch,
 } from "firebase/firestore";
@@ -18,20 +17,31 @@ import AppNav from "../../../../lib/AppNav";
 import ProtectedRoute from "../../../../lib/ProtectedRoute";
 import { useAuth } from "../../../../lib/AuthContext";
 import { db } from "../../../../lib/firebase";
+import { ownerActingCreateFields } from "../../../../lib/clinicScope";
+import { makeActorStamp } from "../../../../lib/identity";
 import {
+  buildRejectedRowsCsv,
   createAutoMapping,
   DuplicateChoice,
+  ExistingInventoryBatchRef,
+  ExistingInventoryItemRef,
   ExistingOrderRef,
   ExistingPatientRef,
   ExistingTestRef,
   getValidationSummary,
+  isAllowedSpreadsheetFile,
   isReservedTenantHeader,
+  isUnassignedLegacyClinicId,
+  LEGACY_COLLECTIONS,
+  LegacyRecordPreview,
   MappingTarget,
+  MAPPING_PREVIEW_ROWS,
   MIGRATION_DATA_LABELS,
   MIGRATION_FIELDS,
   MigrationDataType,
   ParsedSpreadsheet,
   parseSpreadsheet,
+  previewLegacyRecord,
   validateImportRows,
   validateMapping,
   ValidatedImportRow,
@@ -79,6 +89,7 @@ interface MigrationHistoryEntry {
   createdAt: string;
   createdByEmail: string | null;
   collectionCounts?: Record<string, number>;
+  claimedDocuments?: LegacyRecordPreview[];
 }
 
 interface WritePlan {
@@ -134,10 +145,11 @@ const CATEGORY_OPTIONS: CategoryOption[] = [
   },
   {
     id: "inventory",
+    dataType: "inventory",
     title: "Inventory / reagents",
     description:
-      "Inventory import is not enabled here. Safe onboarding must coordinate item, batch/lot, and movement-ledger records without inventing balances.",
-    availability: "Unavailable in Migration Center",
+      "Import stock items and lots. Lot number and expiry are required on batch rows. Receipt quantity writes a ledger movement; on-hand is never stored as a field.",
+    availability: "Supported",
   },
   {
     id: "staff",
@@ -184,11 +196,24 @@ function safeDateLabel(value: string) {
 }
 
 function historyTypeLabel(value: string) {
-  if (value === "assign_existing_records") return "Assign existing unassigned records";
+  if (value === "assign_existing_records" || value === "claim_unassigned_legacy") {
+    return "Claim unassigned legacy records";
+  }
   if (value in MIGRATION_DATA_LABELS) {
     return MIGRATION_DATA_LABELS[value as MigrationDataType];
   }
   return value;
+}
+
+function itemNameKey(name: string) {
+  return name.trim().replace(/\s+/g, " ").toLowerCase();
+}
+
+function collectionLabel(collectionName: string) {
+  if (collectionName === "patients") return "Patients";
+  if (collectionName === "orders") return "Orders";
+  if (collectionName === "testCatalog") return "Test catalogue";
+  return collectionName;
 }
 
 function SummaryCards({ summary }: { summary: ValidationSummary }) {
@@ -276,8 +301,9 @@ function MigrationContent() {
   const params = useParams();
   const rawClinicId = params.clinicId;
   const selectedClinicId = Array.isArray(rawClinicId) ? rawClinicId[0] : rawClinicId;
-  const { user, role } = useAuth();
+  const { user, role, username } = useAuth();
   const canAccess = role === "owner";
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [clinic, setClinic] = useState<Clinic | null>(null);
   const [loadingClinic, setLoadingClinic] = useState(true);
@@ -294,7 +320,9 @@ function MigrationContent() {
   const [fileInputKey, setFileInputKey] = useState(0);
   const [parsing, setParsing] = useState(false);
   const [uploadError, setUploadError] = useState("");
+  const [dragActive, setDragActive] = useState(false);
   const [mappingMessage, setMappingMessage] = useState("");
+  const [mappingConfirmed, setMappingConfirmed] = useState(false);
 
   const [validationRows, setValidationRows] = useState<ValidatedImportRow[]>([]);
   const [validating, setValidating] = useState(false);
@@ -309,6 +337,9 @@ function MigrationContent() {
   const [assignConfirmed, setAssignConfirmed] = useState(false);
   const [assigning, setAssigning] = useState(false);
   const [assignStatus, setAssignStatus] = useState("");
+  const [legacyRecords, setLegacyRecords] = useState<LegacyRecordPreview[]>([]);
+  const [loadingLegacy, setLoadingLegacy] = useState(true);
+  const [legacyError, setLegacyError] = useState("");
 
   const loadHistory = useCallback(async () => {
     if (!selectedClinicId || !canAccess) return;
@@ -346,6 +377,9 @@ function MigrationContent() {
             typeof data.collectionCounts === "object" && data.collectionCounts !== null
               ? (data.collectionCounts as Record<string, number>)
               : undefined,
+          claimedDocuments: Array.isArray(data.claimedDocuments)
+            ? (data.claimedDocuments as LegacyRecordPreview[])
+            : undefined,
         };
       });
       entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
@@ -355,6 +389,43 @@ function MigrationContent() {
       setHistoryError("Migration history could not be loaded.");
     } finally {
       setLoadingHistory(false);
+    }
+  }, [canAccess, selectedClinicId]);
+
+  const loadLegacyRecords = useCallback(async () => {
+    if (!selectedClinicId || !canAccess) {
+      setLoadingLegacy(false);
+      return;
+    }
+    setLoadingLegacy(true);
+    try {
+      const snapshots = await Promise.all(
+        LEGACY_COLLECTIONS.map((collectionName) => getDocs(collection(db, collectionName)))
+      );
+      const records: LegacyRecordPreview[] = [];
+      snapshots.forEach((snapshot, index) => {
+        const collectionName = LEGACY_COLLECTIONS[index];
+        for (const entry of snapshot.docs) {
+          const preview = previewLegacyRecord(
+            collectionName,
+            entry.id,
+            entry.data() as Record<string, unknown>
+          );
+          if (preview) records.push(preview);
+        }
+      });
+      records.sort((a, b) => {
+        const byCollection = a.collectionName.localeCompare(b.collectionName);
+        if (byCollection !== 0) return byCollection;
+        return (b.createdAt || "").localeCompare(a.createdAt || "");
+      });
+      setLegacyRecords(records);
+      setLegacyError("");
+    } catch {
+      setLegacyRecords([]);
+      setLegacyError("Unassigned legacy records could not be loaded. The claim control is hidden.");
+    } finally {
+      setLoadingLegacy(false);
     }
   }, [canAccess, selectedClinicId]);
 
@@ -389,19 +460,16 @@ function MigrationContent() {
     const timer = window.setTimeout(() => {
       loadClinic();
       loadHistory();
+      loadLegacyRecords();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [canAccess, loadHistory, selectedClinicId]);
+  }, [canAccess, loadHistory, loadLegacyRecords, selectedClinicId]);
 
   const summary = useMemo(() => getValidationSummary(validationRows), [validationRows]);
   const mappingErrors = useMemo(
     () => (dataType ? validateMapping(mapping, dataType) : []),
     [dataType, mapping]
   );
-  const problemRows = validationRows.filter(
-    (row) => row.state !== "ready" || row.warnings.length > 0
-  );
-  const visibleProblemRows = showAllProblems ? problemRows : problemRows.slice(0, 50);
 
   function clearAfterDataChoice() {
     setSheet(null);
@@ -410,6 +478,7 @@ function MigrationContent() {
     setFileInputKey((value) => value + 1);
     setUploadError("");
     setMappingMessage("");
+    setMappingConfirmed(false);
     setValidationRows([]);
     setValidationError("");
     setImportConfirmed(false);
@@ -428,12 +497,23 @@ function MigrationContent() {
     clearAfterDataChoice();
   }
 
-  async function handleFile(file: File | undefined) {
+  async function handleFile(file: File | undefined, extraFiles = 0) {
     if (!file || !dataType) return;
+    if (!isAllowedSpreadsheetFile(file.name)) {
+      setSheet(null);
+      setFileName("");
+      setMapping({});
+      setMappingConfirmed(false);
+      setUploadError("Choose an .xlsx, .xlsm, or .csv file.");
+      return;
+    }
     setParsing(true);
-    setUploadError("");
+    setUploadError(
+      extraFiles > 0 ? "One file at a time. Only the first file was read." : ""
+    );
     setValidationRows([]);
     setImportResult(null);
+    setMappingConfirmed(false);
     try {
       const parsed = await parseSpreadsheet(file);
       setSheet(parsed);
@@ -463,6 +543,7 @@ function MigrationContent() {
     setValidationRows([]);
     setValidationError("");
     setMappingMessage("");
+    setMappingConfirmed(false);
   }
 
   async function loadValidationContext(nextDataType: MigrationDataType) {
@@ -475,11 +556,15 @@ function MigrationContent() {
     const needsPatients = nextDataType === "patients" || nextDataType === "historicalOrders";
     const needsTests = nextDataType === "testCatalog" || nextDataType === "historicalOrders";
     const needsOrders = nextDataType === "historicalOrders";
-    const [patientSnapshot, testSnapshot, orderSnapshot] = await Promise.all([
-      needsPatients ? scopedDocs("patients") : Promise.resolve(null),
-      needsTests ? scopedDocs("testCatalog") : Promise.resolve(null),
-      needsOrders ? scopedDocs("orders") : Promise.resolve(null),
-    ]);
+    const needsInventory = nextDataType === "inventory";
+    const [patientSnapshot, testSnapshot, orderSnapshot, itemSnapshot, batchSnapshot] =
+      await Promise.all([
+        needsPatients ? scopedDocs("patients") : Promise.resolve(null),
+        needsTests ? scopedDocs("testCatalog") : Promise.resolve(null),
+        needsOrders ? scopedDocs("orders") : Promise.resolve(null),
+        needsInventory ? scopedDocs("inventoryItems") : Promise.resolve(null),
+        needsInventory ? scopedDocs("inventoryBatches") : Promise.resolve(null),
+      ]);
 
     const existingPatients: ExistingPatientRef[] =
       patientSnapshot?.docs.map((entry) => {
@@ -514,11 +599,32 @@ function MigrationContent() {
         };
       }) || [];
 
+    const existingInventoryItems: ExistingInventoryItemRef[] =
+      itemSnapshot?.docs.map((entry) => {
+        const data = entry.data();
+        return {
+          id: entry.id,
+          name: readString(data.name),
+          catalogueCode: readString(data.catalogueCode),
+        };
+      }) || [];
+    const existingInventoryBatches: ExistingInventoryBatchRef[] =
+      batchSnapshot?.docs.map((entry) => {
+        const data = entry.data();
+        return {
+          id: entry.id,
+          itemId: readString(data.itemId),
+          lotNumber: readString(data.lotNumber),
+        };
+      }) || [];
+
     return {
       now: new Date().toISOString(),
       existingPatients,
       existingTests,
       existingOrders,
+      existingInventoryItems,
+      existingInventoryBatches,
     } satisfies ValidationContext;
   }
 
@@ -571,7 +677,7 @@ function MigrationContent() {
     if (step === 0) return Boolean(clinic);
     if (step === 1) return Boolean(dataType);
     if (step === 2) return Boolean(sheet);
-    if (step === 3) return mappingErrors.length === 0;
+    if (step === 3) return mappingErrors.length === 0 && mappingConfirmed;
     if (step === 4) return !validating && validationRows.length > 0;
     if (step === 5) return summary.ready > 0;
     return false;
@@ -648,14 +754,154 @@ function MigrationContent() {
         });
       }
     }
+
+    const inventoryItemIds = new Map<string, string>();
+    const inventoryItemEmitted = new Set<string>();
+    for (const row of validationRows) {
+      if (row.record?.type !== "inventory" || row.state === "attention" || row.choice === "skip") {
+        continue;
+      }
+      const key = itemNameKey(row.record.data.item.name);
+      if (row.record.data.existingItemId) {
+        inventoryItemIds.set(key, row.record.data.existingItemId);
+      } else if (!inventoryItemIds.has(key)) {
+        inventoryItemIds.set(key, doc(collection(db, "inventoryItems")).id);
+      }
+    }
+
+    for (const row of validationRows) {
+      if (row.record?.type !== "inventory" || row.state === "attention" || row.choice === "skip") {
+        continue;
+      }
+      const inventory = row.record.data;
+      const key = itemNameKey(inventory.item.name);
+      const itemId = inventoryItemIds.get(key);
+      if (!itemId) continue;
+      const ownerFields = ownerActingCreateFields(role);
+      const actor = user ? makeActorStamp(user, username) : null;
+
+      if (!inventoryItemEmitted.has(itemId)) {
+        inventoryItemEmitted.add(itemId);
+        if (row.choice === "update" && inventory.existingItemId && !inventory.batch) {
+          plans.push({
+            collectionName: "inventoryItems",
+            id: itemId,
+            mode: "update",
+            data: {
+              ...inventory.item,
+              clinicId: selectedClinicId,
+              updatedAt: new Date().toISOString(),
+            },
+            result: "updated",
+          });
+        } else if (!inventory.existingItemId) {
+          plans.push({
+            collectionName: "inventoryItems",
+            id: itemId,
+            mode: "set",
+            data: {
+              ...inventory.item,
+              clinicId: selectedClinicId,
+              createdAt: new Date().toISOString(),
+              createdBy: actor,
+              updatedAt: new Date().toISOString(),
+              ...ownerFields,
+            },
+            result: "imported",
+          });
+        }
+      }
+
+      if (row.choice === "update" && inventory.existingItemId && inventory.batch && row.duplicate?.existingId) {
+        plans.push({
+          collectionName: "inventoryBatches",
+          id: row.duplicate.existingId,
+          mode: "update",
+          data: {
+            lotNumber: inventory.batch.lotNumber,
+            expiryDate: inventory.batch.expiryDate,
+            manufactureDate: inventory.batch.manufactureDate,
+            supplier: inventory.batch.supplier || inventory.item.supplier,
+            location: inventory.batch.location,
+            acceptance: inventory.batch.acceptance,
+            clinicId: selectedClinicId,
+          },
+          result: "updated",
+        });
+        continue;
+      }
+
+      if (inventory.batch) {
+        const batchId = doc(collection(db, "inventoryBatches")).id;
+        plans.push({
+          collectionName: "inventoryBatches",
+          id: batchId,
+          mode: "set",
+          data: {
+            clinicId: selectedClinicId,
+            itemId,
+            itemName: inventory.item.name,
+            lotNumber: inventory.batch.lotNumber,
+            expiryDate: inventory.batch.expiryDate,
+            manufactureDate: inventory.batch.manufactureDate,
+            supplier: inventory.batch.supplier || inventory.item.supplier,
+            location: inventory.batch.location,
+            acceptance: inventory.batch.acceptance,
+            createdAt: new Date().toISOString(),
+            createdBy: actor,
+            ...ownerFields,
+          },
+          result: "imported",
+        });
+        if (inventory.quantity && inventory.quantity > 0) {
+          plans.push({
+            collectionName: "inventoryMovements",
+            id: doc(collection(db, "inventoryMovements")).id,
+            mode: "set",
+            data: {
+              clinicId: selectedClinicId,
+              itemId,
+              itemName: inventory.item.name,
+              batchId,
+              lotNumber: inventory.batch.lotNumber,
+              expiryDate: inventory.batch.expiryDate,
+              type: "receipt",
+              direction: "in",
+              quantity: inventory.quantity,
+              packingUnit: inventory.item.packingUnit,
+              unitsPerPack: inventory.item.unitsPerPack,
+              baseUnit: inventory.item.baseUnit,
+              occurredAt: inventory.occurredAt || new Date().toISOString(),
+              recordedAt: new Date().toISOString(),
+              actor,
+              supplier: inventory.batch.supplier || inventory.item.supplier || null,
+              deliveryNote: null,
+              conditionOnArrival: null,
+              department: null,
+              issuedTo: null,
+              purpose: null,
+              destination: null,
+              reason: null,
+              note: "Spreadsheet import",
+              ...ownerFields,
+            },
+            result: "imported",
+          });
+        }
+      }
+    }
     return plans;
   }
 
   async function saveHistoryReport(
-    report: Omit<MigrationHistoryEntry, "id">
+    report: Omit<MigrationHistoryEntry, "id">,
+    historyId?: string
   ): Promise<boolean> {
     try {
-      await addDoc(collection(db, "migrationHistory"), {
+      const ref = historyId
+        ? doc(db, "migrationHistory", historyId)
+        : doc(collection(db, "migrationHistory"));
+      await setDoc(ref, {
         ...report,
         createdByUid: user?.uid || null,
       });
@@ -665,23 +911,49 @@ function MigrationContent() {
     }
   }
 
+  function downloadRejectedRows() {
+    if (!sheet) return;
+    const csv = buildRejectedRowsCsv(sheet, validationRows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `rejected-${fileName || "rows"}.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function startImport() {
     if (
       !user ||
       role !== "owner" ||
       !clinic ||
+      !selectedClinicId ||
       !dataType ||
       !fileName ||
       !importConfirmed
     ) {
       return;
     }
-    const plans = buildWritePlans();
-    if (plans.length === 0) return;
+    const unsignedPlans = buildWritePlans();
+    if (unsignedPlans.length === 0) return;
+
+    const historyId = doc(collection(db, "migrationHistory")).id;
+    const startedAt = new Date().toISOString();
+    const plans = unsignedPlans.map((plan) => ({
+      ...plan,
+      data: {
+        ...plan.data,
+        clinicId: selectedClinicId,
+        importedAt: startedAt,
+        importedBy: user.uid,
+        importSource: fileName,
+        migrationHistoryId: historyId,
+      },
+    }));
 
     setImporting(true);
     setProgress({ completed: 0, total: plans.length });
-    const startedAt = new Date().toISOString();
     let committed = 0;
     let failureMessage = "";
 
@@ -732,7 +1004,7 @@ function MigrationContent() {
       createdAt: startedAt,
       createdByEmail: user.email,
     };
-    const historySaved = await saveHistoryReport(report);
+    const historySaved = await saveHistoryReport(report, historyId);
 
     setImportResult({
       status,
@@ -756,65 +1028,71 @@ function MigrationContent() {
   }
 
   async function assignExistingRecords() {
-    if (!user || role !== "owner" || !clinic || !assignConfirmed) return;
+    if (!user || role !== "owner" || !clinic || !assignConfirmed || !selectedClinicId) return;
+    if (legacyRecords.length === 0) return;
     setAssigning(true);
-    setAssignStatus("Finding records without an assigned clinic...");
+    setAssignStatus("Re-checking the listed records so clinic-scoped documents are not moved...");
+    const confirmed = new Set(
+      legacyRecords.map((record) => `${record.collectionName}:${record.id}`)
+    );
     const collectionCounts: Record<string, number> = {
       patients: 0,
       orders: 0,
       testCatalog: 0,
     };
     const plans: WritePlan[] = [];
+    const claimedDocuments: LegacyRecordPreview[] = [];
     let failureMessage = "";
 
     try {
-      for (const collectionName of ["patients", "orders", "testCatalog"]) {
-        const snapshot = await getDocs(collection(db, collectionName));
+      const snapshots = await Promise.all(
+        LEGACY_COLLECTIONS.map((collectionName) => getDocs(collection(db, collectionName)))
+      );
+      snapshots.forEach((snapshot, index) => {
+        const collectionName = LEGACY_COLLECTIONS[index];
         for (const entry of snapshot.docs) {
-          const currentClinicId = entry.data().clinicId;
-          if (!currentClinicId || currentClinicId === "default-clinic") {
-            collectionCounts[collectionName] += 1;
-            plans.push({
-              collectionName,
-              id: entry.id,
-              mode: "update",
-              data: { clinicId: selectedClinicId },
-              result: "updated",
-            });
-          }
+          if (!confirmed.has(`${collectionName}:${entry.id}`)) continue;
+          const data = entry.data() as Record<string, unknown>;
+          if (!isUnassignedLegacyClinicId(data.clinicId)) continue;
+          const preview = previewLegacyRecord(collectionName, entry.id, data);
+          if (!preview) continue;
+          collectionCounts[collectionName] += 1;
+          claimedDocuments.push(preview);
+          plans.push({
+            collectionName,
+            id: entry.id,
+            mode: "update",
+            data: { clinicId: selectedClinicId },
+            result: "updated",
+          });
         }
-      }
+      });
     } catch {
-      failureMessage = "Unassigned records could not be inspected. No assignment writes started.";
+      failureMessage = "Unassigned records could not be re-checked. No claim writes started.";
     }
 
     let committed = 0;
-    let accountUpdated = false;
     if (!failureMessage) {
-      setAssignStatus(`Assigning ${plans.length} record${plans.length === 1 ? "" : "s"}...`);
+      if (plans.length === 0) {
+        setAssignStatus(
+          "None of the listed records are still unassigned. No documents were changed."
+        );
+        setAssignConfirmed(false);
+        setAssigning(false);
+        await loadLegacyRecords();
+        return;
+      }
+      setAssignStatus(`Claiming ${plans.length} record${plans.length === 1 ? "" : "s"}...`);
       const outcome = await commitPlans(plans, (completed) =>
-        setAssignStatus(`Assigned ${completed} of ${plans.length} records...`)
+        setAssignStatus(`Claimed ${completed} of ${plans.length} records...`)
       );
       committed = outcome.committed;
       failureMessage = outcome.error;
-      if (committed === plans.length) {
-        try {
-          await updateDoc(doc(db, "users", user.uid), {
-            role: "owner",
-            status: "approved",
-            clinicId: null,
-          });
-          accountUpdated = true;
-        } catch {
-          failureMessage =
-            "Records were assigned, but the owner account confirmation update failed.";
-        }
-      }
     }
 
     const failed = plans.length - committed;
     const reportStatus: MigrationHistoryEntry["status"] =
-      !failureMessage && accountUpdated
+      !failureMessage && failed === 0
         ? "completed"
         : committed > 0
           ? "partial_failure"
@@ -822,13 +1100,13 @@ function MigrationContent() {
     const historySaved = await saveHistoryReport({
       clinicId: clinic.id,
       clinicName: clinic.name,
-      dataType: "assign_existing_records",
+      dataType: "claim_unassigned_legacy",
       fileName: null,
       totalRows: plans.length,
       readyCount: plans.length,
       duplicateCount: 0,
       attentionCount: 0,
-      skippedCount: 0,
+      skippedCount: legacyRecords.length - plans.length,
       importedCount: 0,
       updatedCount: committed,
       failedCount: failed,
@@ -836,17 +1114,18 @@ function MigrationContent() {
       createdAt: new Date().toISOString(),
       createdByEmail: user.email,
       collectionCounts,
+      claimedDocuments: claimedDocuments.slice(0, committed),
     });
 
     if (reportStatus === "completed") {
       setAssignStatus(
-        `Assignment complete. Patients: ${collectionCounts.patients}, orders: ${collectionCounts.orders}, test catalogue: ${collectionCounts.testCatalog}. Owner account confirmed.${
+        `Claim complete. Patients: ${collectionCounts.patients}, orders: ${collectionCounts.orders}, test catalogue: ${collectionCounts.testCatalog}. Document IDs were stored in migration history.${
           historySaved ? "" : " The history report could not be saved."
         }`
       );
     } else {
       setAssignStatus(
-        `${failureMessage || "Assignment failed."} ${committed} record${
+        `${failureMessage || "Claim failed."} ${committed} record${
           committed === 1 ? "" : "s"
         } committed; ${failed} not committed.${historySaved ? "" : " The history report could not be saved."}`
       );
@@ -854,6 +1133,7 @@ function MigrationContent() {
     setAssignConfirmed(false);
     setAssigning(false);
     await loadHistory();
+    await loadLegacyRecords();
   }
 
   if (!canAccess) {
@@ -1008,19 +1288,40 @@ function MigrationContent() {
                   Upload {MIGRATION_DATA_LABELS[dataType].toLowerCase()}
                 </h2>
                 <p className="mb-4 text-sm text-gray-600">
-                  Accepts .xlsx, .xls, and .csv. Parsing happens in this browser; the file is not
-                  sent to LabFlow, Firebase Storage, or another upload service.
+                  Accepts .xlsx, .xlsm, and .csv. One file at a time. Parsing happens in this
+                  browser; the file is not sent to LabFlow, Firebase Storage, or another upload
+                  service.
                 </p>
-                <label className="block rounded-lg border border-dashed border-gray-300 p-6 text-center">
-                  <span className="mb-3 block text-sm font-medium text-gray-900">
-                    Choose a spreadsheet
+                <label
+                  className={`block cursor-pointer rounded-lg border border-dashed p-6 text-center ${
+                    dragActive ? "border-gray-900 bg-gray-50" : "border-gray-300"
+                  }`}
+                  onDragOver={(event) => {
+                    event.preventDefault();
+                    setDragActive(true);
+                  }}
+                  onDragLeave={() => setDragActive(false)}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    setDragActive(false);
+                    const files = event.dataTransfer.files;
+                    handleFile(files[0], Math.max(0, files.length - 1));
+                  }}
+                >
+                  <span className="mb-3 block text-sm font-medium text-gray-900">+ Add data</span>
+                  <span className="mb-3 block text-xs text-gray-500">
+                    Choose a file or drop one here. Native file dialog, .xlsx .xlsm .csv.
                   </span>
                   <input
                     key={fileInputKey}
+                    ref={fileInputRef}
                     type="file"
-                    accept=".xlsx,.xls,.csv"
+                    accept=".xlsx,.xlsm,.csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel.sheet.macroEnabled.12,text/csv"
                     disabled={parsing}
-                    onChange={(event) => handleFile(event.target.files?.[0])}
+                    onChange={(event) => {
+                      const files = event.target.files;
+                      handleFile(files?.[0], Math.max(0, (files?.length || 0) - 1));
+                    }}
                     className="mx-auto block max-w-full text-sm text-gray-600"
                   />
                 </label>
@@ -1039,9 +1340,34 @@ function MigrationContent() {
               <div>
                 <h2 className="mb-2 text-lg font-medium text-gray-900">Map columns</h2>
                 <p className="mb-4 text-sm text-gray-600">
-                  Confirm each source column. A system field can be used once; choose Ignore for
-                  columns that should not be imported.
+                  Confirm each source column against the first five data rows. Fields are pre-filled
+                  by column-name matching only — not by AI. Nothing is written until you confirm
+                  this mapping and complete Import.
                 </p>
+                <div className="mb-4 overflow-x-auto">
+                  <table className="w-full min-w-[680px] border-collapse text-left text-xs">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        {sheet.headers.map((header) => (
+                          <th key={header} className="px-2 py-2 font-medium text-gray-700">
+                            {header}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sheet.rows.slice(0, MAPPING_PREVIEW_ROWS).map((row) => (
+                        <tr key={row.rowNumber} className="border-b border-gray-100">
+                          {sheet.headers.map((header) => (
+                            <td key={header} className="max-w-[12rem] truncate px-2 py-2 text-gray-600">
+                              {row.values[header] || "—"}
+                            </td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[680px] border-collapse text-left text-sm">
                     <thead>
@@ -1075,7 +1401,7 @@ function MigrationContent() {
                             </td>
                             <td className="max-w-xs truncate py-3 pr-4 text-gray-500">
                               {sheet.rows
-                                .slice(0, 2)
+                                .slice(0, MAPPING_PREVIEW_ROWS)
                                 .map((row) => row.values[header])
                                 .filter(Boolean)
                                 .join(" · ") || "—"}
@@ -1128,6 +1454,18 @@ function MigrationContent() {
                   </ul>
                 )}
                 {mappingMessage && <p className="mt-3 text-sm text-red-600">{mappingMessage}</p>}
+                <label className="mt-5 flex items-start gap-3 rounded-lg border border-gray-200 p-4 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={mappingConfirmed}
+                    onChange={(event) => setMappingConfirmed(event.target.checked)}
+                    className="mt-1"
+                  />
+                  <span>
+                    I confirm these column mappings. No records will be written until the Import
+                    step.
+                  </span>
+                </label>
               </div>
             )}
 
@@ -1144,15 +1482,25 @@ function MigrationContent() {
                   <>
                     <SummaryCards summary={summary} />
                     <p className="mt-3 text-xs text-gray-500">
-                      Ready counts rows currently selected for import. Skipped includes invalid rows
-                      and duplicates left on the default Skip choice.
+                      Valid rows are green and will import. Invalid rows are red and will be skipped;
+                      they do not abort the rest of the file. Duplicates default to Skip until you
+                      opt in to update.
                     </p>
+                    {summary.attention > 0 && (
+                      <button
+                        type="button"
+                        onClick={downloadRejectedRows}
+                        className="mt-3 text-sm font-medium text-gray-900 underline"
+                      >
+                        Download rejected rows
+                      </button>
+                    )}
                     <div className="mt-5">
                       <div className="mb-2 flex items-center justify-between">
                         <h3 className="font-medium text-gray-900">
-                          Rows needing review ({problemRows.length})
+                          Row preview ({validationRows.length})
                         </h3>
-                        {problemRows.length > 50 && (
+                        {validationRows.length > 50 && (
                           <button
                             type="button"
                             onClick={() => setShowAllProblems((value) => !value)}
@@ -1162,34 +1510,47 @@ function MigrationContent() {
                           </button>
                         )}
                       </div>
-                      {problemRows.length === 0 ? (
-                        <p className="text-sm text-green-700">All rows passed validation.</p>
-                      ) : (
-                        <div className="max-h-[420px] space-y-2 overflow-y-auto">
-                          {visibleProblemRows.map((row) => (
-                            <div key={row.id} className="rounded-lg border border-gray-200 p-3">
-                              <div className="flex items-center justify-between gap-3">
-                                <p className="text-sm font-medium text-gray-900">
-                                  Spreadsheet row {row.rowNumber}
-                                </p>
-                                <span className="text-xs uppercase tracking-wide text-gray-500">
-                                  {row.state}
-                                </span>
+                      <div className="max-h-[420px] space-y-2 overflow-y-auto">
+                        {(showAllProblems ? validationRows : validationRows.slice(0, 50)).map(
+                          (row) => {
+                            const tone =
+                              row.state === "attention"
+                                ? "border-red-200 bg-red-50"
+                                : row.state === "duplicate"
+                                  ? "border-amber-200 bg-amber-50"
+                                  : "border-green-200 bg-green-50";
+                            return (
+                              <div key={row.id} className={`rounded-lg border p-3 ${tone}`}>
+                                <div className="flex items-center justify-between gap-3">
+                                  <p className="text-sm font-medium text-gray-900">
+                                    Spreadsheet row {row.rowNumber}
+                                  </p>
+                                  <span className="text-xs uppercase tracking-wide text-gray-600">
+                                    {row.state === "attention"
+                                      ? "invalid"
+                                      : row.state === "duplicate"
+                                        ? "duplicate"
+                                        : "valid"}
+                                  </span>
+                                </div>
+                                {row.state === "ready" && row.issues.length === 0 && (
+                                  <p className="mt-1 text-sm text-green-800">Ready to import.</p>
+                                )}
+                                {[...row.issues, ...(row.duplicate?.reasons || [])].map((message) => (
+                                  <p key={message} className="mt-1 text-sm text-red-700">
+                                    {message}
+                                  </p>
+                                ))}
+                                {row.warnings.map((message) => (
+                                  <p key={message} className="mt-1 text-sm text-amber-800">
+                                    {message}
+                                  </p>
+                                ))}
                               </div>
-                              {[...row.issues, ...(row.duplicate?.reasons || [])].map((message) => (
-                                <p key={message} className="mt-1 text-sm text-red-600">
-                                  {message}
-                                </p>
-                              ))}
-                              {row.warnings.map((message) => (
-                                <p key={message} className="mt-1 text-sm text-amber-700">
-                                  {message}
-                                </p>
-                              ))}
-                            </div>
-                          ))}
-                        </div>
-                      )}
+                            );
+                          }
+                        )}
+                      </div>
                     </div>
                   </>
                 )}
@@ -1215,8 +1576,18 @@ function MigrationContent() {
                 {summary.attention > 0 && (
                   <p className="mt-3 rounded-lg bg-amber-50 p-3 text-sm text-amber-800">
                     {summary.attention} row{summary.attention === 1 ? "" : "s"} with validation
-                    errors will be skipped. Return to Map Columns if the mapping is wrong.
+                    errors will be skipped. The rest of the file still imports. Return to Map
+                    Columns if the mapping is wrong.
                   </p>
+                )}
+                {summary.attention > 0 && (
+                  <button
+                    type="button"
+                    onClick={downloadRejectedRows}
+                    className="mt-3 text-sm font-medium text-gray-900 underline"
+                  >
+                    Download rejected rows
+                  </button>
                 )}
                 <div className="mt-5 space-y-3">
                   <h3 className="font-medium text-gray-900">Duplicate choices</h3>
@@ -1463,7 +1834,7 @@ function MigrationContent() {
                       {historyTypeLabel(entry.dataType)}
                     </p>
                     <p className="text-xs text-gray-500">
-                      {entry.fileName || "No file (assignment operation)"} ·{" "}
+                      {entry.fileName || "No file (legacy claim)"} ·{" "}
                       {safeDateLabel(entry.createdAt)}
                     </p>
                     <p className="mt-1 text-xs text-gray-500">
@@ -1482,47 +1853,97 @@ function MigrationContent() {
                     {entry.status.replace("_", " ")}
                   </span>
                 </div>
-                <p className="mt-2 text-xs text-gray-600">
-                  Total {entry.totalRows} · Imported {entry.importedCount} · Updated{" "}
-                  {entry.updatedCount} · Skipped {entry.skippedCount} · Failed {entry.failedCount}
-                </p>
+                    <p className="mt-2 text-xs text-gray-600">
+                      Total {entry.totalRows} · Imported {entry.importedCount} · Updated{" "}
+                      {entry.updatedCount} · Skipped {entry.skippedCount} · Failed {entry.failedCount}
+                      {entry.claimedDocuments && entry.claimedDocuments.length > 0
+                        ? ` · ${entry.claimedDocuments.length} document ID${
+                            entry.claimedDocuments.length === 1 ? "" : "s"
+                          } stored`
+                        : ""}
+                    </p>
               </div>
             ))}
           </div>
         </section>
 
-        <section className="mt-6 rounded-lg border border-gray-300 p-4">
-          <h2 className="font-medium text-gray-900">Assign Existing Unassigned Records</h2>
-          <p className="mt-2 text-sm text-gray-600">
-            Owner-only legacy operation. It preserves the former owner-page migration exactly:
-            patients, orders, and test catalogue documents with no clinicId or with clinicId{" "}
-            <span className="font-mono">&quot;default-clinic&quot;</span> are assigned to{" "}
-            <span className="font-medium">{clinic.name}</span>, then your account is confirmed as
-            owner. It never runs automatically and does not import a spreadsheet.
-          </p>
-          <label className="mt-4 flex items-start gap-3 text-sm text-gray-700">
-            <input
-              type="checkbox"
-              checked={assignConfirmed}
-              disabled={assigning}
-              onChange={(event) => setAssignConfirmed(event.target.checked)}
-              className="mt-1"
-            />
-            <span>
-              I understand this claims every currently unassigned or default-clinic record for{" "}
-              {clinic.name}.
-            </span>
-          </label>
-          <button
-            type="button"
-            onClick={assignExistingRecords}
-            disabled={!assignConfirmed || assigning}
-            className="mt-3 rounded-lg border border-gray-900 px-4 py-2 text-sm font-medium text-gray-900 disabled:opacity-50"
-          >
-            {assigning ? "Assigning..." : "Assign existing records"}
-          </button>
-          {assignStatus && <p className="mt-3 text-sm text-gray-600">{assignStatus}</p>}
-        </section>
+        {(loadingLegacy || legacyError || legacyRecords.length > 0 || assignStatus) && (
+          <section className="mt-6 rounded-lg border border-gray-300 p-4">
+            <h2 className="font-medium text-gray-900">Claim unassigned legacy records</h2>
+            {loadingLegacy && (
+              <p className="mt-2 text-sm text-gray-600">Checking for unassigned legacy records...</p>
+            )}
+            {legacyError && <p className="mt-2 text-sm text-red-600">{legacyError}</p>}
+            {!loadingLegacy && !legacyError && legacyRecords.length > 0 && (
+              <>
+                <p className="mt-2 text-sm text-gray-600">
+                  One-time repair of pre-multi-tenancy records, not a routine import.
+                </p>
+                <p className="mt-3 text-sm text-gray-600">
+                  Only documents whose clinicId is missing or exactly{" "}
+                  <span className="font-mono">&quot;default-clinic&quot;</span> can move to{" "}
+                  <span className="font-medium">{clinic.name}</span>. Records that already have a
+                  real clinicId are never touched.
+                </p>
+                <div className="mt-4 max-h-[360px] overflow-auto">
+                  <table className="w-full min-w-[640px] border-collapse text-left text-sm">
+                    <thead>
+                      <tr className="border-b border-gray-200">
+                        <th className="py-2 pr-3 font-medium text-gray-700">Collection</th>
+                        <th className="py-2 pr-3 font-medium text-gray-700">Lab ID</th>
+                        <th className="py-2 pr-3 font-medium text-gray-700">Name</th>
+                        <th className="py-2 pr-3 font-medium text-gray-700">Created</th>
+                        <th className="py-2 font-medium text-gray-700">Current clinicId</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {legacyRecords.map((record) => (
+                        <tr key={`${record.collectionName}:${record.id}`} className="border-b border-gray-100">
+                          <td className="py-2 pr-3 text-gray-700">
+                            {collectionLabel(record.collectionName)}
+                          </td>
+                          <td className="py-2 pr-3 font-mono text-xs text-gray-900">
+                            {record.labId || "—"}
+                          </td>
+                          <td className="py-2 pr-3 text-gray-900">{record.name || "—"}</td>
+                          <td className="py-2 pr-3 text-gray-600">
+                            {record.createdAt ? safeDateLabel(record.createdAt) : "Unknown date"}
+                          </td>
+                          <td className="py-2 font-mono text-xs text-gray-500">
+                            {record.previousClinicId || "missing"}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <label className="mt-4 flex items-start gap-3 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    checked={assignConfirmed}
+                    disabled={assigning}
+                    onChange={(event) => setAssignConfirmed(event.target.checked)}
+                    className="mt-1"
+                  />
+                  <span>
+                    I have reviewed the {legacyRecords.length} record
+                    {legacyRecords.length === 1 ? "" : "s"} above and confirm claiming them for{" "}
+                    {clinic.name}.
+                  </span>
+                </label>
+                <button
+                  type="button"
+                  onClick={assignExistingRecords}
+                  disabled={!assignConfirmed || assigning}
+                  className="mt-3 rounded-lg border border-gray-900 px-4 py-2 text-sm font-medium text-gray-900 disabled:opacity-50"
+                >
+                  {assigning ? "Claiming..." : "Claim unassigned legacy records"}
+                </button>
+              </>
+            )}
+            {assignStatus && <p className="mt-3 text-sm text-gray-600">{assignStatus}</p>}
+          </section>
+        )}
       </div>
     </main>
   );
@@ -1530,7 +1951,7 @@ function MigrationContent() {
 
 export default function ClinicMigrationPage() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={(role) => role === "owner"}>
       <MigrationContent />
     </ProtectedRoute>
   );

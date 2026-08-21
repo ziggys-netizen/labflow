@@ -10,7 +10,14 @@ import {
 import { db } from "./firebase";
 import { isOwner as roleIsOwner, loadClinicNames } from "./clinicScope";
 import { resolveIdentity, ClinicMembership } from "./membership";
-import { AssignableRole, isAssignableRole } from "./permissions";
+import {
+  ASSIGNABLE_ROLES,
+  AssignableRole,
+  Shift,
+  isShift,
+  roleLabel,
+  roleRequiresShift,
+} from "./permissions";
 
 const NO_CLINIC = "__none__";
 
@@ -68,11 +75,16 @@ export async function writeStaffMembership(options: {
   row: StaffRow;
   targetClinicId: string;
   nextRole: AssignableRole;
+  shift?: Shift | null;
   status: "approved" | "rejected";
   makeActive: boolean;
   stamp: ApproverStamp;
 }) {
   const { row, targetClinicId, nextRole, status, makeActive, stamp } = options;
+  if (status === "approved" && roleRequiresShift(nextRole) && !isShift(options.shift)) {
+    throw new Error("A shift is required for Shift Supervisor.");
+  }
+  const shift: Shift | null = roleRequiresShift(nextRole) && isShift(options.shift) ? options.shift : null;
   const existing = row.memberships.find((m) => m.clinicId === targetClinicId);
   const clinicIds = [...new Set([...row.memberships.map((m) => m.clinicId), targetClinicId])];
 
@@ -80,6 +92,7 @@ export async function writeStaffMembership(options: {
     [`clinicRoles.${targetClinicId}`]: {
       role: nextRole,
       status,
+      shift,
       createdAt: existing?.createdAt ?? row.createdAt ?? stamp.approvedAt,
       ...stamp,
     },
@@ -96,6 +109,7 @@ export async function writeStaffMembership(options: {
     updates.approvedAt = stamp.approvedAt;
   }
   await updateDoc(doc(db, "users", row.uid), updates);
+  notifyStaffChanged();
 }
 
 export async function removeStaffAssignment(options: {
@@ -116,6 +130,7 @@ export async function removeStaffAssignment(options: {
     updates.status = fallback?.status ?? "pending";
   }
   await updateDoc(doc(db, "users", row.uid), updates);
+  notifyStaffChanged();
 }
 
 export async function loadStaffRows(options: {
@@ -202,4 +217,66 @@ export function membershipsInScope(
       scopeId ? row.memberships.filter((m) => m.clinicId === scopeId) : row.memberships,
     ])
   );
+}
+
+const staffChangedListeners = new Set<() => void>();
+
+export function subscribeStaffChanged(listener: () => void) {
+  staffChangedListeners.add(listener);
+  return () => {
+    staffChangedListeners.delete(listener);
+  };
+}
+
+export function notifyStaffChanged() {
+  for (const listener of staffChangedListeners) listener();
+}
+
+export async function loadPendingApprovalCount(): Promise<number> {
+  const { rows } = await loadStaffRows({ role: "owner", clinicId: null });
+  const scoped = membershipsInScope(rows, { owner: true, clinicId: null });
+  return pendingEntries(rows, scoped, { owner: true }).length;
+}
+
+/** Approved memberships only; owner accounts are not clinic staff. */
+export function staffCountsByClinic(rows: StaffRow[]): Record<string, number> {
+  const counts: Record<string, number> = {};
+  for (const row of rows) {
+    if (row.isOwnerAccount) continue;
+    for (const membership of row.memberships) {
+      if (membership.status !== "approved") continue;
+      counts[membership.clinicId] = (counts[membership.clinicId] ?? 0) + 1;
+    }
+  }
+  return counts;
+}
+
+export interface RoleStaffGroup {
+  role: string;
+  label: string;
+  members: { row: StaffRow; membership: ClinicMembership }[];
+}
+
+export function groupStaffByRole(
+  members: { row: StaffRow; membership: ClinicMembership }[]
+): RoleStaffGroup[] {
+  const byRole = new Map<string, { row: StaffRow; membership: ClinicMembership }[]>();
+  for (const item of members) {
+    const bucket = byRole.get(item.membership.role) ?? [];
+    bucket.push(item);
+    byRole.set(item.membership.role, bucket);
+  }
+  const ordered: RoleStaffGroup[] = [];
+  for (const role of ASSIGNABLE_ROLES) {
+    const group = byRole.get(role);
+    if (group?.length) {
+      ordered.push({ role, label: roleLabel(role), members: group });
+      byRole.delete(role);
+    }
+  }
+  for (const [role, group] of byRole) {
+    if (role === "owner") continue;
+    ordered.push({ role, label: roleLabel(role), members: group });
+  }
+  return ordered;
 }

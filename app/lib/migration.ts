@@ -1,8 +1,21 @@
+import {
+  BASE_UNITS,
+  BATCH_ACCEPTANCE,
+  INVENTORY_CATEGORIES,
+  LAB_DEPARTMENTS,
+  PACKING_UNITS,
+  STORAGE_CONDITIONS,
+} from "./inventory";
 import type { TestParameter } from "./testCatalog";
 
-export type MigrationDataType = "patients" | "testCatalog" | "historicalOrders";
+export type MigrationDataType = "patients" | "testCatalog" | "historicalOrders" | "inventory";
 export type MappingTarget = string | "ignore";
 export type DuplicateChoice = "skip" | "update" | "new";
+export type LegacyCollectionName = "patients" | "orders" | "testCatalog";
+
+export const ALLOWED_SPREADSHEET_EXTENSIONS = ["xlsx", "xlsm", "csv"] as const;
+export const MAPPING_PREVIEW_ROWS = 5;
+export const LEGACY_COLLECTIONS: LegacyCollectionName[] = ["patients", "orders", "testCatalog"];
 
 export interface SpreadsheetRow {
   rowNumber: number;
@@ -46,11 +59,34 @@ export interface ExistingOrderRef {
   testCodes: string[];
 }
 
+export interface ExistingInventoryItemRef {
+  id: string;
+  name: string;
+  catalogueCode: string;
+}
+
+export interface ExistingInventoryBatchRef {
+  id: string;
+  itemId: string;
+  lotNumber: string;
+}
+
 export interface ValidationContext {
   now: string;
   existingPatients: ExistingPatientRef[];
   existingTests: ExistingTestRef[];
   existingOrders: ExistingOrderRef[];
+  existingInventoryItems: ExistingInventoryItemRef[];
+  existingInventoryBatches: ExistingInventoryBatchRef[];
+}
+
+export interface LegacyRecordPreview {
+  collectionName: LegacyCollectionName;
+  id: string;
+  labId: string;
+  name: string;
+  createdAt: string;
+  previousClinicId: string | null;
 }
 
 export interface PatientImportData {
@@ -102,6 +138,41 @@ export interface HistoricalOrderImportData {
   reviewNotes?: string;
 }
 
+export interface InventoryItemImportData {
+  name: string;
+  category: string;
+  testCode: string | null;
+  manufacturer: string;
+  supplier: string;
+  catalogueCode: string;
+  packingUnit: string;
+  unitsPerPack: number;
+  baseUnit: string;
+  unitSize: string;
+  packsPerCarton: number | null;
+  storageCondition: string;
+  department: string;
+  minimumStock: number;
+  active: true;
+}
+
+export interface InventoryBatchImportData {
+  lotNumber: string;
+  expiryDate: string;
+  manufactureDate: string | null;
+  supplier: string;
+  location: string;
+  acceptance: string;
+}
+
+export interface InventoryImportData {
+  item: InventoryItemImportData;
+  existingItemId?: string;
+  batch?: InventoryBatchImportData;
+  quantity?: number;
+  occurredAt?: string;
+}
+
 export type ImportRecord =
   | {
       type: "patients";
@@ -117,6 +188,11 @@ export type ImportRecord =
   | {
       type: "historicalOrders";
       data: HistoricalOrderImportData;
+      providedFields: string[];
+    }
+  | {
+      type: "inventory";
+      data: InventoryImportData;
       providedFields: string[];
     };
 
@@ -404,16 +480,149 @@ const HISTORICAL_ORDER_FIELDS: MigrationField[] = [
   },
 ];
 
+const INVENTORY_FIELDS: MigrationField[] = [
+  {
+    key: "name",
+    label: "Item name",
+    required: true,
+    aliases: ["item", "item name", "product", "stock item", "reagent", "commodity"],
+    help: "Required. An existing item in this clinic is matched by name or catalogue code.",
+  },
+  {
+    key: "category",
+    label: "Category",
+    required: true,
+    aliases: ["item category", "stock category", "type"],
+    help: "Required. Must match a store category such as Rapid test kit or Reagent.",
+  },
+  {
+    key: "testCode",
+    label: "Linked test code",
+    aliases: ["test code", "assay code", "linked test"],
+    help: "Optional.",
+  },
+  {
+    key: "manufacturer",
+    label: "Manufacturer",
+    aliases: ["brand", "make"],
+    help: "Optional.",
+  },
+  {
+    key: "supplier",
+    label: "Supplier",
+    aliases: ["vendor", "distributor"],
+    help: "Optional. Copied onto the lot when a batch row is imported.",
+  },
+  {
+    key: "catalogueCode",
+    label: "Catalogue / SKU",
+    aliases: ["sku", "catalogue", "catalog code", "product code", "item code"],
+    help: "Optional. Also used to match an existing item.",
+  },
+  {
+    key: "packingUnit",
+    label: "Packing unit",
+    aliases: ["pack unit", "unit of pack", "uom", "pack"],
+    help: "Optional. Defaults to Box when blank.",
+  },
+  {
+    key: "unitsPerPack",
+    label: "Units per pack",
+    aliases: ["net content", "tests per kit", "units/pack", "units per pack"],
+    help: "Optional. Defaults to 1 when blank.",
+  },
+  {
+    key: "baseUnit",
+    label: "Base unit",
+    aliases: ["dispensing unit", "consume unit"],
+    help: "Optional. Defaults to piece when blank.",
+  },
+  {
+    key: "unitSize",
+    label: "Unit size",
+    aliases: ["size", "volume", "pack size"],
+    help: "Optional.",
+  },
+  {
+    key: "packsPerCarton",
+    label: "Packs per carton",
+    aliases: ["carton", "packs/carton"],
+    help: "Optional.",
+  },
+  {
+    key: "storageCondition",
+    label: "Storage condition",
+    aliases: ["storage", "storage conditions"],
+    help: "Optional. Defaults to Room temperature when blank.",
+  },
+  {
+    key: "department",
+    label: "Department",
+    aliases: ["lab section", "section", "issuing department"],
+    help: "Optional. Defaults to Main store when blank.",
+  },
+  {
+    key: "minimumStock",
+    label: "Minimum stock",
+    aliases: ["reorder level", "min stock", "par level"],
+    help: "Optional. Defaults to 0 when blank.",
+  },
+  {
+    key: "lotNumber",
+    label: "Lot / batch number",
+    aliases: ["lot", "batch", "batch number", "lot no", "lot #"],
+    help: "Required on batch rows together with expiry date.",
+  },
+  {
+    key: "expiryDate",
+    label: "Expiry date",
+    aliases: ["expiry", "expiration", "exp date", "expires", "expiry date"],
+    help: "Required on batch rows together with lot number.",
+  },
+  {
+    key: "manufactureDate",
+    label: "Manufacture date",
+    aliases: ["mfg date", "manufactured", "date of manufacture"],
+    help: "Optional.",
+  },
+  {
+    key: "location",
+    label: "Storage location",
+    aliases: ["shelf", "bin", "location"],
+    help: "Optional.",
+  },
+  {
+    key: "acceptance",
+    label: "Acceptance",
+    aliases: ["accepted", "quarantine", "qc status", "acceptance status"],
+    help: "Optional. accepted, untested, or rejected. Defaults to accepted.",
+  },
+  {
+    key: "quantity",
+    label: "Receipt quantity",
+    aliases: ["qty", "quantity received", "packs received", "received qty"],
+    help: "Optional. Writes a receipt movement. On-hand is never stored as a field.",
+  },
+  {
+    key: "occurredAt",
+    label: "Receipt date/time",
+    aliases: ["received at", "delivery date", "received date", "receipt date"],
+    help: "Optional when quantity is present. Import time is used if blank.",
+  },
+];
+
 export const MIGRATION_FIELDS: Record<MigrationDataType, MigrationField[]> = {
   patients: PATIENT_FIELDS,
   testCatalog: TEST_CATALOG_FIELDS,
   historicalOrders: HISTORICAL_ORDER_FIELDS,
+  inventory: INVENTORY_FIELDS,
 };
 
 export const MIGRATION_DATA_LABELS: Record<MigrationDataType, string> = {
   patients: "Patients",
   testCatalog: "Test catalogue",
   historicalOrders: "Historical orders & results",
+  inventory: "Inventory / reagents",
 };
 
 const RESERVED_TENANT_HEADERS = new Set([
@@ -469,10 +678,131 @@ function cellToString(value: unknown) {
   return String(value).trim();
 }
 
+export function spreadsheetExtension(fileName: string) {
+  return fileName.split(".").pop()?.toLowerCase() || "";
+}
+
+export function isAllowedSpreadsheetFile(fileName: string) {
+  return (ALLOWED_SPREADSHEET_EXTENSIONS as readonly string[]).includes(
+    spreadsheetExtension(fileName)
+  );
+}
+
+/**
+ * Unassigned pre-multi-tenancy records only. A document that already has any
+ * other clinicId — including another clinic's id — must never be claimed.
+ */
+export function isUnassignedLegacyClinicId(value: unknown): boolean {
+  if (value === undefined || value === null) return true;
+  if (typeof value !== "string") return false;
+  const trimmed = value.trim();
+  return trimmed === "" || trimmed === "default-clinic";
+}
+
+export function previewLegacyRecord(
+  collectionName: LegacyCollectionName,
+  id: string,
+  data: Record<string, unknown>
+): LegacyRecordPreview | null {
+  if (!isUnassignedLegacyClinicId(data.clinicId)) return null;
+  const previousClinicId =
+    typeof data.clinicId === "string" && data.clinicId.trim()
+      ? data.clinicId.trim()
+      : null;
+  const createdAt = typeof data.createdAt === "string" ? data.createdAt : "";
+  if (collectionName === "patients") {
+    return {
+      collectionName,
+      id,
+      labId: typeof data.labId === "string" ? data.labId : "",
+      name: typeof data.name === "string" ? data.name : "",
+      createdAt,
+      previousClinicId,
+    };
+  }
+  if (collectionName === "orders") {
+    return {
+      collectionName,
+      id,
+      labId: typeof data.patientLabId === "string" ? data.patientLabId : "",
+      name: typeof data.patientName === "string" ? data.patientName : "",
+      createdAt,
+      previousClinicId,
+    };
+  }
+  return {
+    collectionName,
+    id,
+    labId: typeof data.code === "string" ? data.code : id,
+    name: typeof data.name === "string" ? data.name : "",
+    createdAt,
+    previousClinicId,
+  };
+}
+
+function csvEscape(value: string) {
+  if (/[",\n\r]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
+  return value;
+}
+
+export function buildRejectedRowsCsv(
+  sheet: ParsedSpreadsheet,
+  rows: ValidatedImportRow[]
+): string {
+  const rejected = rows.filter((row) => row.state === "attention");
+  const headers = [...sheet.headers, "Validation errors"];
+  const lines = [headers.map(csvEscape).join(",")];
+  for (const row of rejected) {
+    const source = sheet.rows.find((entry) => entry.rowNumber === row.rowNumber);
+    const cells = sheet.headers.map((header) => csvEscape(source?.values[header] || ""));
+    cells.push(csvEscape(row.issues.join("; ")));
+    lines.push(cells.join(","));
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+function levenshtein(a: string, b: string): number {
+  const rows = a.length + 1;
+  const cols = b.length + 1;
+  const matrix: number[][] = Array.from({ length: rows }, () => Array(cols).fill(0));
+  for (let i = 0; i < rows; i += 1) matrix[i][0] = i;
+  for (let j = 0; j < cols; j += 1) matrix[0][j] = j;
+  for (let i = 1; i < rows; i += 1) {
+    for (let j = 1; j < cols; j += 1) {
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      matrix[i][j] = Math.min(
+        matrix[i - 1][j] + 1,
+        matrix[i][j - 1] + 1,
+        matrix[i - 1][j - 1] + cost
+      );
+    }
+  }
+  return matrix[a.length][b.length];
+}
+
+function scoreHeaderToField(header: string, field: MigrationField): number {
+  const normalized = normalizeHeader(header);
+  const candidates = [field.key, field.label, ...field.aliases].map(normalizeHeader);
+  let best = 0;
+  for (const candidate of candidates) {
+    if (!candidate) continue;
+    if (normalized === candidate) return 1;
+    if (normalized.length >= 4 && candidate.length >= 4) {
+      if (normalized.includes(candidate) || candidate.includes(normalized)) {
+        best = Math.max(best, 0.86);
+      }
+    }
+    const maxLen = Math.max(normalized.length, candidate.length);
+    if (maxLen >= 4) {
+      best = Math.max(best, 1 - levenshtein(normalized, candidate) / maxLen);
+    }
+  }
+  return best;
+}
+
 export async function parseSpreadsheet(file: File): Promise<ParsedSpreadsheet> {
-  const extension = file.name.split(".").pop()?.toLowerCase();
-  if (!extension || !["xlsx", "xls", "csv"].includes(extension)) {
-    throw new Error("Choose an .xlsx, .xls, or .csv file.");
+  if (!isAllowedSpreadsheetFile(file.name)) {
+    throw new Error("Choose an .xlsx, .xlsm, or .csv file.");
   }
 
   const XLSX = await import("@e965/xlsx");
@@ -527,18 +857,29 @@ export function createAutoMapping(
   const used = new Set<string>();
 
   for (const header of headers) {
-    const normalized = normalizeHeader(header);
-    if (isReservedTenantHeader(header)) {
-      mapping[header] = "ignore";
-      continue;
+    mapping[header] = "ignore";
+  }
+
+  const scored: { header: string; fieldKey: string; score: number }[] = [];
+  for (const header of headers) {
+    if (isReservedTenantHeader(header)) continue;
+    for (const field of fields) {
+      scored.push({
+        header,
+        fieldKey: field.key,
+        score: scoreHeaderToField(header, field),
+      });
     }
-    const match = fields.find((field) => {
-      if (used.has(field.key)) return false;
-      const candidates = [field.key, field.label, ...field.aliases].map(normalizeHeader);
-      return candidates.includes(normalized);
-    });
-    mapping[header] = match?.key || "ignore";
-    if (match) used.add(match.key);
+  }
+  scored.sort((a, b) => b.score - a.score);
+
+  const assignedHeaders = new Set<string>();
+  for (const entry of scored) {
+    if (entry.score < 0.72) break;
+    if (assignedHeaders.has(entry.header) || used.has(entry.fieldKey)) continue;
+    mapping[entry.header] = entry.fieldKey;
+    assignedHeaders.add(entry.header);
+    used.add(entry.fieldKey);
   }
   return mapping;
 }
@@ -562,6 +903,37 @@ export function validateMapping(
     errors.push("Map at least one patient identifier.");
   }
   return errors;
+}
+
+function matchClosedOption(value: string, options: readonly string[]): string | null {
+  const key = mapKey(value);
+  return options.find((option) => mapKey(option) === key) || null;
+}
+
+function matchPackingUnit(value: string): string | null {
+  const key = mapKey(value);
+  return PACKING_UNITS.find((unit) => mapKey(unit.value) === key || mapKey(unit.plural) === key)
+    ?.value || null;
+}
+
+function normalizeAcceptance(value: string): string | null {
+  const normalized = normalizeHeader(value);
+  if (!normalized) return "accepted";
+  if (["accepted", "accept"].includes(normalized)) return "accepted";
+  if (["untested", "quarantine", "notyettested"].includes(normalized)) return "untested";
+  if (["rejected", "reject"].includes(normalized)) return "rejected";
+  return (BATCH_ACCEPTANCE as readonly string[]).includes(normalized) ? normalized : null;
+}
+
+function isInventoryBatchRow(values: Record<string, string>) {
+  return Boolean(
+    values.lotNumber ||
+      values.expiryDate ||
+      values.manufactureDate ||
+      values.location ||
+      values.acceptance ||
+      values.quantity
+  );
 }
 
 function mappedValues(
@@ -1468,6 +1840,329 @@ function validateHistoricalOrders(
   });
 }
 
+function parsePositiveNumber(value: string): number | null {
+  const parsed = Number(value.replace(/,/g, "").trim());
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+function validateInventory(
+  rows: SpreadsheetRow[],
+  mapping: Record<string, MappingTarget>,
+  context: ValidationContext
+): ValidatedImportRow[] {
+  const prepared = rows.map((row) => {
+    const values = mappedValues(row, mapping);
+    const issues: string[] = [];
+    const warnings: string[] = [];
+    const name = normalizeText(values.name || "");
+    if (!name) issues.push("Item name is required.");
+
+    const category = values.category
+      ? matchClosedOption(values.category, INVENTORY_CATEGORIES)
+      : null;
+    if (!values.category) issues.push("Category is required.");
+    else if (!category) {
+      issues.push(`Category must be one of: ${INVENTORY_CATEGORIES.join(", ")}.`);
+    }
+
+    let packingUnit = "Box";
+    if (values.packingUnit) {
+      packingUnit = matchPackingUnit(values.packingUnit) || "";
+      if (!packingUnit) issues.push("Packing unit is not a recognised store unit.");
+    } else {
+      warnings.push("Packing unit is blank; Box will be stored.");
+    }
+
+    let unitsPerPack = 1;
+    if (values.unitsPerPack) {
+      const parsed = Number(values.unitsPerPack.replace(/,/g, ""));
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        issues.push("Units per pack must be a whole number of 1 or more.");
+      } else {
+        unitsPerPack = parsed;
+      }
+    }
+
+    let baseUnit = "piece";
+    if (values.baseUnit) {
+      baseUnit = matchClosedOption(values.baseUnit, BASE_UNITS) || "";
+      if (!baseUnit) issues.push("Base unit is not a recognised store unit.");
+    }
+
+    let storageCondition = "Room temperature";
+    if (values.storageCondition) {
+      storageCondition = matchClosedOption(values.storageCondition, STORAGE_CONDITIONS) || "";
+      if (!storageCondition) issues.push("Storage condition is not a recognised option.");
+    }
+
+    let department = "Main store";
+    if (values.department) {
+      department = matchClosedOption(values.department, LAB_DEPARTMENTS) || "";
+      if (!department) issues.push("Department is not a recognised laboratory section.");
+    }
+
+    let minimumStock = 0;
+    if (values.minimumStock) {
+      const parsed = Number(values.minimumStock.replace(/,/g, ""));
+      if (!Number.isFinite(parsed) || parsed < 0) {
+        issues.push("Minimum stock cannot be negative.");
+      } else {
+        minimumStock = parsed;
+      }
+    }
+
+    let packsPerCarton: number | null = null;
+    if (values.packsPerCarton) {
+      const parsed = Number(values.packsPerCarton.replace(/,/g, ""));
+      if (!Number.isInteger(parsed) || parsed < 1) {
+        issues.push("Packs per carton must be a whole number of 1 or more.");
+      } else {
+        packsPerCarton = parsed;
+      }
+    }
+
+    const batchRow = isInventoryBatchRow(values);
+    let batch: InventoryBatchImportData | undefined;
+    let quantity: number | undefined;
+    let occurredAt: string | undefined;
+    if (batchRow) {
+      const lotNumber = normalizeText(values.lotNumber || "");
+      const expiryDate = parseDateOnly(values.expiryDate || "");
+      if (!lotNumber) issues.push("Lot number is required for batch rows.");
+      if (!expiryDate) issues.push("Expiry date is required for batch rows.");
+
+      const manufactureDate = values.manufactureDate
+        ? parseDateOnly(values.manufactureDate)
+        : null;
+      if (values.manufactureDate && !manufactureDate) {
+        issues.push("Manufacture date is invalid.");
+      }
+
+      const acceptance = normalizeAcceptance(values.acceptance || "");
+      if (values.acceptance && !acceptance) {
+        issues.push("Acceptance must be accepted, untested, or rejected.");
+      } else if (!values.acceptance) {
+        warnings.push("Acceptance is blank; accepted will be stored.");
+      }
+
+      if (values.quantity) {
+        const parsed = parsePositiveNumber(values.quantity);
+        if (!parsed) issues.push("Receipt quantity must be a number greater than zero.");
+        else quantity = parsed;
+      }
+
+      if (values.occurredAt) {
+        const parsed = parseTimestamp(values.occurredAt);
+        if (!parsed) issues.push("Receipt date/time is invalid.");
+        else if (isFuture(parsed, context.now)) issues.push("Receipt date/time is in the future.");
+        else occurredAt = parsed;
+      } else if (quantity) {
+        occurredAt = context.now;
+        warnings.push("Receipt date/time is blank; import time will be stored.");
+      }
+
+      if (lotNumber && expiryDate && acceptance) {
+        batch = {
+          lotNumber,
+          expiryDate,
+          manufactureDate,
+          supplier: normalizeText(values.supplier || ""),
+          location: normalizeText(values.location || ""),
+          acceptance,
+        };
+      }
+    }
+
+    const data: InventoryImportData | null =
+      issues.length === 0 && name && category
+        ? {
+            item: {
+              name,
+              category,
+              testCode: normalizeText(values.testCode || "") || null,
+              manufacturer: normalizeText(values.manufacturer || ""),
+              supplier: normalizeText(values.supplier || ""),
+              catalogueCode: normalizeText(values.catalogueCode || ""),
+              packingUnit,
+              unitsPerPack,
+              baseUnit,
+              unitSize: normalizeText(values.unitSize || ""),
+              packsPerCarton,
+              storageCondition,
+              department,
+              minimumStock,
+              active: true,
+            },
+            batch,
+            ...(quantity !== undefined ? { quantity } : {}),
+            ...(occurredAt ? { occurredAt } : {}),
+          }
+        : null;
+
+    return {
+      row,
+      issues,
+      warnings,
+      record: data
+        ? ({
+            type: "inventory",
+            data,
+            providedFields: providedFields(values),
+          } satisfies ImportRecord)
+        : null,
+    };
+  });
+
+  const existingByName = new Map<string, string[]>();
+  const existingByCatalogue = new Map<string, string[]>();
+  for (const item of context.existingInventoryItems) {
+    pushIndex(existingByName, mapKey(item.name), item.id);
+    pushIndex(existingByCatalogue, mapKey(item.catalogueCode), item.id);
+  }
+  const existingLots = new Map<string, string[]>();
+  for (const batch of context.existingInventoryBatches) {
+    pushIndex(existingLots, `${batch.itemId}|${mapKey(batch.lotNumber)}`, batch.id);
+  }
+
+  const validRows = prepared.filter((item) => item.record?.type === "inventory");
+  const sourceItemOnly = sourceRowsByKey(
+    validRows
+      .filter((item) => !(item.record!.data as InventoryImportData).batch)
+      .map((item) => ({
+        rowNumber: item.row.rowNumber,
+        key: mapKey((item.record!.data as InventoryImportData).item.name),
+      }))
+  );
+  const sourceLots = sourceRowsByKey(
+    validRows
+      .filter((item) => (item.record!.data as InventoryImportData).batch)
+      .map((item) => {
+        const data = item.record!.data as InventoryImportData;
+        return {
+          rowNumber: item.row.rowNumber,
+          key: `${mapKey(data.item.name)}|${mapKey(data.batch!.lotNumber)}`,
+        };
+      })
+  );
+
+  return prepared.map((item) => {
+    if (!item.record || item.record.type !== "inventory") {
+      return {
+        id: `row-${item.row.rowNumber}`,
+        rowNumber: item.row.rowNumber,
+        state: "attention" as const,
+        issues: item.issues,
+        warnings: item.warnings,
+        record: null,
+        choice: "skip" as const,
+      };
+    }
+
+    const inventory = item.record.data;
+    const nameKey = mapKey(inventory.item.name);
+    const catalogueKey = mapKey(inventory.item.catalogueCode);
+    const nameMatches = existingByName.get(nameKey) || [];
+    const catalogueMatches = catalogueKey ? existingByCatalogue.get(catalogueKey) || [] : [];
+    const matches = new Set([...nameMatches, ...catalogueMatches]);
+    const existingIds = [...matches];
+    const existingItemId = existingIds.length === 1 ? existingIds[0] : undefined;
+    if (existingItemId) inventory.existingItemId = existingItemId;
+
+    const reasons: string[] = [];
+    if (nameMatches.length > 0) reasons.push("Item name matches an existing stock item.");
+    if (catalogueMatches.length > 0 && catalogueKey) {
+      reasons.push("Catalogue / SKU matches an existing stock item.");
+    }
+    if (existingIds.length > 1) {
+      reasons.push("Name or catalogue code matches more than one stock item.");
+    }
+
+    const itemOnlyRows = sourceItemOnly.get(nameKey) || [];
+    if (!inventory.batch && itemOnlyRows.length > 1) {
+      reasons.push(
+        `Item-only rows with this name repeat in spreadsheet rows ${itemOnlyRows.join(", ")}.`
+      );
+    }
+    if (inventory.batch) {
+      const lotKey = `${nameKey}|${mapKey(inventory.batch.lotNumber)}`;
+      const repeatedLots = sourceLots.get(lotKey) || [];
+      if (repeatedLots.length > 1) {
+        reasons.push(`Item and lot repeat in spreadsheet rows ${repeatedLots.join(", ")}.`);
+      }
+      if (existingItemId) {
+        const existingLotIds =
+          existingLots.get(`${existingItemId}|${mapKey(inventory.batch.lotNumber)}`) || [];
+        if (existingLotIds.length > 0) {
+          reasons.push("This lot already exists for the matching stock item.");
+        }
+      }
+    }
+
+    const existingLotDuplicate = Boolean(
+      inventory.batch &&
+        existingItemId &&
+        (existingLots.get(`${existingItemId}|${mapKey(inventory.batch.lotNumber)}`) || []).length > 0
+    );
+    const sourceConflict =
+      (!inventory.batch && itemOnlyRows.length > 1) ||
+      Boolean(
+        inventory.batch &&
+          (sourceLots.get(`${nameKey}|${mapKey(inventory.batch.lotNumber)}`) || []).length > 1
+      );
+
+    if (inventory.batch && existingItemId && !existingLotDuplicate && !sourceConflict) {
+      return {
+        id: `row-${item.row.rowNumber}`,
+        rowNumber: item.row.rowNumber,
+        state: "ready" as const,
+        issues: [],
+        warnings: [
+          ...item.warnings,
+          `This lot will be added to existing item "${inventory.item.name}".`,
+        ],
+        record: item.record,
+        choice: "new" as const,
+      };
+    }
+
+    if (reasons.length === 0) {
+      return {
+        id: `row-${item.row.rowNumber}`,
+        rowNumber: item.row.rowNumber,
+        state: "ready" as const,
+        issues: [],
+        warnings: item.warnings,
+        record: item.record,
+        choice: "new" as const,
+      };
+    }
+
+    return {
+      id: `row-${item.row.rowNumber}`,
+      rowNumber: item.row.rowNumber,
+      state: "duplicate" as const,
+      issues: [],
+      warnings: [
+        ...item.warnings,
+        ...(existingLotDuplicate
+          ? ["Updating an existing lot changes lot details only; receipt quantity is not applied."]
+          : []),
+      ],
+      record: item.record,
+      duplicate: {
+        reasons: [...new Set(reasons)],
+        existingId: existingLotDuplicate
+          ? (existingLots.get(`${existingItemId}|${mapKey(inventory.batch!.lotNumber)}`) || [])[0]
+          : existingItemId,
+        canUpdate: existingIds.length === 1 && !sourceConflict,
+        canImportNew: false,
+      },
+      choice: "skip" as const,
+    };
+  });
+}
+
 export function validateImportRows(
   dataType: MigrationDataType,
   rows: SpreadsheetRow[],
@@ -1476,6 +2171,7 @@ export function validateImportRows(
 ): ValidatedImportRow[] {
   if (dataType === "patients") return validatePatients(rows, mapping, context);
   if (dataType === "testCatalog") return validateTestCatalog(rows, mapping, context);
+  if (dataType === "inventory") return validateInventory(rows, mapping, context);
   return validateHistoricalOrders(rows, mapping, context);
 }
 

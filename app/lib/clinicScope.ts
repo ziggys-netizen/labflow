@@ -14,6 +14,37 @@ export function isOwner(role: string | null | undefined) {
   return role === "owner";
 }
 
+/**
+ * Clinic new records must land in. Owner uses the session acting clinic;
+ * everyone else uses their membership clinic. Never pass this into
+ * `getClinicDocs` / `clinicCollectionQuery` — those take the membership
+ * clinic so owner list queries stay unfiltered.
+ */
+export function writeClinicId(
+  role: string | null | undefined,
+  membershipClinicId: string | null,
+  actingClinicId: string | null
+): string | null {
+  return isOwner(role) ? actingClinicId : membershipClinicId;
+}
+
+/** Stamped onto records the owner creates while acting in a clinic. */
+export function ownerActingCreateFields(role: string | null | undefined): {
+  createdByRole: "owner";
+  actingAsOwner: true;
+} | Record<string, never> {
+  if (!isOwner(role)) return {};
+  return { createdByRole: "owner", actingAsOwner: true };
+}
+
+/** Stamped onto result reviews the owner performs. */
+export function ownerActingReviewFields(role: string | null | undefined): {
+  actingAsOwner: true;
+} | Record<string, never> {
+  if (!isOwner(role)) return {};
+  return { actingAsOwner: true };
+}
+
 export function clinicCollectionQuery(
   collectionName: string,
   role: string | null,
@@ -21,9 +52,9 @@ export function clinicCollectionQuery(
   extra: QueryConstraint[] = []
 ) {
   const col = collection(db, collectionName);
-  // Owner with no acting clinic reads across tenants. Once they pick a clinic
-  // in session, queries are scoped the same way staff queries are.
-  if (isOwner(role) && !clinicId) {
+  // Owner reads stay unfiltered. Acting clinic is session-only and is used
+  // on write paths via writeClinicId — do not scope this branch to it.
+  if (isOwner(role)) {
     return extra.length ? query(col, ...extra) : query(col);
   }
   if (!clinicId) {
@@ -37,6 +68,9 @@ export function clinicCollectionQuery(
  * with orderBy keeps the query to equality filters only, which Firestore serves
  * from its automatic single-field indexes — a clinicId filter combined with an
  * orderBy would need a composite index deployed to the project first.
+ *
+ * Pass the membership clinic (`useAuth().clinicId`), never writeClinicId /
+ * actingClinicId. Owner list queries stay unfiltered.
  */
 export async function getClinicDocs(
   collectionName: string,

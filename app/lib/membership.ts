@@ -8,12 +8,19 @@
  * kept as a live mirror of the *active* membership, so code that has not been
  * migrated — including the owner console's "set clinic administrator" — keeps
  * reading and writing exactly what it did before.
+ *
+ * `shift` lives on the membership object (`users.clinicRoles.{clinicId}.shift`)
+ * and is `"morning" | "afternoon" | "night"` for `lab_supervisor`, otherwise
+ * null. Existing documents without the field read as null; they are not rewritten.
  */
+
+import { Shift, isShift } from "./permissions";
 
 export interface ClinicMembership {
   clinicId: string;
   role: string;
   status: string;
+  shift: Shift | null;
   approvedByUid: string | null;
   approvedByUsername: string | null;
   approvedByEmail: string | null;
@@ -24,6 +31,7 @@ export interface ClinicMembership {
 export interface ResolvedIdentity {
   role: string | null;
   clinicId: string | null;
+  shift: Shift | null;
   status: string | null;
   username: string | null;
   name: string | null;
@@ -34,6 +42,7 @@ export interface ResolvedIdentity {
 export const EMPTY_IDENTITY: ResolvedIdentity = {
   role: null,
   clinicId: null,
+  shift: null,
   status: null,
   username: null,
   name: null,
@@ -45,6 +54,11 @@ function str(value: unknown): string | null {
   return typeof value === "string" && value.trim() ? value : null;
 }
 
+function parseShift(value: unknown): Shift | null {
+  const raw = str(value);
+  return raw && isShift(raw) ? raw : null;
+}
+
 function toMembership(clinicId: string, value: unknown): ClinicMembership | null {
   if (!value || typeof value !== "object") return null;
   const record = value as Record<string, unknown>;
@@ -54,6 +68,7 @@ function toMembership(clinicId: string, value: unknown): ClinicMembership | null
     clinicId,
     role,
     status: str(record.status) ?? "pending",
+    shift: parseShift(record.shift),
     approvedByUid: str(record.approvedByUid),
     approvedByUsername: str(record.approvedByUsername),
     approvedByEmail: str(record.approvedByEmail),
@@ -84,6 +99,7 @@ export function resolveIdentity(data: Record<string, unknown> | undefined): Reso
     return {
       role: "owner",
       clinicId: null,
+      shift: null,
       status: legacyStatus ?? "approved",
       username,
       name,
@@ -109,6 +125,7 @@ export function resolveIdentity(data: Record<string, unknown> | undefined): Reso
         clinicId: legacyClinicId,
         role: legacyRole,
         status: legacyStatus ?? "approved",
+        shift: parseShift(data.shift),
         approvedByUid: str(data.approvedByUid),
         approvedByUsername: str(data.approvedByUsername),
         approvedByEmail: str(data.approvedBy),
@@ -136,6 +153,7 @@ export function resolveIdentity(data: Record<string, unknown> | undefined): Reso
   return {
     role: active?.role ?? legacyRole,
     clinicId: active?.clinicId ?? null,
+    shift: active?.shift ?? parseShift(data.shift),
     status: active?.status ?? legacyStatus ?? "pending",
     username,
     name,

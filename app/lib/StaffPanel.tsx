@@ -8,10 +8,15 @@ import { isOwner } from "./clinicScope";
 import { ClinicMembership } from "./membership";
 import {
   ASSIGNABLE_ROLES,
+  SHIFTS,
   canManageStaff,
   isAssignableRole,
+  isShift,
   landingPathForRole,
+  roleDisplay,
   roleLabel,
+  roleRequiresShift,
+  shiftLabel,
 } from "./permissions";
 import {
   UsernameTakenError,
@@ -23,6 +28,7 @@ import {
 import {
   PendingEntry,
   StaffRow,
+  groupStaffByRole,
   loadStaffRows,
   makeApproverStamp,
   membershipsInScope,
@@ -66,6 +72,44 @@ function RoleSelect({ value, onChange }: { value: string; onChange: (next: strin
         </option>
       ))}
     </select>
+  );
+}
+
+function ShiftSelect({ value, onChange }: { value: string; onChange: (next: string) => void }) {
+  return (
+    <select
+      value={value}
+      onChange={(e) => onChange(e.target.value)}
+      aria-label="Shift"
+      required
+      className="border border-gray-300 rounded px-2 py-1 text-sm"
+    >
+      <option value="">Select shift...</option>
+      {SHIFTS.map((s) => (
+        <option key={s} value={s}>
+          {shiftLabel(s)}
+        </option>
+      ))}
+    </select>
+  );
+}
+
+function RoleAndShift({
+  roleValue,
+  onRoleChange,
+  shiftValue,
+  onShiftChange,
+}: {
+  roleValue: string;
+  onRoleChange: (next: string) => void;
+  shiftValue: string;
+  onShiftChange: (next: string) => void;
+}) {
+  return (
+    <>
+      <RoleSelect value={roleValue} onChange={onRoleChange} />
+      {roleRequiresShift(roleValue) && <ShiftSelect value={shiftValue} onChange={onShiftChange} />}
+    </>
   );
 }
 
@@ -135,12 +179,10 @@ export default function StaffPanel({
   scopeClinicId,
   pendingOnly = false,
   embedded = false,
-  joinCode,
 }: {
   scopeClinicId?: string | null;
   pendingOnly?: boolean;
   embedded?: boolean;
-  joinCode?: string;
 }) {
   const { user, role, clinicId, username: myUsername } = useAuth();
   const canAccess = canManageStaff(role);
@@ -153,10 +195,10 @@ export default function StaffPanel({
   const [reloadToken, setReloadToken] = useState(0);
 
   const [roleDraft, setRoleDraft] = useState<Record<string, string>>({});
+  const [shiftDraft, setShiftDraft] = useState<Record<string, string>>({});
   const [clinicDraft, setClinicDraft] = useState<Record<string, string>>({});
   const [usernameDraft, setUsernameDraft] = useState<Record<string, string>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (!canAccess) return;
@@ -168,21 +210,25 @@ export default function StaffPanel({
         if (cancelled) return;
         setRows(result.rows);
         setClinicNames(result.clinicNames);
-        setRoleDraft(
-          Object.fromEntries(
-            result.rows.map((r) => [
-              r.uid,
-              isAssignableRole(r.memberships[0]?.role) ? r.memberships[0].role : "technician",
-            ])
-          )
-        );
+        const nextRoleDraft: Record<string, string> = {};
+        const nextShiftDraft: Record<string, string> = {};
+        for (const r of result.rows) {
+          const first = r.memberships[0];
+          nextRoleDraft[r.uid] = isAssignableRole(first?.role) ? first.role : "technician";
+          nextShiftDraft[r.uid] = first?.shift ?? "";
+          for (const membership of r.memberships) {
+            const key = `${r.uid}:${membership.clinicId}`;
+            nextRoleDraft[key] = isAssignableRole(membership.role) ? membership.role : "technician";
+            nextShiftDraft[key] = membership.shift ?? "";
+          }
+        }
+        setRoleDraft(nextRoleDraft);
+        setShiftDraft(nextShiftDraft);
         setClinicDraft(
           Object.fromEntries(
             result.rows.map((r) => [
               r.uid,
-              scopeClinicId ||
-                r.memberships[0]?.clinicId ||
-                (owner ? "" : clinicId || ""),
+              scopeClinicId || r.memberships[0]?.clinicId || (owner ? "" : clinicId || ""),
             ])
           )
         );
@@ -229,22 +275,16 @@ export default function StaffPanel({
     [rows, owner, scopedMemberships, scopeClinicId]
   );
 
-  const groups = useMemo(() => {
-    const byClinic = new Map<string, { row: StaffRow; membership: ClinicMembership }[]>();
+  const roleGroups = useMemo(() => {
+    const members: { row: StaffRow; membership: ClinicMembership }[] = [];
     for (const row of rows) {
       for (const membership of scopedMemberships.get(row.uid) ?? []) {
         if (membership.status === "pending") continue;
-        const bucket = byClinic.get(membership.clinicId) ?? [];
-        bucket.push({ row, membership });
-        byClinic.set(membership.clinicId, bucket);
+        members.push({ row, membership });
       }
     }
-    return [...byClinic.entries()]
-      .map(([id, members]) => ({ clinicId: id, name: clinicNames[id] || id, members }))
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [rows, clinicNames, scopedMemberships]);
-
-  const ownerRows = useMemo(() => rows.filter((r) => r.isOwnerAccount), [rows]);
+    return groupStaffByRole(members);
+  }, [rows, scopedMemberships]);
 
   function guard(row: StaffRow, targetClinicId: string): string | null {
     return staffAssignmentGuard(row, targetClinicId, { owner, actorClinicId: clinicId });
@@ -262,19 +302,25 @@ export default function StaffPanel({
       setStatusMsg("Choose a role before approving.");
       return;
     }
+    const nextShift = shiftDraft[row.uid];
+    if (decision === "approved" && roleRequiresShift(nextRole) && !isShift(nextShift)) {
+      setStatusMsg("Choose a shift before approving a Shift Supervisor.");
+      return;
+    }
     setStatusMsg("Saving...");
     try {
       await writeStaffMembership({
         row,
         targetClinicId,
         nextRole,
+        shift: roleRequiresShift(nextRole) && isShift(nextShift) ? nextShift : null,
         status: decision,
         makeActive: true,
         stamp: makeApproverStamp(user, myUsername),
       });
       setStatusMsg(
         decision === "approved"
-          ? `Approved as ${roleLabel(nextRole)} at ${clinicNames[targetClinicId] || targetClinicId}.`
+          ? `Approved as ${roleDisplay(nextRole, nextShift)} at ${clinicNames[targetClinicId] || targetClinicId}.`
           : "Request rejected."
       );
       setReloadToken((n) => n + 1);
@@ -295,12 +341,18 @@ export default function StaffPanel({
       setStatusMsg("That role cannot be assigned.");
       return;
     }
+    const nextShift = shiftDraft[`${row.uid}:${membership.clinicId}`];
+    if (roleRequiresShift(nextRole) && !isShift(nextShift)) {
+      setStatusMsg("Choose a shift before saving a Shift Supervisor.");
+      return;
+    }
     setStatusMsg("Saving role...");
     try {
       await writeStaffMembership({
         row,
         targetClinicId: membership.clinicId,
         nextRole,
+        shift: roleRequiresShift(nextRole) && isShift(nextShift) ? nextShift : null,
         status: "approved",
         makeActive: row.activeClinicId === membership.clinicId,
         stamp: makeApproverStamp(user, myUsername),
@@ -313,54 +365,22 @@ export default function StaffPanel({
     }
   }
 
-  async function handleAddAssignment(row: StaffRow) {
-    const targetClinicId = clinicDraft[`add:${row.uid}`] || "";
-    const problem = guard(row, targetClinicId);
-    if (problem) {
-      setStatusMsg(problem);
-      return;
-    }
-    if (row.memberships.some((m) => m.clinicId === targetClinicId)) {
-      setStatusMsg("That staff member is already assigned to this clinic.");
-      return;
-    }
-    const nextRole = roleDraft[`add:${row.uid}`];
-    if (!isAssignableRole(nextRole)) {
-      setStatusMsg("Choose a role for the new clinic assignment.");
-      return;
-    }
-    setStatusMsg("Saving assignment...");
-    try {
-      await writeStaffMembership({
-        row,
-        targetClinicId,
-        nextRole,
-        status: "approved",
-        makeActive: row.memberships.length === 0,
-        stamp: makeApproverStamp(user, myUsername),
-      });
-      setStatusMsg(`Assigned to ${clinicNames[targetClinicId] || targetClinicId}.`);
-      setReloadToken((n) => n + 1);
-    } catch (err) {
-      console.error(err);
-      setStatusMsg("Failed to add the clinic assignment.");
-    }
-  }
-
   async function handleRemoveAssignment(row: StaffRow, membership: ClinicMembership) {
     const problem = guard(row, membership.clinicId);
     if (problem) {
       setStatusMsg(problem);
       return;
     }
-    setStatusMsg("Removing assignment...");
+    const label = row.username || row.name || row.email || "this staff member";
+    if (!window.confirm(`Revoke ${label} from this clinic?`)) return;
+    setStatusMsg("Revoking...");
     try {
       await removeStaffAssignment({ row, membership });
-      setStatusMsg("Assignment removed.");
+      setStatusMsg("Access revoked.");
       setReloadToken((n) => n + 1);
     } catch (err) {
       console.error(err);
-      setStatusMsg("Failed to remove the assignment.");
+      setStatusMsg("Failed to revoke access.");
     }
   }
 
@@ -406,8 +426,10 @@ export default function StaffPanel({
 
   function roleProps(id: string, fallback: string) {
     return {
-      value: roleDraft[id] ?? fallback,
-      onChange: (next: string) => setRoleDraft((prev) => ({ ...prev, [id]: next })),
+      roleValue: roleDraft[id] ?? fallback,
+      onRoleChange: (next: string) => setRoleDraft((prev) => ({ ...prev, [id]: next })),
+      shiftValue: shiftDraft[id] ?? "",
+      onShiftChange: (next: string) => setShiftDraft((prev) => ({ ...prev, [id]: next })),
     };
   }
 
@@ -420,202 +442,151 @@ export default function StaffPanel({
     };
   }
 
-  const body = (
-    <>
-      {statusMsg && <p className="text-sm text-gray-600 mb-4">{statusMsg}</p>}
-      {loading && <p className="text-gray-600">Loading...</p>}
-
-      {!loading && (
-        <>
-          <section className={pendingOnly ? "" : "mb-10"}>
-            <h2 className="text-sm font-medium text-gray-900 mb-3">
-              Pending approval ({pending.length})
-            </h2>
-            {pending.length === 0 && (
-              <p className="text-sm text-gray-600">Nothing waiting for approval.</p>
-            )}
-            <div className="space-y-3">
-              {pending.map(({ row, membership }) => {
-                const requested = membership?.clinicId ?? scopeClinicId ?? "";
-                return (
-                  <div
-                    key={`${row.uid}:${requested || "unassigned"}`}
-                    className="border border-gray-300 rounded-lg p-4"
-                  >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div>
-                        <Identity row={row} />
-                        <p className="text-sm text-gray-500 mt-1">
-                          {requested
-                            ? `Requested ${clinicNames[requested] || requested}`
-                            : "No clinic requested"}
-                        </p>
-                        {requested && (
-                          <p className="text-xs text-gray-400">Clinic ID: {requested}</p>
-                        )}
-                        {row.createdAt && (
-                          <p className="text-xs text-gray-400">
-                            Signed up {new Date(row.createdAt).toLocaleDateString()}
-                          </p>
-                        )}
-                      </div>
-                      <StatusBadge status="pending" />
-                    </div>
-                    <div className="flex flex-wrap items-center gap-2 mt-3">
-                      <ClinicSelect {...clinicProps(row.uid, requested)} />
-                      <RoleSelect {...roleProps(row.uid, "technician")} />
-                      <button
-                        onClick={() => handleDecision(row, "approved")}
-                        className="text-sm bg-gray-900 text-white rounded px-3 py-1.5"
-                      >
-                        Approve
-                      </button>
-                      <button
-                        onClick={() => handleDecision(row, "rejected")}
-                        className="text-sm text-red-600 underline"
-                      >
-                        Reject
-                      </button>
-                    </div>
-                    <p className="text-xs text-gray-400 mt-2">
-                      A clinic must be selected before a role can be approved. The owner role cannot
-                      be assigned.
-                    </p>
-                  </div>
-                );
-              })}
-            </div>
-          </section>
-
-          {!pendingOnly && groups.length === 0 && (
-            <p className="text-gray-600">No approved staff records yet.</p>
-          )}
-
-          {!pendingOnly &&
-            groups.map((group) => {
-              const collapsed =
-                collapsedGroups[group.clinicId] ?? (owner && !scopeClinicId && groups.length > 1);
-              return (
-                <section key={group.clinicId} className="mb-6">
-                  <button
-                    onClick={() =>
-                      setCollapsedGroups((prev) => ({ ...prev, [group.clinicId]: !collapsed }))
-                    }
-                    className="w-full flex items-center justify-between text-left border-b border-gray-200 pb-2 mb-3"
-                  >
-                    <span className="font-medium text-gray-900">
-                      {collapsed ? "▸" : "▾"} {group.name}
-                    </span>
-                    <span className="text-sm text-gray-500">
-                      {group.members.length} staff · ID {group.clinicId}
-                    </span>
-                  </button>
-
-                  {!collapsed && (
-                    <div className="space-y-3">
-                      {group.members.map(({ row, membership }) => {
-                        const key = `${row.uid}:${membership.clinicId}`;
-                        const isActiveClinic = row.activeClinicId === membership.clinicId;
-                        return (
-                          <div key={key} className="border border-gray-200 rounded-lg p-4">
-                            <div className="flex flex-wrap items-start justify-between gap-3">
-                              <div>
-                                <Identity row={row} />
-                                <p className="text-sm text-gray-500 mt-1">
-                                  {roleLabel(membership.role)} · {group.name}
-                                </p>
-                                <p className="text-xs text-gray-400">
-                                  Clinic ID: {membership.clinicId}
-                                  {row.memberships.length > 1 &&
-                                    (isActiveClinic ? " · active clinic" : "")}
-                                </p>
-                                {membership.approvedAt && (
-                                  <p className="text-xs text-gray-400">
-                                    Approved by{" "}
-                                    {actorLabel(
-                                      membership.approvedByUsername ||
-                                        membership.approvedByUid ||
-                                        membership.approvedByEmail,
-                                      directory
-                                    )}{" "}
-                                    on {new Date(membership.approvedAt).toLocaleDateString()}
-                                  </p>
-                                )}
-                              </div>
-                              <StatusBadge status={membership.status} />
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-2 mt-3">
-                              <RoleSelect {...roleProps(key, membership.role)} />
-                              <button
-                                onClick={() => handleRoleChange(row, membership)}
-                                className="text-sm text-gray-900 underline"
-                              >
-                                Save role
-                              </button>
-                              <button
-                                onClick={() =>
-                                  setExpanded((prev) => ({ ...prev, [key]: !prev[key] }))
-                                }
-                                className="text-sm text-gray-600 underline"
-                              >
-                                {expanded[key] ? "Close" : "More"}
-                              </button>
-                            </div>
-
-                            {expanded[key] && (
-                              <>
-                                <UsernamePanel {...usernameProps(row)} />
-                                {owner && !scopeClinicId && (
-                                  <div className="flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3 mt-3">
-                                    <span className="text-sm text-gray-600">Add another clinic</span>
-                                    <ClinicSelect {...clinicProps(`add:${row.uid}`, "")} />
-                                    <RoleSelect {...roleProps(`add:${row.uid}`, "technician")} />
-                                    <button
-                                      onClick={() => handleAddAssignment(row)}
-                                      className="text-sm text-gray-900 underline"
-                                    >
-                                      Assign
-                                    </button>
-                                  </div>
-                                )}
-                                <div className="border-t border-gray-100 pt-3 mt-3">
-                                  <button
-                                    onClick={() => handleRemoveAssignment(row, membership)}
-                                    className="text-sm text-red-600 underline"
-                                  >
-                                    Remove from {group.name}
-                                  </button>
-                                </div>
-                              </>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                </section>
-              );
-            })}
-
-          {!pendingOnly && !scopeClinicId && ownerRows.length > 0 && (
-            <section className="mt-10">
-              <h2 className="text-sm font-medium text-gray-900 mb-3">Platform owner</h2>
-              <div className="space-y-3">
-                {ownerRows.map((row) => (
-                  <div key={row.uid} className="border border-gray-200 rounded-lg p-4">
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <Identity row={row} />
-                      <p className="text-sm text-gray-500">Owner account — cannot be changed.</p>
-                    </div>
-                    {row.uid === user?.uid && <UsernamePanel {...usernameProps(row)} />}
-                  </div>
-                ))}
+  const pendingList = (
+    <div className="space-y-3">
+      {pending.map(({ row, membership }) => {
+        const requested = membership?.clinicId ?? scopeClinicId ?? "";
+        return (
+          <div
+            key={`${row.uid}:${requested || "unassigned"}`}
+            className="border border-gray-300 rounded-lg p-4"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <div>
+                <Identity row={row} />
+                <p className="text-sm text-gray-500 mt-1">
+                  {requested
+                    ? `Requested ${clinicNames[requested] || requested}`
+                    : "No clinic requested"}
+                </p>
+                {row.createdAt && (
+                  <p className="text-xs text-gray-400">
+                    Signed up {new Date(row.createdAt).toLocaleDateString()}
+                  </p>
+                )}
               </div>
-            </section>
-          )}
-        </>
+              <StatusBadge status="pending" />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 mt-3">
+              <ClinicSelect {...clinicProps(row.uid, requested)} />
+              <RoleAndShift {...roleProps(row.uid, "technician")} />
+              <button
+                onClick={() => handleDecision(row, "approved")}
+                disabled={
+                  roleRequiresShift(roleDraft[row.uid] ?? "technician") &&
+                  !isShift(shiftDraft[row.uid])
+                }
+                className="text-sm bg-gray-900 text-white rounded px-3 py-1.5 disabled:opacity-50"
+              >
+                Approve
+              </button>
+              <button
+                onClick={() => handleDecision(row, "rejected")}
+                className="text-sm text-red-600 underline"
+              >
+                Reject
+              </button>
+            </div>
+            <p className="text-xs text-gray-400 mt-2">
+              Approve with a role. Shift Supervisor requires a shift. The owner role cannot be
+              assigned.
+            </p>
+          </div>
+        );
+      })}
+    </div>
+  );
+
+  const approvedList = (
+    <>
+      {roleGroups.length === 0 && (
+        <p className="text-gray-600">No approved staff records yet.</p>
       )}
+      {roleGroups.map((group) => (
+        <section key={group.role} className="mb-8">
+          <h2 className="font-medium text-gray-900 border-b border-gray-200 pb-2 mb-3">
+            {group.label}
+            <span className="ml-2 text-sm font-normal text-gray-500">{group.members.length}</span>
+          </h2>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm text-left">
+              <thead>
+                <tr className="text-xs uppercase tracking-wide text-gray-500">
+                  <th className="py-2 pr-3 font-medium">Name</th>
+                  <th className="py-2 pr-3 font-medium">Username</th>
+                  <th className="py-2 pr-3 font-medium">Email</th>
+                  <th className="py-2 pr-3 font-medium">Role</th>
+                  <th className="py-2 pr-3 font-medium">Shift</th>
+                  <th className="py-2 pr-3 font-medium">Approved by</th>
+                  <th className="py-2 pr-3 font-medium">Approved at</th>
+                  <th className="py-2 font-medium">Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {group.members.map(({ row, membership }) => {
+                  const key = `${row.uid}:${membership.clinicId}`;
+                  return (
+                    <tr key={key} className="border-t border-gray-100 align-top">
+                      <td className="py-3 pr-3 text-gray-900">{row.name || "—"}</td>
+                      <td className="py-3 pr-3 font-mono text-gray-900">{row.username || "—"}</td>
+                      <td className="py-3 pr-3 text-gray-600">{row.email || "—"}</td>
+                      <td className="py-3 pr-3 text-gray-900">{roleLabel(membership.role)}</td>
+                      <td className="py-3 pr-3 text-gray-900">
+                        {roleRequiresShift(membership.role)
+                          ? shiftLabel(membership.shift) || "—"
+                          : "—"}
+                      </td>
+                      <td className="py-3 pr-3 text-gray-600">
+                        {actorLabel(
+                          membership.approvedByUsername ||
+                            membership.approvedByUid ||
+                            membership.approvedByEmail,
+                          directory
+                        )}
+                      </td>
+                      <td className="py-3 pr-3 text-gray-600 whitespace-nowrap">
+                        {membership.approvedAt
+                          ? new Date(membership.approvedAt).toLocaleDateString()
+                          : "—"}
+                      </td>
+                      <td className="py-3">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <RoleAndShift {...roleProps(key, membership.role)} />
+                          <button
+                            onClick={() => handleRoleChange(row, membership)}
+                            disabled={
+                              roleRequiresShift(roleDraft[key] ?? membership.role) &&
+                              !isShift(shiftDraft[key] ?? membership.shift)
+                            }
+                            className="text-sm text-gray-900 underline disabled:opacity-50"
+                          >
+                            Save
+                          </button>
+                          <button
+                            onClick={() => handleRemoveAssignment(row, membership)}
+                            className="text-sm text-red-600 underline"
+                          >
+                            Revoke
+                          </button>
+                          <button
+                            onClick={() =>
+                              setExpanded((prev) => ({ ...prev, [key]: !prev[key] }))
+                            }
+                            className="text-sm text-gray-600 underline"
+                          >
+                            {expanded[key] ? "Close" : "More"}
+                          </button>
+                        </div>
+                        {expanded[key] && <UsernamePanel {...usernameProps(row)} />}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        </section>
+      ))}
     </>
   );
 
@@ -626,7 +597,7 @@ export default function StaffPanel({
         <AppNav />
         <div className="max-w-sm mx-auto px-6 py-16 text-center">
           <p className="text-gray-600 mb-4">You do not have access to this page.</p>
-          <Link href={landingPathForRole(role)} className="text-gray-900 underline font-medium">
+          <Link href={landingPathForRole(role, clinicId)} className="text-gray-900 underline font-medium">
             Go to your workspace
           </Link>
         </div>
@@ -634,16 +605,49 @@ export default function StaffPanel({
     );
   }
 
-  if (embedded) {
-    return <div>{body}</div>;
+  if (embedded && pendingOnly) {
+    if (!loading && pending.length === 0) return null;
+    return (
+      <section className="border border-gray-200 rounded-lg p-4 mb-6">
+        <h2 className="font-medium text-gray-900 mb-3">
+          Pending approvals{loading ? "" : ` (${pending.length})`}
+        </h2>
+        {statusMsg && <p className="text-sm text-gray-600 mb-4">{statusMsg}</p>}
+        {loading ? <p className="text-sm text-gray-500">Loading...</p> : pendingList}
+      </section>
+    );
   }
+
+  const body = (
+    <>
+      {statusMsg && <p className="text-sm text-gray-600 mb-4">{statusMsg}</p>}
+      {loading && <p className="text-gray-600">Loading...</p>}
+      {!loading && (
+        <>
+          <section className="mb-10">
+            <h2 className="text-sm font-medium text-gray-900 mb-3">
+              Pending approvals ({pending.length})
+            </h2>
+            {pending.length === 0 ? (
+              <p className="text-sm text-gray-600">Nothing waiting for approval.</p>
+            ) : (
+              pendingList
+            )}
+          </section>
+          {approvedList}
+        </>
+      )}
+    </>
+  );
+
+  if (embedded) return <div>{body}</div>;
 
   const scopedName = scopeClinicId ? clinicNames[scopeClinicId] || scopeClinicId : null;
 
   return (
     <main className="min-h-screen bg-white">
       <AppNav />
-      <div className="max-w-4xl mx-auto px-6 py-16">
+      <div className="max-w-5xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">
           {scopedName ? `Staff — ${scopedName}` : "Manage Staff"}
         </h1>
@@ -651,19 +655,18 @@ export default function StaffPanel({
           A role is held at a clinic, not across the platform. Approving a staff member sets their
           role for one clinic only. The owner role cannot be assigned here.
         </p>
-        {joinCode && (
-          <p className="text-sm text-gray-700 mb-4">
-            Clinic join code: <span className="font-mono font-medium">{joinCode}</span>
-          </p>
-        )}
-        {scopeClinicId && owner && (
+        {scopeClinicId && (
           <p className="text-sm text-gray-500 mb-4">
-            <Link href="/owner" className="underline text-gray-900">
-              Owner console
-            </Link>
-            {" · "}
+            {owner && (
+              <>
+                <Link href="/owner" className="underline text-gray-900">
+                  Owner console
+                </Link>
+                {" · "}
+              </>
+            )}
             <Link href={`/owner/clinics/${scopeClinicId}`} className="underline text-gray-900">
-              Clinic
+              Clinic profile
             </Link>
           </p>
         )}

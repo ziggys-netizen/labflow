@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { db } from "../../../lib/firebase";
 import { doc, getDoc, collection, addDoc, where, getDocs } from "firebase/firestore";
@@ -8,8 +9,10 @@ import { TEST_CATALOG, LabTest } from "../../../lib/testCatalog";
 import ProtectedRoute from "../../../lib/ProtectedRoute";
 import AppNav from "../../../lib/AppNav";
 import { useAuth } from "../../../lib/AuthContext";
-import { clinicCollectionQuery, isOwner } from "../../../lib/clinicScope";
+import { clinicCollectionQuery, isOwner, ownerActingCreateFields } from "../../../lib/clinicScope";
 import ActingClinicPrompt from "../../../lib/ActingClinicPrompt";
+import { canOrderTests } from "../../../lib/permissions";
+import { isOrderForDeletedPatient, isPatientDeleted } from "../../../lib/patientSoftDelete";
 
 interface ExistingOrder {
   id: string;
@@ -21,12 +24,14 @@ interface ExistingOrder {
 function NewOrderContent() {
   const params = useParams();
   const router = useRouter();
-  const { role, clinicId } = useAuth();
+  const { role, clinicId, writeClinicId } = useAuth();
   const patientId = params.patientId as string;
+  const allowed = canOrderTests(role);
 
   const [patientName, setPatientName] = useState("");
   const [patientLabId, setPatientLabId] = useState("");
   const [loadingPatient, setLoadingPatient] = useState(true);
+  const [patientUnavailable, setPatientUnavailable] = useState(false);
 
   const [pendingOrders, setPendingOrders] = useState<ExistingOrder[]>([]);
   const [loadingPending, setLoadingPending] = useState(true);
@@ -43,16 +48,24 @@ function NewOrderContent() {
         const snap = await getDoc(doc(db, "patients", patientId));
         if (snap.exists()) {
           const data = snap.data();
-          if (!isOwner(role) && clinicId && data.clinicId && data.clinicId !== clinicId) {
+          if (
+            isPatientDeleted(data) ||
+            (!isOwner(role) && clinicId && data.clinicId && data.clinicId !== clinicId)
+          ) {
+            setPatientUnavailable(true);
             setPatientName("");
             setPatientLabId("");
           } else {
+            setPatientUnavailable(false);
             setPatientName(data.name);
             setPatientLabId(data.labId);
           }
+        } else {
+          setPatientUnavailable(true);
         }
       } catch (err) {
         console.error(err);
+        setPatientUnavailable(true);
       } finally {
         setLoadingPatient(false);
       }
@@ -66,15 +79,17 @@ function NewOrderContent() {
         const constraints = [where("patientId", "==", patientId), where("status", "==", "pending")];
         const snapshot = await getDocs(clinicCollectionQuery("orders", role, clinicId, constraints));
         setPendingOrders(
-          snapshot.docs.map((d) => {
-            const data = d.data();
-            return {
-              id: d.id,
-              tests: data.tests || [],
-              status: data.status,
-              createdAt: data.createdAt,
-            };
-          })
+          snapshot.docs
+            .filter((d) => !isOrderForDeletedPatient(d.data()))
+            .map((d) => {
+              const data = d.data();
+              return {
+                id: d.id,
+                tests: data.tests || [],
+                status: data.status,
+                createdAt: data.createdAt,
+              };
+            })
         );
       } catch (err) {
         console.error(err);
@@ -117,14 +132,19 @@ function NewOrderContent() {
   }
 
   async function handleCreateOrder() {
+    if (!allowed) return;
+    if (patientUnavailable || !patientName) {
+      setStatus("This patient is not available for new orders.");
+      return;
+    }
     if (selectedTests.length === 0) {
       setStatus("Select at least one test.");
       return;
     }
-    if (!clinicId) {
+    if (!writeClinicId) {
       setStatus(
         isOwner(role)
-          ? "Select a clinic in the header to create orders."
+          ? "Select a clinic from the menu above to create records."
           : "Your account is not linked to a clinic yet."
       );
       return;
@@ -138,7 +158,8 @@ function NewOrderContent() {
         tests: selectedTests.map((t) => ({ code: t.code, name: t.name })),
         status: "pending",
         createdAt: new Date().toISOString(),
-        clinicId,
+        clinicId: writeClinicId,
+        ...ownerActingCreateFields(role),
       });
       setStatus("Order created successfully.");
       router.push(`/orders/${docRef.id}`);
@@ -146,6 +167,15 @@ function NewOrderContent() {
       console.error(err);
       setStatus("Something went wrong. Please try again.");
     }
+  }
+
+  if (!allowed) {
+    return (
+      <main className="min-h-screen bg-white">
+        <AppNav />
+        <div className="px-6 py-16 text-center text-gray-600">Redirecting...</div>
+      </main>
+    );
   }
 
   if (loadingPatient) {
@@ -157,12 +187,26 @@ function NewOrderContent() {
     );
   }
 
+  if (patientUnavailable) {
+    return (
+      <main className="min-h-screen bg-white">
+        <AppNav />
+        <div className="px-6 py-16 text-center">
+          <p className="text-gray-600">This patient is not available for new orders.</p>
+          <Link href="/patients" className="mt-3 inline-block text-sm text-gray-900 underline">
+            Back to patients
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-white">
       <AppNav />
       <div className="max-w-lg mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Order tests</h1>
-        {isOwner(role) && !clinicId && <ActingClinicPrompt action="create orders" />}
+        {isOwner(role) && !writeClinicId && <ActingClinicPrompt />}
         <p className="text-gray-600 mb-6">
           {patientName} — Lab ID: {patientLabId}
         </p>
@@ -176,7 +220,7 @@ function NewOrderContent() {
             </h2>
             <div className="space-y-2">
               {pendingOrders.map((o) => (
-                <a
+                <Link
                   key={o.id}
                   href={`/orders/${o.id}`}
                   className="block border border-gray-200 rounded-lg px-3 py-2 hover:bg-gray-50"
@@ -185,7 +229,7 @@ function NewOrderContent() {
                   <p className="text-xs text-gray-500">
                     Created {new Date(o.createdAt).toLocaleDateString()} — status: {o.status}
                   </p>
-                </a>
+                </Link>
               ))}
             </div>
           </div>
@@ -261,7 +305,7 @@ function NewOrderContent() {
 
 export default function NewOrder() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canOrderTests}>
       <NewOrderContent />
     </ProtectedRoute>
   );

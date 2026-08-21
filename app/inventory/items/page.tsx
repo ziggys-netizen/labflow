@@ -1,15 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
 import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
 import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
-import { getClinicDocs, isOwner, loadClinicNames } from "../../lib/clinicScope";
+import { getClinicDocs, isOwner, loadClinicNames, ownerActingCreateFields } from "../../lib/clinicScope";
+import ActingClinicPrompt from "../../lib/ActingClinicPrompt";
 import { makeActorStamp } from "../../lib/identity";
-import { canManageInventoryItems, canViewInventory, landingPathForRole } from "../../lib/permissions";
+import { canManageInventoryItems, canViewInventory } from "../../lib/permissions";
 import {
   BASE_UNITS,
   INVENTORY_CATEGORIES,
@@ -75,8 +75,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 const inputClass = "w-full border border-gray-300 rounded-lg px-3 py-2 text-sm";
 
 function ItemsContent() {
-  const { user, role, clinicId, username, loading: authLoading } = useAuth();
-  const router = useRouter();
+  const { user, role, clinicId, writeClinicId, username } = useAuth();
   const owner = isOwner(role);
   const allowed = canViewInventory(role);
   const canEdit = canManageInventoryItems(role);
@@ -92,10 +91,6 @@ function ItemsContent() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(BLANK);
   const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    if (!authLoading && !allowed) router.replace(landingPathForRole(role));
-  }, [authLoading, allowed, router]);
 
   useEffect(() => {
     if (!allowed) return;
@@ -136,26 +131,20 @@ function ItemsContent() {
     };
   }, [allowed, role, clinicId, reloadToken]);
 
-  const clinicOptions = useMemo(
-    () =>
-      Object.entries(clinicNames)
-        .map(([id, name]) => ({ id, name }))
-        .sort((a, b) => a.name.localeCompare(b.name)),
-    [clinicNames]
-  );
-
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
   }
 
   function startCreate() {
+    if (!canEdit) return;
     setEditingId(null);
-    setForm({ ...BLANK, clinicId: clinicId || "" });
+    setForm({ ...BLANK, clinicId: writeClinicId || "" });
     setShowForm(true);
     setStatus("");
   }
 
   function startEdit(item: InventoryItem) {
+    if (!canEdit) return;
     setEditingId(item.id);
     setForm({
       name: item.name,
@@ -180,10 +169,10 @@ function ItemsContent() {
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!user) return;
+    if (!user || !canEdit) return;
     setStatus("");
 
-    const targetClinicId = owner ? form.clinicId : clinicId;
+    const targetClinicId = editingId && owner ? form.clinicId : writeClinicId;
     if (!form.name.trim()) {
       setStatus("Item name is required.");
       return;
@@ -191,7 +180,7 @@ function ItemsContent() {
     if (!targetClinicId) {
       setStatus(
         owner
-          ? "Select a clinic in the header, or choose one below."
+          ? "Select a clinic from the menu above to create records."
           : "Your account is not linked to a clinic yet."
       );
       return;
@@ -237,6 +226,7 @@ function ItemsContent() {
           ...payload,
           createdAt: new Date().toISOString(),
           createdBy: makeActorStamp(user, username),
+          ...ownerActingCreateFields(role),
         });
         setStatus("Item added.");
       }
@@ -253,6 +243,7 @@ function ItemsContent() {
   }
 
   async function toggleActive(item: InventoryItem) {
+    if (!canEdit) return;
     setStatus("");
     try {
       await updateDoc(doc(db, "inventoryItems", item.id), {
@@ -285,6 +276,7 @@ function ItemsContent() {
         </p>
 
         {status && <p className="text-sm text-gray-600 mb-4">{status}</p>}
+        {owner && !writeClinicId && canEdit && <ActingClinicPrompt />}
 
         {canEdit && !showForm && (
           <button
@@ -447,22 +439,6 @@ function ItemsContent() {
                   className={inputClass}
                 />
               </Field>
-              {owner && (
-                <Field label="Clinic" hint="Owner accounts must choose which clinic owns this item.">
-                  <select
-                    value={form.clinicId}
-                    onChange={(e) => set("clinicId", e.target.value)}
-                    className={inputClass}
-                  >
-                    <option value="">Select clinic...</option>
-                    {clinicOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                </Field>
-              )}
             </div>
 
             <div className="flex items-center gap-3">
@@ -547,7 +523,7 @@ function ItemsContent() {
 
 export default function InventoryItems() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canViewInventory}>
       <ItemsContent />
     </ProtectedRoute>
   );

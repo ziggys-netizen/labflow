@@ -1,9 +1,16 @@
 "use client";
 
 import { useAuth } from "./AuthContext";
-import { capabilityRedirect } from "./permissions";
+import { capabilityRedirect, landingPathForRole } from "./permissions";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
+
+/**
+ * Optional page capability. P1 predicates (`canViewPatients`, …) are assignable.
+ * Owner still bypasses login/pending/rejected destination checks; this `require`
+ * still runs for owner unless the predicate itself includes owner.
+ */
+export type RouteRequire = (role: string | null) => boolean;
 
 function getDestination(
   user: { uid: string } | null,
@@ -22,14 +29,23 @@ function getDestination(
   return null;
 }
 
-export default function ProtectedRoute({ children }: { children: React.ReactNode }) {
+export default function ProtectedRoute({
+  children,
+  require,
+}: {
+  children: React.ReactNode;
+  require?: RouteRequire;
+}) {
   const { user, loading, role, status, clinicId } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const hasRedirected = useRef(false);
   const lastDest = useRef<string | null | undefined>(undefined);
 
-  const dest = loading ? null : getDestination(user, role, status, clinicId, pathname);
+  const authDest = loading ? null : getDestination(user, role, status, clinicId, pathname);
+  const capabilityDest =
+    !loading && !authDest && require && !require(role) ? landingPathForRole(role, clinicId) : null;
+  const dest = authDest ?? capabilityDest;
 
   useEffect(() => {
     if (lastDest.current !== dest) {
@@ -63,6 +79,14 @@ export default function ProtectedRoute({ children }: { children: React.ReactNode
   }
 
   if (dest && pathname !== dest) {
+    return (
+      <main className="min-h-screen flex items-center justify-center text-gray-600">
+        Redirecting...
+      </main>
+    );
+  }
+
+  if (require && !require(role)) {
     return (
       <main className="min-h-screen flex items-center justify-center text-gray-600">
         Redirecting...

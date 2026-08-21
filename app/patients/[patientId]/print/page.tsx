@@ -8,6 +8,8 @@ import { useAuth } from "../../../lib/AuthContext";
 import ProtectedRoute from "../../../lib/ProtectedRoute";
 import PrintIcon from "../../../lib/PrintIcon";
 import { clinicCollectionQuery, isOwner } from "../../../lib/clinicScope";
+import { canViewPatients } from "../../../lib/permissions";
+import { isPatientDeleted } from "../../../lib/patientSoftDelete";
 import { TEST_CATALOG, LabTest } from "../../../lib/testCatalog";
 
 interface PatientRecord {
@@ -61,11 +63,21 @@ function formatDateTime(iso?: string | null) {
   return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
 }
 
-function Field({ label, value }: { label: string; value?: string | null }) {
+function Field({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string;
+  value?: string | null;
+  valueClassName?: string;
+}) {
   return (
     <div>
       <p className="text-[10px] uppercase tracking-wide text-gray-500">{label}</p>
-      <p className="text-sm text-gray-900">{value || "—"}</p>
+      <p className={`text-sm text-gray-900${valueClassName ? ` ${valueClassName}` : ""}`}>
+        {value || "—"}
+      </p>
     </div>
   );
 }
@@ -91,7 +103,11 @@ function PatientPrintContent() {
           setNotFound(true);
           return;
         }
-        const data = patientSnap.data() as PatientRecord;
+        const data = patientSnap.data() as PatientRecord & { deleted?: boolean };
+        if (isPatientDeleted(data)) {
+          setNotFound(true);
+          return;
+        }
         if (!isOwner(role) && clinicId && data.clinicId && data.clinicId !== clinicId) {
           setNotFound(true);
           return;
@@ -197,7 +213,7 @@ function PatientPrintContent() {
           </div>
           <div className="grid grid-cols-3 gap-x-6 gap-y-3">
             <Field label="Clinic ID" value={patient.clinicId} />
-            <Field label="Lab ID" value={patient.labId} />
+            <Field label="Lab ID" value={patient.labId} valueClassName="font-semibold font-mono" />
             <Field label="Name" value={patient.name} />
             <Field label="Preferred name" value={patient.preferredName} />
             <Field label="Sex" value={patient.sex} />
@@ -301,7 +317,7 @@ function PatientPrintContent() {
 
 export default function PatientPrint() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canViewPatients}>
       <PatientPrintContent />
     </ProtectedRoute>
   );

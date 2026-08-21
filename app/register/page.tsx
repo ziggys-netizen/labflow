@@ -7,7 +7,9 @@ import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import ActingClinicPrompt from "../lib/ActingClinicPrompt";
 import { useAuth } from "../lib/AuthContext";
-import { clinicCollectionQuery, isOwner } from "../lib/clinicScope";
+import { clinicCollectionQuery, isOwner, ownerActingCreateFields } from "../lib/clinicScope";
+import { canRegisterPatient, canViewPatients } from "../lib/permissions";
+import { isPatientDeleted } from "../lib/patientSoftDelete";
 
 const COUNTRY_CODES = [
   { code: "+93", label: "🇦🇫 Afghanistan (+93)" },
@@ -195,7 +197,9 @@ const PHONE_DIGITS_REGEX = /^[0-9]{6,10}$/;
 const NATIONAL_ID_REGEX = /^[a-zA-Z0-9\-]{4,30}$/;
 
 export default function Register() {
-  const { role, clinicId } = useAuth();
+  const { role, clinicId, writeClinicId } = useAuth();
+  const allowed = canRegisterPatient(role);
+  const internReceipt = allowed && !canViewPatients(role);
   const [name, setName] = useState("");
   const [preferredName, setPreferredName] = useState("");
   const [sex, setSex] = useState("");
@@ -260,6 +264,7 @@ export default function Register() {
     const dobSnapshot = await getDocs(dobQuery);
     dobSnapshot.forEach((docSnap) => {
       const data = docSnap.data();
+      if (isPatientDeleted(data)) return;
       if ((data.name || "").trim().toLowerCase() === normalizedName) {
         matches.push(`Name + DOB match — Lab ID: ${data.labId}`);
       }
@@ -270,6 +275,7 @@ export default function Register() {
     const phoneSnapshot = await getDocs(phoneQuery);
     phoneSnapshot.forEach((docSnap) => {
       const data = docSnap.data();
+      if (isPatientDeleted(data)) return;
       const alreadyListed = matches.some((m) => m.includes(data.labId));
       if (!alreadyListed) {
         matches.push(`Same phone number — Lab ID: ${data.labId} (${data.name})`);
@@ -282,7 +288,17 @@ export default function Register() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setStatus("");
+    if (!allowed) return;
     if (!validate()) return;
+
+    if (!writeClinicId) {
+      setStatus(
+        isOwner(role)
+          ? "Select a clinic from the menu above to create records."
+          : "Your account is not linked to a clinic yet."
+      );
+      return;
+    }
 
     setStatus("Checking for existing records...");
     const duplicateCheck = await findDuplicates();
@@ -295,15 +311,6 @@ export default function Register() {
         setStatus("Registration cancelled — existing record kept.");
         return;
       }
-    }
-
-    if (!clinicId) {
-      setStatus(
-        isOwner(role)
-          ? "Select a clinic in the header to register patients."
-          : "Your account is not linked to a clinic yet."
-      );
-      return;
     }
 
     setStatus("Saving...");
@@ -328,7 +335,8 @@ export default function Register() {
         reasonForVisit: reasonForVisit.trim() || null,
         consentGiven: true,
         createdAt: new Date().toISOString(),
-        clinicId,
+        clinicId: writeClinicId,
+        ...ownerActingCreateFields(role),
       });
       setStatus("Patient registered successfully.");
       setLastLabId(labId);
@@ -351,12 +359,12 @@ export default function Register() {
   };
 
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canRegisterPatient}>
     <main className="min-h-screen bg-white">
       <AppNav />
       <div className="max-w-md mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-6">Register a patient</h1>
-        {isOwner(role) && !clinicId && <ActingClinicPrompt action="register patients" />}
+        {isOwner(role) && !writeClinicId && <ActingClinicPrompt />}
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Full name</label>
@@ -518,7 +526,7 @@ export default function Register() {
               Lab ID assigned: {lastLabId}
             </p>
           )}
-          {lastLabId && role === "intern" && (
+          {lastLabId && internReceipt && (
             <p className="text-sm text-gray-600 mt-2">
               Give this Lab ID to the clinician. Interns cannot browse the patient list or order tests.
             </p>

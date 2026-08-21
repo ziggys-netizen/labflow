@@ -8,8 +8,8 @@ import { doc, getDoc, setDoc, getDocs } from "firebase/firestore";
 import { TEST_CATALOG, LabTest } from "../../lib/testCatalog";
 import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
-import { clinicCollectionQuery, isOwner } from "../../lib/clinicScope";
-import { canApproveResults, canRecordSampleCollection } from "../../lib/permissions";
+import { clinicCollectionQuery, isOwner, ownerActingReviewFields } from "../../lib/clinicScope";
+import { canApproveResults, canEnterResults, canRecordSampleCollection, canSendBackForCorrection } from "../../lib/permissions";
 import { SAMPLE_COLLECTED_SOURCE } from "../../lib/sampleCollection";
 import { toDateTimeLocal, fromDateTimeLocal } from "../../lib/datetime";
 
@@ -35,11 +35,16 @@ interface OrderData {
   reviewedBy?: string | null;
   reviewedAt?: string;
   reviewNotes?: string;
+  reviewedByUid?: string | null;
+  reviewedByRole?: string | null;
+  reviewedByShift?: string | null;
+  actingAsOwner?: boolean;
+  patientDeleted?: boolean;
 }
 
 function OrderDetailContent() {
   const params = useParams();
-  const { user, role, clinicId } = useAuth();
+  const { user, role, clinicId, shift } = useAuth();
   const orderId = params.orderId as string;
 
   const [order, setOrder] = useState<OrderData | null>(null);
@@ -86,7 +91,7 @@ function OrderDetailContent() {
   const resultsEditable = order && (order.status === "pending" || order.status === "results_entered" || order.status === "needs_correction");
 
   function updateResultValue(testCode: string, paramName: string, value: string) {
-    if (!resultsEditable) return;
+    if (!resultsEditable || !canEnterResults(role)) return;
     setResults((prev) => ({
       ...prev,
       [testCode]: {
@@ -97,7 +102,7 @@ function OrderDetailContent() {
   }
 
   async function recordSampleCollection(iso: string | null) {
-    if (!user || !iso) return;
+    if (!user || !iso || !canRecordSampleCollection(role)) return;
     setStatus("Recording sample collection...");
     try {
       const updates = {
@@ -122,7 +127,7 @@ function OrderDetailContent() {
   }
 
   async function submitForReview() {
-    if (!user) return;
+    if (!user || !canEnterResults(role)) return;
     setStatus("Submitting results for review...");
     try {
       const updates = {
@@ -151,6 +156,10 @@ function OrderDetailContent() {
         reviewedBy: user.email,
         reviewedAt: new Date().toISOString(),
         reviewNotes: "",
+        reviewedByUid: user.uid,
+        reviewedByRole: role,
+        reviewedByShift: shift ?? null,
+        ...ownerActingReviewFields(role),
       };
       await setDoc(doc(db, "orders", orderId), updates, { merge: true });
       setOrder((prev) => (prev ? { ...prev, ...updates } : prev));
@@ -163,7 +172,7 @@ function OrderDetailContent() {
   }
 
   async function sendBackForCorrection() {
-    if (!user || !canApproveResults(role)) return;
+    if (!user || !canSendBackForCorrection(role)) return;
     setStatus("Sending back...");
     try {
       const updates = {
@@ -171,6 +180,10 @@ function OrderDetailContent() {
         reviewedBy: user.email,
         reviewedAt: new Date().toISOString(),
         reviewNotes: reviewNotes.trim(),
+        reviewedByUid: user.uid,
+        reviewedByRole: role,
+        reviewedByShift: shift ?? null,
+        ...ownerActingReviewFields(role),
       };
       await setDoc(doc(db, "orders", orderId), updates, { merge: true });
       setOrder((prev) => (prev ? { ...prev, ...updates } : prev));
@@ -201,7 +214,9 @@ function OrderDetailContent() {
   }
 
   const canReview = canApproveResults(role);
+  const canCorrect = canSendBackForCorrection(role);
   const canCollect = canRecordSampleCollection(role);
+  const canEnter = canEnterResults(role);
   const awaitingSample = !order.sampleCollectedAt;
 
   return (
@@ -217,6 +232,12 @@ function OrderDetailContent() {
         <p className="text-gray-600 mb-1">
           {order.patientName} — Lab ID: {order.patientLabId}
         </p>
+        {order.patientDeleted && (
+          <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+            This order belongs to a removed patient record and is hidden from active queues. The
+            record is retained and can be restored from the recycle bin.
+          </p>
+        )}
         <p className="text-sm text-gray-400 mb-2">
           Ordered {new Date(order.createdAt).toLocaleString()}
         </p>
@@ -327,7 +348,7 @@ function OrderDetailContent() {
                           type="text"
                           value={results[t.code]?.[p.name] || ""}
                           onChange={(e) => updateResultValue(t.code, p.name, e.target.value)}
-                          disabled={!resultsEditable}
+                          disabled={!resultsEditable || !canEnter}
                           placeholder="Result"
                           className="border border-gray-300 rounded px-2 py-1 text-sm col-span-2 disabled:bg-gray-50 disabled:text-gray-500"
                         />
@@ -346,7 +367,7 @@ function OrderDetailContent() {
           })}
         </div>
 
-        {resultsEditable && (
+        {resultsEditable && canEnter && (
           <button
             onClick={submitForReview}
             className="w-full bg-gray-900 text-white rounded-lg py-2 font-medium hover:bg-gray-800 transition mt-6"
@@ -355,7 +376,7 @@ function OrderDetailContent() {
           </button>
         )}
 
-        {canReview && order.status === "results_entered" && (
+        {canReview && canCorrect && order.status === "results_entered" && (
           <div className="border border-gray-200 rounded-lg p-4 mt-6">
             <h2 className="text-sm font-medium text-gray-900 mb-2">Release results</h2>
             <p className="text-sm text-gray-600 mb-3">
@@ -400,7 +421,7 @@ function OrderDetailContent() {
 
 export default function OrderDetail() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canEnterResults}>
       <OrderDetailContent />
     </ProtectedRoute>
   );

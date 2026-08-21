@@ -2,7 +2,6 @@
 
 import { useEffect, useState } from "react";
 import { useAuth } from "../lib/AuthContext";
-import { useRouter } from "next/navigation";
 import { db } from "../lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
 import { TEST_CATALOG, LabTest, TestParameter } from "../lib/testCatalog";
@@ -10,7 +9,7 @@ import AppNav from "../lib/AppNav";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import ActingClinicPrompt from "../lib/ActingClinicPrompt";
 import { getClinicDocs, isOwner } from "../lib/clinicScope";
-import { canEditCatalogue, landingPathForRole } from "../lib/permissions";
+import { canEditTestCatalogue } from "../lib/permissions";
 
 interface CatalogRow extends LabTest {
   firestoreId: string;
@@ -19,20 +18,19 @@ interface CatalogRow extends LabTest {
 
 export default function Settings() {
   return (
-    <ProtectedRoute>
+    <ProtectedRoute require={canEditTestCatalogue}>
       <SettingsContent />
     </ProtectedRoute>
   );
 }
 
 function SettingsContent() {
-  const { role, clinicId, loading } = useAuth();
-  const router = useRouter();
+  const { role, clinicId, writeClinicId, loading } = useAuth();
   const [tests, setTests] = useState<CatalogRow[]>([]);
   const [loadingTests, setLoadingTests] = useState(true);
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [status, setStatus] = useState("");
-  const allowed = canEditCatalogue(role);
+  const allowed = canEditTestCatalogue(role);
 
   // --- Add New Test state ---
   const [showAddForm, setShowAddForm] = useState(false);
@@ -45,12 +43,7 @@ function SettingsContent() {
   const [addStatus, setAddStatus] = useState("");
 
   useEffect(() => {
-    if (!loading && !allowed) {
-      router.replace(landingPathForRole(role));
-    }
-  }, [role, loading, allowed, router]);
-
-  useEffect(() => {
+    if (!allowed) return;
     async function loadCatalog() {
       try {
         const catalogDocs = await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" });
@@ -78,8 +71,7 @@ function SettingsContent() {
         setLoadingTests(false);
       }
     }
-    if (allowed) loadCatalog();
-    else setLoadingTests(false);
+    loadCatalog();
   }, [role, clinicId, allowed]);
 
   async function updateParameter(
@@ -115,7 +107,7 @@ function SettingsContent() {
         category: test.category,
         parameters: test.parameters,
         price: test.price || 0,
-        clinicId: test.clinicId || clinicId || null,
+        clinicId: test.clinicId || writeClinicId || clinicId || null,
       });
       setStatus("Saved.");
       setEditingCode(null);
@@ -176,33 +168,35 @@ function SettingsContent() {
       return;
     }
 
+    if (!writeClinicId) {
+      setAddStatus(
+        isOwner(role)
+          ? "Select a clinic from the menu above to create records."
+          : "Your account is not linked to a clinic yet."
+      );
+      return;
+    }
+
     const code = generateTestCode(newTestName);
     const newTest: CatalogRow = {
-      firestoreId: clinicId ? `${clinicId}_${code}` : code,
+      firestoreId: `${writeClinicId}_${code}`,
       code,
       name: newTestName.trim(),
       category: newTestCategory.trim() || "Other",
       parameters: validParams,
       price: parseFloat(newTestPrice) || 0,
+      clinicId: writeClinicId,
     };
 
     setAddStatus("Saving...");
     try {
-      if (!clinicId) {
-        setAddStatus(
-          isOwner(role)
-            ? "Select a clinic in the header before adding a test."
-            : "Your account is not linked to a clinic yet."
-        );
-        return;
-      }
       await setDoc(doc(db, "testCatalog", newTest.firestoreId), {
         code: newTest.code,
         name: newTest.name,
         category: newTest.category,
         parameters: newTest.parameters,
         price: newTest.price,
-        clinicId,
+        clinicId: writeClinicId,
       });
       setTests((prev) => [...prev, newTest].sort((a, b) => a.name.localeCompare(b.name)));
       setNewTestName("");
@@ -234,7 +228,7 @@ function SettingsContent() {
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">Clinic Settings</h1>
         <p className="text-gray-600 mb-6">Edit test units, reference ranges, and pricing.</p>
-        {isOwner(role) && !clinicId && <ActingClinicPrompt action="edit this clinic's test catalogue" />}
+        {isOwner(role) && !writeClinicId && <ActingClinicPrompt />}
 
         {/* --- Add New Test section --- */}
         <div className="mb-8">
