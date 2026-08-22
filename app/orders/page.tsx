@@ -8,7 +8,8 @@ import { useAuth } from "../lib/AuthContext";
 import { useClinicCollection } from "../lib/clinicListen";
 import { canEnterResults, canOrderTests } from "../lib/permissions";
 import { isOrderForDeletedPatient } from "../lib/patientSoftDelete";
-import { orderCollectionFromData, orderStatusLabel, type OrderTestRef, type SampleCollections } from "../lib/sampleCollection";
+import { orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../lib/sampleCollection";
+import { orderDisplayLabel, orderDisplayToneClass } from "../lib/orderLifecycle";
 
 interface Order {
   id: string;
@@ -20,6 +21,7 @@ interface Order {
   sampleCollectedAt?: string | null;
   sampleCollections?: SampleCollections | null;
   awaitingLabel: string;
+  awaitingTone: ReturnType<typeof orderDisplayLabel>["tone"];
   notYetSynced?: boolean;
 }
 
@@ -46,7 +48,8 @@ function OrdersContent() {
         createdAt: data.createdAt,
         sampleCollectedAt: parsed.sampleCollectedAt,
         sampleCollections: parsed.sampleCollections,
-        awaitingLabel: orderStatusLabel(parsed),
+        awaitingLabel: orderDisplayLabel(parsed).label,
+        awaitingTone: orderDisplayLabel(parsed).tone,
         notYetSynced: parsed.notYetSynced,
       };
     });
@@ -73,11 +76,7 @@ function OrdersContent() {
                   <NotYetSynced show={o.notYetSynced} />
                 </span>
                 <span
-                  className={
-                    o.status === "amended"
-                      ? "text-xs uppercase tracking-wide text-amber-800 border border-amber-300 rounded px-2 py-0.5"
-                      : "text-xs uppercase tracking-wide text-gray-500"
-                  }
+                  className={`text-xs font-medium tracking-wide border rounded px-2 py-0.5 ${orderDisplayToneClass(o.awaitingTone)}`}
                 >
                   {o.awaitingLabel}
                 </span>

@@ -1,6 +1,7 @@
 import { collection, doc, getDocs, query, where, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
-import { TEST_CATALOG, LabTest } from "./testCatalog";
+import { TEST_CATALOG, testsForTier, type LabTest } from "./testCatalog";
+import { parseClinicTier, type ClinicTier } from "./resultModel";
 import { logAudit, type AuditActor } from "./audit";
 
 export function catalogDocId(clinicId: string, code: string) {
@@ -26,7 +27,9 @@ export function catalogSeedPayload(clinicId: string, test: LabTest, seededAt: st
     clinicId,
     reviewed: false,
     seededAt,
-    seededFrom: "default" as const,
+    seededFrom: "national_tier" as const,
+    onNationalMenu: test.onNationalMenu !== false,
+    tiers: test.tiers ?? [],
   };
 }
 
@@ -41,7 +44,7 @@ async function clinicCatalogDocs(clinicId: string) {
  */
 export async function seedClinicCatalog(
   clinicId: string,
-  options: { actor?: AuditActor | null; onlyIfEmpty?: boolean } = {}
+  options: { actor?: AuditActor | null; onlyIfEmpty?: boolean; tier?: ClinicTier | null } = {}
 ): Promise<number> {
   if (!clinicId) return 0;
   const existingSnap = await clinicCatalogDocs(clinicId);
@@ -51,7 +54,9 @@ export async function seedClinicCatalog(
   const seededAt = new Date().toISOString();
   const created: { id: string; code: string }[] = [];
   const batch = writeBatch(db);
-  for (const test of TEST_CATALOG) {
+  const tier = parseClinicTier(options.tier);
+  const source = tier ? testsForTier(tier) : TEST_CATALOG;
+  for (const test of source) {
     const id = catalogDocId(clinicId, test.code);
     if (existingIds.has(id)) continue;
     batch.set(doc(db, "testCatalog", id), catalogSeedPayload(clinicId, test, seededAt));
@@ -71,7 +76,8 @@ export async function seedClinicCatalog(
         targetLabel: `${created.length} default tests`,
         detail: {
           count: created.length,
-          seededFrom: "default",
+          seededFrom: "national_tier",
+          tier: tier ?? "all",
           codes: created.map((c) => c.code),
         },
       });
@@ -84,13 +90,17 @@ export async function seedClinicCatalog(
 
 /** Owner backfill: seed every clinic that has no catalogue documents. */
 export async function backfillEmptyClinicCatalogs(
-  clinicIds: string[],
+  clinics: { id: string; tier?: ClinicTier | null }[],
   actor: AuditActor
 ): Promise<{ clinicsSeeded: number; testsCreated: number }> {
   let clinicsSeeded = 0;
   let testsCreated = 0;
-  for (const clinicId of clinicIds) {
-    const created = await seedClinicCatalog(clinicId, { actor, onlyIfEmpty: true });
+  for (const clinic of clinics) {
+    const created = await seedClinicCatalog(clinic.id, {
+      actor,
+      onlyIfEmpty: true,
+      tier: clinic.tier,
+    });
     if (created > 0) {
       clinicsSeeded += 1;
       testsCreated += created;

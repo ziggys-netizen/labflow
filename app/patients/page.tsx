@@ -19,8 +19,12 @@ import {
   canOrderTests,
   canRecordSampleCollection,
   canRegisterPatient,
+  canViewOwnRegisteredPatients,
   canViewPatients,
 } from "../lib/permissions";
+import { PATIENT_DELETE_CODES, formatJustification, justificationReady } from "../lib/reasonCodes";
+import ReasonCodeField from "../lib/ReasonCodeField";
+import { useWriteIdentity } from "../lib/pinSession";
 import {
   SAMPLE_COLLECTED_SOURCE,
   getPatientCollectionCheckboxState,
@@ -77,6 +81,7 @@ function sampleActionTitle(
 
 function PatientsContent() {
   const { user, role, clinicId, username, shift } = useAuth();
+  const writer = useWriteIdentity();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [savingSampleId, setSavingSampleId] = useState<string | null>(null);
   const [pendingDelete, setPendingDelete] = useState<{
@@ -86,6 +91,7 @@ function PatientsContent() {
     clinicId: string;
   } | null>(null);
   const [deletionReason, setDeletionReason] = useState("");
+  const [deletionCode, setDeletionCode] = useState("");
   const [deleteError, setDeleteError] = useState("");
 
   const canCollect = canRecordSampleCollection(role);
@@ -102,7 +108,13 @@ function PatientsContent() {
   const patients = useMemo<Patient[]>(
     () =>
       patientsQuery.docs
-        .filter((docSnap) => !isPatientDeleted(docSnap.data()))
+        .filter((docSnap) => {
+          if (isPatientDeleted(docSnap.data())) return false;
+          if (canViewOwnRegisteredPatients(role) && !canViewPatients(role)) {
+            return docSnap.data().createdByUid === writer.uid;
+          }
+          return true;
+        })
         .map((docSnap) => {
           const data = docSnap.data();
           return {
@@ -122,7 +134,7 @@ function PatientsContent() {
             notYetSynced: docSnap.metadata.hasPendingWrites,
           };
         }),
-    [patientsQuery.docs]
+    [patientsQuery.docs, role, writer.uid]
   );
 
   const ordersByPatient = useMemo(() => {
@@ -234,7 +246,7 @@ function PatientsContent() {
             action: "order.sampleCollected",
             targetCollection: "orders",
             targetId: target.id,
-            targetLabel: auditTargetLabel(patient.name, patient.labId),
+            targetLabel: auditTargetLabel(patient.labId, "patient"),
             detail: { source: SAMPLE_COLLECTED_SOURCE.patientCheckbox },
           });
         }
@@ -251,6 +263,7 @@ function PatientsContent() {
     if (!canDelete) return;
     setPendingDelete({ id, name, labId, clinicId: patientClinicId });
     setDeletionReason("");
+    setDeletionCode("");
     setDeleteError("");
   }
 
@@ -258,16 +271,17 @@ function PatientsContent() {
     if (deletingId) return;
     setPendingDelete(null);
     setDeletionReason("");
+    setDeletionCode("");
     setDeleteError("");
   }
 
   async function confirmDelete() {
     if (!canDelete || !user || !pendingDelete) return;
-    const reason = deletionReason.trim();
-    if (!reason) {
-      setDeleteError("A reason is required.");
+    if (!justificationReady(PATIENT_DELETE_CODES, deletionCode, deletionReason)) {
+      setDeleteError("Choose a reason.");
       return;
     }
+    const reason = formatJustification(PATIENT_DELETE_CODES, deletionCode, deletionReason);
 
     setDeletingId(pendingDelete.id);
     setDeleteError("");
@@ -278,11 +292,12 @@ function PatientsContent() {
         actor: { uid: user.uid, email: user.email, role, shift },
         role,
         clinicId,
-        targetLabel: auditTargetLabel(pendingDelete.name, pendingDelete.labId),
+        targetLabel: auditTargetLabel(pendingDelete.labId, "patient"),
         patientClinicId: pendingDelete.clinicId,
       });
       setPendingDelete(null);
       setDeletionReason("");
+      setDeletionCode("");
     } catch (err) {
       console.error(err);
       setDeleteError("Could not remove patient. Please try again.");
@@ -453,18 +468,15 @@ function PatientsContent() {
               The record is retained and recoverable. This action is logged. There is no permanent
               delete for any role.
             </p>
-            <label className="mt-4 block text-sm font-medium text-gray-700" htmlFor="deletion-reason">
-              Reason <span className="font-normal text-red-600">(required)</span>
-            </label>
-            <textarea
-              id="deletion-reason"
-              value={deletionReason}
-              onChange={(e) => setDeletionReason(e.target.value)}
-              rows={3}
-              required
-              autoFocus
-              className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2 text-sm"
-            />
+            <div className="mt-4">
+              <ReasonCodeField
+                list={PATIENT_DELETE_CODES}
+                code={deletionCode}
+                note={deletionReason}
+                onCode={setDeletionCode}
+                onNote={setDeletionReason}
+              />
+            </div>
             {deleteError && <p className="mt-2 text-sm text-red-600">{deleteError}</p>}
             <div className="mt-5 flex justify-end gap-3">
               <button
@@ -477,7 +489,7 @@ function PatientsContent() {
               </button>
               <button
                 type="submit"
-                disabled={!!deletingId || !deletionReason.trim()}
+                disabled={!!deletingId || !justificationReady(PATIENT_DELETE_CODES, deletionCode, deletionReason)}
                 className="rounded-lg bg-red-600 px-4 py-2 text-sm font-medium text-white hover:bg-red-700 disabled:opacity-50"
               >
                 {deletingId ? "Removing..." : "Confirm"}
@@ -492,7 +504,7 @@ function PatientsContent() {
 
 export default function Patients() {
   return (
-    <ProtectedRoute require={canViewPatients}>
+    <ProtectedRoute require={(role) => canViewPatients(role) || canViewOwnRegisteredPatients(role)}>
       <PatientsContent />
     </ProtectedRoute>
   );

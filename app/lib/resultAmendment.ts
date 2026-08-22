@@ -1,14 +1,14 @@
+import { AMENDMENT_CODES, formatJustification, justificationReady } from "./reasonCodes";
+
 function emailsMatch(a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b) return false;
   return a.trim().toLowerCase() === b.trim().toLowerCase();
 }
 
-/** Released results are terminal. `amended` is distinct from `approved`. */
+/** Released results can be amended again. Only rejected/cancelled are terminal. */
 export const RELEASED_RESULT_STATUSES = ["approved", "amended"] as const;
 
-export const AMENDMENT_REASON_MIN_LENGTH = 20;
-export const AMENDMENT_REASON_MESSAGE =
-  "A reason of at least 20 characters is required to amend a released result.";
+export const AMENDMENT_REASON_MESSAGE = "Choose a reason to amend a released result.";
 export const SELF_AMEND_MESSAGE =
   "A second approver must confirm this amendment because you released the original result.";
 export const SECOND_APPROVER_WAITING_MESSAGE =
@@ -104,8 +104,11 @@ export function amendmentBlockedOffline(isOnline: boolean): boolean {
   return !isOnline;
 }
 
-export function amendmentReasonReady(reason: string | null | undefined): boolean {
-  return (reason || "").trim().length >= AMENDMENT_REASON_MIN_LENGTH;
+export function amendmentReasonReady(
+  reasonCode: string | null | undefined,
+  reasonNote?: string | null
+): boolean {
+  return justificationReady(AMENDMENT_CODES, reasonCode, reasonNote);
 }
 
 export function cloneResultValues(values: ResultValues | null | undefined): ResultValues {
@@ -357,15 +360,17 @@ export function startAmendment(input: {
   order: AmendmentOrderInput;
   newValues: ResultValues;
   reason: string;
+  reasonNote?: string | null;
   actor: AmendmentActor;
   now?: string;
 }): StartAmendmentResult {
   if (!isReleasedResultStatus(input.order.status)) {
     return { ok: false, error: AMENDMENT_NOT_RELEASED_MESSAGE };
   }
-  if (!amendmentReasonReady(input.reason)) {
+  if (!amendmentReasonReady(input.reason, input.reasonNote)) {
     return { ok: false, error: AMENDMENT_REASON_MESSAGE };
   }
+  const reasonText = formatJustification(AMENDMENT_CODES, input.reason, input.reasonNote);
   if (parsePendingAmendment(input.order.pendingAmendment)) {
     return { ok: false, error: AMENDMENT_PENDING_EXISTS_MESSAGE };
   }
@@ -379,7 +384,7 @@ export function startAmendment(input: {
     const fromVersion = versions[versions.length - 1]?.version ?? 1;
     const pending: PendingAmendment = {
       values: cloneResultValues(input.newValues),
-      amendmentReason: input.reason.trim(),
+      amendmentReason: reasonText,
       initiatedBy: input.actor.email,
       initiatedByUid: input.actor.uid,
       initiatedByRole: input.actor.role,
@@ -389,7 +394,7 @@ export function startAmendment(input: {
     };
     return { ok: true, mode: "pending", updates: { pendingAmendment: pending, pendingAmendmentAt: now } };
   }
-  const applied = appliedPayload(input.order, input.newValues, input.reason, input.actor, null, now);
+  const applied = appliedPayload(input.order, input.newValues, reasonText, input.actor, null, now);
   return { ok: true, mode: "applied", ...applied };
 }
 

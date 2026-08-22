@@ -3,8 +3,11 @@ import { collectionTurnaroundStart, type CollectionOrderInput } from "./sampleCo
 export const STALE_WAIT_HOURS = 24;
 export const REVIEW_NOTES_MIN_LENGTH = 10;
 export const OFFLINE_RELEASE_MESSAGE = "Results can only be released when online.";
-export const SELF_RELEASE_MESSAGE = "Results must be released by a different person.";
-export const SEND_BACK_REASON_MESSAGE = "A reason of at least 10 characters is required to send back.";
+export const OFFLINE_AMENDMENT_MESSAGE =
+  "A released result cannot be amended while this device is offline.";
+export const SELF_RELEASE_MESSAGE =
+  "You entered these results. Releasing them requires a reason code.";
+export const SEND_BACK_REASON_MESSAGE = "Choose a reason to send back.";
 
 export function emailsMatch(a: string | null | undefined, b: string | null | undefined): boolean {
   if (!a || !b) return false;
@@ -20,7 +23,7 @@ export function isSelfRelease(
 }
 
 export function reviewNotesReady(notes: string | null | undefined): boolean {
-  return (notes || "").trim().length >= REVIEW_NOTES_MIN_LENGTH;
+  return (notes || "").trim().length > 0;
 }
 
 export function hoursSince(iso: string | null | undefined, nowMs: number = Date.now()): number | null {

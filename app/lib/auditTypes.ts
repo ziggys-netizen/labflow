@@ -49,6 +49,15 @@ export const AUDIT_ACTIONS = [
   "order.approved",
   "order.sentBack",
   "order.amended",
+  "order.rejected",
+  "order.cancelled",
+  "order.selfReleased",
+  "order.criticalNotified",
+  "order.provisionalPrinted",
+  "patient.correct",
+  "patient.erasure",
+  "staff.pinReset",
+  "staff.pinSet",
   "catalogue.update",
   "catalogue.seeded",
   "catalogue.reviewed",
@@ -103,12 +112,13 @@ export function actorFromAuth(
   };
 }
 
-/** Patient name + Lab ID. Never dump the full patient record into `detail`. */
-export function auditTargetLabel(name?: string | null, labId?: string | null): string {
-  const parts = [typeof name === "string" ? name.trim() : "", typeof labId === "string" ? labId.trim() : ""].filter(
-    Boolean
-  );
-  return parts.join(" — ");
+/** Lab ID + record type. Never a patient name — erasure must not leave names in the log. */
+export function auditTargetLabel(labId?: string | null, recordType?: string | null): string {
+  const parts = [
+    typeof labId === "string" ? labId.trim() : "",
+    typeof recordType === "string" ? recordType.trim() : "",
+  ].filter(Boolean);
+  return parts.join(" · ") || "[erased]";
 }
 
 export function auditLogPayload(entry: AuditLogWrite): Record<string, unknown> {

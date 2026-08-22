@@ -34,8 +34,21 @@ describe("parseExportRequest", () => {
     if ("error" in parsed) return;
     expect(parsed.dayCount).toBe(90);
     expect(parsed.reportType).toBe("patients");
+    expect(parsed.delivery).toBe("download");
     expect(parsed.startIso).toBe("2026-01-01T00:00:00.000Z");
     expect(parsed.endExclusiveIso).toBe("2026-04-01T00:00:00.000Z");
+  });
+
+  it("accepts email delivery and defaults to download", () => {
+    const emailed = parseExportRequest({
+      startDate: "2026-08-01",
+      endDate: "2026-08-07",
+      reportType: "orders",
+      delivery: "email",
+    });
+    expect("error" in emailed).toBe(false);
+    if ("error" in emailed) return;
+    expect(emailed.delivery).toBe("email");
   });
 
   it("refuses 91 days with the PHI / timeout / Spark reason", () => {

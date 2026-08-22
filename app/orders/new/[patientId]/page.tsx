@@ -187,7 +187,7 @@ function NewOrderContent() {
           action: "order.create",
           targetCollection: "orders",
           targetId: docRef.id,
-          targetLabel: auditTargetLabel(patientName, patientLabId),
+          targetLabel: auditTargetLabel(patientLabId, "order"),
           detail: { fields: ["tests", "status"], testCount: selectedTests.length },
         });
       }

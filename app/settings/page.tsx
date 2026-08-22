@@ -22,6 +22,15 @@ import { getClinicDocs, isOwner } from "../lib/clinicScope";
 import { canEditTestCatalogue } from "../lib/permissions";
 import { isTestReviewed, seedClinicCatalog } from "../lib/catalogSeed";
 import { actorFromAuth, logAudit, safeLogAudit, type AuditActor } from "../lib/audit";
+import { loadClinic } from "../lib/clinics";
+import {
+  RESULT_TYPES,
+  RDT_VALUE_SET,
+  normalizeParameter,
+  type ResultType,
+} from "../lib/resultModel";
+import { testsForTier } from "../lib/testCatalog";
+import type { ClinicTier } from "../lib/resultModel";
 
 interface CatalogRow extends LabTest {
   firestoreId: string;
@@ -51,8 +60,9 @@ function SettingsContent() {
   const [newTestPrice, setNewTestPrice] = useState("");
   const [newTestSpecimenType, setNewTestSpecimenType] = useState<SpecimenType | "">("");
   const [newTestParams, setNewTestParams] = useState<TestParameter[]>([
-    { name: "", unit: "", referenceRange: "" },
+    { name: "", unit: "", referenceRange: "", resultType: "numeric" },
   ]);
+  const [clinicTier, setClinicTier] = useState<ClinicTier | null>(null);
   const [addStatus, setAddStatus] = useState("");
 
   useEffect(() => {
@@ -64,6 +74,12 @@ function SettingsContent() {
         if (!seedClinic) {
           if (!cancelled) setTests([]);
           return;
+        }
+        try {
+          const clinic = await loadClinic(seedClinic);
+          if (!cancelled) setClinicTier(clinic?.tier ?? null);
+        } catch (err) {
+          console.error(err);
         }
         const catalogDocs = await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" });
         const scoped = catalogDocs.filter((d) => (d.data().clinicId as string) === seedClinic);
@@ -89,13 +105,28 @@ function SettingsContent() {
   async function updateParameter(
     testCode: string,
     paramIndex: number,
-    field: "unit" | "referenceRange",
+    field: "unit" | "referenceRange" | "resultType",
     value: string
   ) {
     const updated = tests.map((t) => {
       if (t.code !== testCode) return t;
       const newParams = [...t.parameters];
-      newParams[paramIndex] = { ...newParams[paramIndex], [field]: value };
+      const current = newParams[paramIndex];
+      if (field === "resultType") {
+        const resultType = value as ResultType;
+        newParams[paramIndex] = {
+          ...current,
+          resultType,
+          valueSet:
+            resultType === "qualitative" || resultType === "semi_quantitative"
+              ? current.valueSet && current.valueSet.length > 0
+                ? current.valueSet
+                : RDT_VALUE_SET
+              : undefined,
+        };
+      } else {
+        newParams[paramIndex] = { ...current, [field]: value };
+      }
       return { ...t, parameters: newParams };
     });
     setTests(updated);
@@ -138,7 +169,7 @@ function SettingsContent() {
           name: test.name,
           category: test.category,
           specimenType: resolveSpecimenType(test.specimenType, test.code),
-          parameters: test.parameters,
+          parameters: test.parameters.map((p) => normalizeParameter(p)),
           price: test.price || 0,
           clinicId: test.clinicId || writeClinicId || clinicId || null,
           reviewed: true,
@@ -226,7 +257,9 @@ function SettingsContent() {
     setSeeding(true);
     setStatus("Seeding default catalogue...");
     try {
-      const n = await seedClinicCatalog(seedClinic, { actor, onlyIfEmpty: true });
+      const clinic = await loadClinic(seedClinic);
+      const n = await seedClinicCatalog(seedClinic, { actor, onlyIfEmpty: true, tier: clinic?.tier });
+      setClinicTier(clinic?.tier ?? null);
       const catalogDocs = await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" });
       const scoped = catalogDocs.filter((d) => (d.data().clinicId as string) === seedClinic);
       setTests(
@@ -238,7 +271,7 @@ function SettingsContent() {
       setStatus(
         n === 0
           ? "This clinic already has a catalogue."
-          : `Seeded ${n} default tests. Confirm reference ranges for this laboratory.`
+          : `Seeded ${n} tests for this clinic's tier. Confirm them for this laboratory.`
       );
     } catch (err) {
       console.error(err);
@@ -251,7 +284,7 @@ function SettingsContent() {
   // --- Add New Test logic ---
 
   function addParameterRow() {
-    setNewTestParams([...newTestParams, { name: "", unit: "", referenceRange: "" }]);
+    setNewTestParams([...newTestParams, { name: "", unit: "", referenceRange: "", resultType: "numeric" }]);
   }
 
   function removeParameterRow(index: number) {
@@ -261,12 +294,26 @@ function SettingsContent() {
 
   function updateNewParam(
     index: number,
-    field: "name" | "unit" | "referenceRange",
+    field: "name" | "unit" | "referenceRange" | "resultType",
     value: string
   ) {
-    const updated = newTestParams.map((p, i) =>
-      i === index ? { ...p, [field]: value } : p
-    );
+    const updated = newTestParams.map((p, i) => {
+      if (i !== index) return p;
+      if (field === "resultType") {
+        const resultType = value as ResultType;
+        return {
+          ...p,
+          resultType,
+          valueSet:
+            resultType === "qualitative" || resultType === "semi_quantitative"
+              ? p.valueSet && p.valueSet.length > 0
+                ? p.valueSet
+                : RDT_VALUE_SET
+              : undefined,
+        };
+      }
+      return { ...p, [field]: value };
+    });
     setNewTestParams(updated);
   }
 
@@ -320,7 +367,7 @@ function SettingsContent() {
       name: newTestName.trim(),
       category: newTestCategory.trim() || "Other",
       specimenType,
-      parameters: validParams,
+      parameters: validParams.map((p) => normalizeParameter(p)),
       price: parseFloat(newTestPrice) || 0,
       clinicId: writeClinicId,
     };
@@ -356,7 +403,7 @@ function SettingsContent() {
       setNewTestCategory("");
       setNewTestPrice("");
       setNewTestSpecimenType("");
-      setNewTestParams([{ name: "", unit: "", referenceRange: "" }]);
+      setNewTestParams([{ name: "", unit: "", referenceRange: "", resultType: "numeric" }]);
       setShowAddForm(false);
       setAddStatus("New test added successfully.");
       setTimeout(() => setAddStatus(""), 3000);
@@ -403,7 +450,9 @@ function SettingsContent() {
                 disabled={seeding}
                 className="mt-3 bg-gray-900 text-white text-sm rounded-lg px-3 py-1.5 disabled:opacity-50"
               >
-                {seeding ? "Seeding..." : `Seed ${TEST_CATALOG.length} default tests`}
+                {seeding
+                  ? "Seeding..."
+                  : `Seed ${clinicTier ? testsForTier(clinicTier).length : TEST_CATALOG.length} tests`}
               </button>
             ) : (
               <p className="text-sm text-red-900 mt-2">
@@ -491,7 +540,7 @@ function SettingsContent() {
                 <label className="block text-sm font-medium text-gray-700 mb-2">Parameters</label>
                 <div className="space-y-2">
                   {newTestParams.map((p, i) => (
-                    <div key={i} className="grid grid-cols-4 gap-2 items-center">
+                    <div key={i} className="grid grid-cols-5 gap-2 items-center">
                       <input
                         type="text"
                         value={p.name}
@@ -499,6 +548,17 @@ function SettingsContent() {
                         placeholder="Parameter name"
                         className="border border-gray-300 rounded px-2 py-1 text-sm"
                       />
+                      <select
+                        value={p.resultType || "numeric"}
+                        onChange={(e) => updateNewParam(i, "resultType", e.target.value)}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm"
+                      >
+                        {RESULT_TYPES.filter((type) => type !== "calculated").map((type) => (
+                          <option key={type} value={type}>
+                            {type.replace("_", " ")}
+                          </option>
+                        ))}
+                      </select>
                       <input
                         type="text"
                         value={p.unit}
@@ -603,8 +663,19 @@ function SettingsContent() {
               {editingCode === test.code && (
                 <div className="space-y-2 mt-3 border-t border-gray-100 pt-3">
                   {test.parameters.map((p, i) => (
-                    <div key={i} className="grid grid-cols-3 gap-2 items-center">
+                    <div key={i} className="grid grid-cols-4 gap-2 items-center">
                       <span className="text-sm text-gray-700">{p.name}</span>
+                      <select
+                        value={normalizeParameter(p).resultType}
+                        onChange={(e) => updateParameter(test.code, i, "resultType", e.target.value)}
+                        className="border border-gray-300 rounded px-2 py-1 text-sm"
+                      >
+                        {RESULT_TYPES.filter((type) => type !== "calculated").map((type) => (
+                          <option key={type} value={type}>
+                            {type.replace("_", " ")}
+                          </option>
+                        ))}
+                      </select>
                       <input
                         type="text"
                         value={p.unit}

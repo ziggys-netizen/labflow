@@ -79,11 +79,11 @@ describe("isReleasedResultStatus", () => {
 });
 
 describe("amendmentReasonReady", () => {
-  it("rejects under 20 characters after trim", () => {
+  it("requires a listed reason code", () => {
     expect(amendmentReasonReady("too short")).toBe(false);
-    expect(amendmentReasonReady("1234567890123456789")).toBe(false);
-    expect(amendmentReasonReady("  1234567890123456789  ")).toBe(false);
-    expect(amendmentReasonReady("Night shift corrected the haemoglobin transcription.")).toBe(true);
+    expect(amendmentReasonReady("other", "")).toBe(false);
+    expect(amendmentReasonReady("other", "tube mix-up")).toBe(true);
+    expect(amendmentReasonReady("transcription_error")).toBe(true);
   });
 });
 
@@ -92,7 +92,7 @@ describe("startAmendment", () => {
     const result = startAmendment({
       order: approvedOrder(),
       newValues: CORRECTED,
-      reason: "Night shift corrected the haemoglobin transcription.",
+      reason: "transcription_error",
       actor: SUPERVISOR,
       now: "2026-08-21T02:15:00.000Z",
     });
@@ -111,7 +111,7 @@ describe("startAmendment", () => {
     const result = startAmendment({
       order: approvedOrder(),
       newValues: CORRECTED,
-      reason: "Night shift corrected the haemoglobin transcription.",
+      reason: "transcription_error",
       actor: SUPERVISOR,
       now: "2026-08-21T02:15:00.000Z",
     });
@@ -133,7 +133,7 @@ describe("startAmendment", () => {
     const result = startAmendment({
       order: approvedOrder(),
       newValues: CORRECTED,
-      reason: "typo fix",
+      reason: "not_a_code",
       actor: SUPERVISOR,
     });
     expect(result).toEqual({ ok: false, error: AMENDMENT_REASON_MESSAGE });
@@ -143,7 +143,7 @@ describe("startAmendment", () => {
     const result = startAmendment({
       order: approvedOrder(),
       newValues: CORRECTED,
-      reason: "Manager noticed a transcription error after release.",
+      reason: "transcription_error",
       actor: MANAGER,
       now: "2026-08-21T10:00:00.000Z",
     });
@@ -175,7 +175,7 @@ describe("startAmendment", () => {
     const result = startAmendment({
       order,
       newValues: CORRECTED,
-      reason: "Owner noticed a transcription error after release.",
+      reason: "transcription_error",
       actor: OWNER,
     });
     expect(result.ok && result.mode === "pending").toBe(true);
@@ -185,7 +185,7 @@ describe("startAmendment", () => {
     const result = startAmendment({
       order: approvedOrder(),
       newValues: ORIGINAL,
-      reason: "Night shift corrected the haemoglobin transcription.",
+      reason: "transcription_error",
       actor: SUPERVISOR,
     });
     expect(result).toEqual({ ok: false, error: AMENDMENT_NO_CHANGE_MESSAGE });
@@ -195,7 +195,7 @@ describe("startAmendment", () => {
     const first = startAmendment({
       order: approvedOrder(),
       newValues: CORRECTED,
-      reason: "Night shift corrected the haemoglobin transcription.",
+      reason: "transcription_error",
       actor: SUPERVISOR,
       now: "2026-08-21T02:15:00.000Z",
     });
@@ -211,7 +211,7 @@ describe("startAmendment", () => {
         reviewedAt: "2026-08-20T09:00:00.000Z",
       },
       newValues: secondValues,
-      reason: "Supervisor corrected the white-cell count after a second look.",
+      reason: "wrong_value",
       actor: SUPERVISOR,
       now: "2026-08-21T03:00:00.000Z",
     });
@@ -230,7 +230,7 @@ describe("confirmAmendment", () => {
     const pending = startAmendment({
       order: approvedOrder(),
       newValues: CORRECTED,
-      reason: "Manager noticed a transcription error after release.",
+      reason: "transcription_error",
       actor: MANAGER,
       now: "2026-08-21T10:00:00.000Z",
     });
@@ -277,7 +277,7 @@ describe("countAmendmentsInWindow", () => {
     const amended = startAmendment({
       order: approvedOrder(),
       newValues: CORRECTED,
-      reason: "Night shift corrected the haemoglobin transcription.",
+      reason: "transcription_error",
       actor: SUPERVISOR,
       now: "2026-08-21T02:15:00.000Z",
     });
@@ -330,7 +330,7 @@ describe("amendmentAuditDetail", () => {
   it("records the reason, both version identifiers, and confirming approver", () => {
     expect(
       amendmentAuditDetail({
-        reason: "Night shift corrected the haemoglobin transcription.",
+        reason: "transcription_error",
         previousVersion: 1,
         newVersion: 2,
         amender: SUPERVISOR,
@@ -338,7 +338,7 @@ describe("amendmentAuditDetail", () => {
         secondApprover: true,
       })
     ).toMatchObject({
-      reason: "Night shift corrected the haemoglobin transcription.",
+      reason: "transcription_error",
       previousVersion: 1,
       newVersion: 2,
       confirmedBy: MANAGER.email,

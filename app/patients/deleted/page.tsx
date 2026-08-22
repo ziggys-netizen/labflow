@@ -92,7 +92,7 @@ function DeletedPatientsContent() {
         actor: { uid: user.uid, email: user.email, role, shift },
         role,
         clinicId,
-        targetLabel: auditTargetLabel(patient.name, patient.labId),
+        targetLabel: auditTargetLabel(patient.labId, "patient"),
         patientClinicId: patient.clinicId,
       });
       setPatients((prev) => prev.filter((p) => p.id !== patient.id));

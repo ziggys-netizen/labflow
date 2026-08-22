@@ -186,12 +186,66 @@ export function canEditClinicProfile(role: string | null | undefined) {
   return allows(role, "owner", "clinic_admin");
 }
 
+/** Patient/clinical spreadsheet import. clinic_admin may still import staff pre-approvals. */
 export function canImportData(role: string | null | undefined) {
+  return allows(role, "owner", "lab_manager");
+}
+
+export function canImportStaffPreApprovals(role: string | null | undefined) {
   return allows(role, "owner", "clinic_admin");
 }
 
 export function canDeletePatient(role: string | null | undefined) {
-  return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
+  return allows(role, "owner", "clinic_admin", "lab_manager");
+}
+
+export function canRejectSample(role: string | null | undefined) {
+  return allows(
+    role,
+    "owner",
+    "lab_manager",
+    "lab_supervisor",
+    "technician",
+    "technician_assistant"
+  );
+}
+
+export function canAmendResult(role: string | null | undefined) {
+  return canApproveResults(role);
+}
+
+export function canCancelOrder(role: string | null | undefined) {
+  return canOrderTests(role);
+}
+
+export function canExecuteErasure(role: string | null | undefined) {
+  return role === "owner";
+}
+
+/** Alter another person's unreleased result. Own unreleased edits stay with entry. */
+export function canModifyOthersUnreleasedResult(role: string | null | undefined) {
+  return allows(role, "owner", "lab_manager", "lab_supervisor");
+}
+
+export function canViewOwnRegisteredPatients(role: string | null | undefined) {
+  return allows(
+    role,
+    "owner",
+    "clinic_admin",
+    "lab_manager",
+    "lab_supervisor",
+    "technician",
+    "technician_assistant",
+    "intern"
+  );
+}
+
+export function canCorrectPatientRecord(role: string | null | undefined) {
+  return allows(role, "owner", "lab_manager", "lab_supervisor");
+}
+
+export function canRecordCriticalNotification(role: string | null | undefined) {
+  return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");
 }
 
 export function canViewInventory(role: string | null | undefined) {
@@ -212,7 +266,7 @@ export function canRecordStockMovement(role: string | null | undefined) {
 }
 
 export function canManageInventoryItems(role: string | null | undefined) {
-  return allows(role, "owner", "lab_manager", "lab_supervisor", "storekeeper");
+  return allows(role, "owner", "lab_manager", "storekeeper");
 }
 
 export function canRecordSpecimenMovement(role: string | null | undefined) {
@@ -256,7 +310,8 @@ export function landingPathForRole(
  * them back to registration. Profile is identity only, not a patient table.
  */
 export function internAllowedPath(pathname: string): boolean {
-  return pathname === "/register" || pathname === "/profile";
+  if (pathname === "/register" || pathname === "/profile" || pathname === "/patients") return true;
+  return pathname.startsWith("/patients/") && pathname.endsWith("/print");
 }
 
 /** Capability redirect for roles that must not fall through ProtectedRoute. */
@@ -273,11 +328,18 @@ export function capabilityRedirect(
 export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined) => boolean> = {
   canRegisterPatient,
   canViewPatients,
+  canViewOwnRegisteredPatients,
   canOrderTests,
   canRecordSampleCollection,
   canEnterResults,
   canApproveResults,
+  canAmendResult,
   canSendBackForCorrection,
+  canRejectSample,
+  canCancelOrder,
+  canModifyOthersUnreleasedResult,
+  canCorrectPatientRecord,
+  canRecordCriticalNotification,
   canEditTestCatalogue,
   canViewDashboard,
   canExportData,
@@ -285,7 +347,9 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
   canViewJoinCode,
   canEditClinicProfile,
   canImportData,
+  canImportStaffPreApprovals,
   canDeletePatient,
+  canExecuteErasure,
   canViewInventory,
   canRecordStockMovement,
   canManageInventoryItems,

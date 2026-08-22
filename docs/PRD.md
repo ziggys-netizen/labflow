@@ -1,6 +1,6 @@
 # LabFlow — Product Requirements Document v0.2
 
-**Status:** Current working specification
+**Status:** Superseded by [`LabFlow-PRD-v0.5.md`](LabFlow-PRD-v0.5.md) (22 August 2026). Kept as the v0.2 operational source that v0.5 re-imports.
 **Supersedes:** PRD v0.1 (obsolete — wrong stack, roles out of scope)
 **Date:** 20 August 2026
 **Owner:** Isaac Kanu

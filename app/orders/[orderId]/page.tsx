@@ -14,18 +14,23 @@ import { clinicCollectionQuery, isOwner, ownerActingReviewFields } from "../../l
 import { subscribeDocument } from "../../lib/clinicListen";
 import { useConnection } from "../../lib/ConnectionContext";
 import { trackedSetDoc, writeActorFromUser } from "../../lib/trackedWrites";
-import { canApproveResults, canEnterResults, canRecordSampleCollection, canSendBackForCorrection } from "../../lib/permissions";
-import { actorFromAuth, logAudit } from "../../lib/audit";
-import ResultFlagMark from "../../lib/ResultFlagMark";
 import {
-  OFFLINE_RELEASE_MESSAGE,
+  canApproveResults,
+  canCancelOrder,
+  canEnterResults,
+  canRecordCriticalNotification,
+  canRecordSampleCollection,
+  canRejectSample,
+  canSendBackForCorrection,
+} from "../../lib/permissions";
+import { actorFromAuth, logAudit } from "../../lib/audit";
+import {
+  OFFLINE_AMENDMENT_MESSAGE,
   SELF_RELEASE_MESSAGE,
   SEND_BACK_REASON_MESSAGE,
   isSelfRelease,
-  reviewNotesReady,
 } from "../../lib/reviewQueue";
 import {
-  AMENDMENT_REASON_MIN_LENGTH,
   SECOND_APPROVER_WAITING_MESSAGE,
   SELF_AMEND_MESSAGE,
   actorIsOriginalReleaser,
@@ -43,6 +48,26 @@ import {
   type ResultValues,
 } from "../../lib/resultAmendment";
 import {
+  AMENDMENT_CODES,
+  CRITICAL_NOTIFY_MEANS,
+  CRITICAL_NOTIFY_OUTCOMES,
+  ORDER_CANCEL_CODES,
+  SAMPLE_REJECTION_CODES,
+  SELF_RELEASE_CODES,
+  SEND_BACK_CODES,
+  formatJustification,
+  justificationReady,
+} from "../../lib/reasonCodes";
+import { canCancelStatus, canEnterResultsForStatus, canRejectStatus, orderDisplayLabel } from "../../lib/orderLifecycle";
+import { nceFromRejection } from "../../lib/nonconformingEvents";
+import { criticalNotificationReady, parseCriticalNotification } from "../../lib/criticalResults";
+import { orderHasCriticalResults } from "../../lib/resultFlag";
+import ReasonCodeField from "../../lib/ReasonCodeField";
+import ResultValueField from "../../lib/ResultValueField";
+import { useWriteIdentity } from "../../lib/pinSession";
+import { SensitivePinPrompt } from "../../lib/PinGate";
+import type { SensitivePinAction } from "../../lib/pinIdentity";
+import {
   interpretCollection,
   mergeSpecimenCollections,
   parseSampleCollectedSource,
@@ -52,7 +77,6 @@ import {
   type SampleCollections,
 } from "../../lib/sampleCollection";
 import { toDateTimeLocal, fromDateTimeLocal } from "../../lib/datetime";
-import { resultFlag } from "../../lib/resultFlag";
 
 interface OrderTest {
   code: string;
@@ -93,11 +117,18 @@ interface OrderData {
   lastAmendedByShift?: string | null;
   patientDeleted?: boolean;
   notYetSynced?: boolean;
+  selfReleased?: boolean;
+  rejectionReasonCode?: string | null;
+  rejectionNote?: string | null;
+  criticalNotification?: unknown;
+  needsFinalReprint?: boolean;
+  provisionalPrintedAt?: string | null;
 }
 
 function OrderDetailContent() {
   const params = useParams();
   const { user, role, clinicId, shift, username } = useAuth();
+  const writer = useWriteIdentity();
   const { isOnline } = useConnection();
   const orderId = params.orderId as string;
 
@@ -105,9 +136,22 @@ function OrderDetailContent() {
   const [catalog, setCatalog] = useState<LabTest[]>([]);
   const [loadedOrderId, setLoadedOrderId] = useState<string | null>(null);
   const [results, setResults] = useState<Record<string, Record<string, string>>>({});
-  const [reviewNotes, setReviewNotes] = useState("");
+  const [sendBackCode, setSendBackCode] = useState("");
+  const [sendBackNote, setSendBackNote] = useState("");
+  const [selfReleaseCode, setSelfReleaseCode] = useState("");
+  const [selfReleaseNote, setSelfReleaseNote] = useState("");
+  const [rejectCode, setRejectCode] = useState("");
+  const [rejectNote, setRejectNote] = useState("");
+  const [cancelCode, setCancelCode] = useState("");
+  const [cancelNote, setCancelNote] = useState("");
+  const [criticalName, setCriticalName] = useState("");
+  const [criticalMeans, setCriticalMeans] = useState("phone");
+  const [criticalOutcome, setCriticalOutcome] = useState("read_back_ok");
+  const [pinAction, setPinAction] = useState<SensitivePinAction | null>(null);
+  const [pendingSensitive, setPendingSensitive] = useState<null | (() => void)>(null);
   const [amendDraft, setAmendDraft] = useState<ResultValues>({});
   const [amendReason, setAmendReason] = useState("");
+  const [amendNote, setAmendNote] = useState("");
   const [amendOpen, setAmendOpen] = useState(false);
   const [status, setStatus] = useState("");
   const [expandedTest, setExpandedTest] = useState<string | null>(null);
@@ -186,7 +230,12 @@ function OrderDetailContent() {
     return catalog.find((t) => t.code === code);
   }
 
-  const resultsEditable = order && (order.status === "pending" || order.status === "results_entered" || order.status === "needs_correction");
+  const resultsEditable = order && canEnterResultsForStatus(order.status);
+
+  function withPin(action: SensitivePinAction, run: () => void) {
+    setPendingSensitive(() => run);
+    setPinAction(action);
+  }
 
   function updateResultValue(testCode: string, paramName: string, value: string) {
     if (!resultsEditable || !canEnterResults(role)) return;
@@ -202,7 +251,10 @@ function OrderDetailContent() {
 
   function orderWriteMeta(summary: string, expected: Record<string, unknown>) {
     return {
-      ...writeActorFromUser(user, username),
+      ...writeActorFromUser(
+        { uid: writer.uid || user?.uid || "", email: writer.email },
+        writer.username
+      ),
       operation: "update" as const,
       summary,
       clinicId: order?.clinicId || clinicId,
@@ -246,7 +298,8 @@ function OrderDetailContent() {
     const updates = {
       results,
       status: "results_entered",
-      resultsEnteredBy: user.email,
+      resultsEnteredBy: writer.email,
+      resultsEnteredByUid: writer.uid,
       resultsEnteredAt: new Date().toISOString(),
       clinicId: order?.clinicId || clinicId || undefined,
     };
@@ -266,10 +319,22 @@ function OrderDetailContent() {
   }
 
   async function auditOrder(
-    action: "order.approved" | "order.sentBack" | "order.amended" | "order.sampleCollected" | "order.resultsEntered",
+    action:
+      | "order.approved"
+      | "order.sentBack"
+      | "order.amended"
+      | "order.sampleCollected"
+      | "order.resultsEntered"
+      | "order.rejected"
+      | "order.cancelled"
+      | "order.criticalNotified",
     detail?: Record<string, unknown>
   ) {
-    const actor = actorFromAuth(user, role, shift);
+    const actor = actorFromAuth(
+      { uid: writer.uid || user?.uid || "", email: writer.email },
+      writer.role,
+      writer.shift
+    );
     if (!actor) return;
     try {
       await logAudit({
@@ -278,7 +343,7 @@ function OrderDetailContent() {
         action,
         targetCollection: "orders",
         targetId: orderId,
-        targetLabel: [order?.patientName, order?.patientLabId].filter(Boolean).join(" — ") || orderId,
+        targetLabel: [order?.patientLabId, "order"].filter(Boolean).join(" · ") || orderId,
         detail,
       });
     } catch (err) {
@@ -287,42 +352,46 @@ function OrderDetailContent() {
   }
 
   function amendmentActor(): AmendmentActor | null {
-    if (!user) return null;
-    return { uid: user.uid, email: user.email, role, shift };
+    if (!writer.uid) return null;
+    return { uid: writer.uid, email: writer.email, role: writer.role, shift: writer.shift };
   }
 
   async function approveAndRelease() {
-    if (!user || !canApproveResults(role)) return;
-    if (!isOnline) {
-      setStatus(OFFLINE_RELEASE_MESSAGE);
-      return;
-    }
-    if (isSelfRelease(order?.resultsEnteredBy, user.email)) {
+    if (!user || !canApproveResults(writer.role || role)) return;
+    const ownResults = isSelfRelease(order?.resultsEnteredBy, writer.email);
+    if (ownResults && !justificationReady(SELF_RELEASE_CODES, selfReleaseCode, selfReleaseNote)) {
       setStatus(SELF_RELEASE_MESSAGE);
       return;
     }
+    withPin("release", () => void commitRelease(ownResults));
+  }
+
+  async function commitRelease(ownResults: boolean) {
     setStatus("Approving...");
     const releasedAt = new Date().toISOString();
     const releasedValues = cloneResultValues(order?.results || results);
     const v1 = firstReleaseVersion({
       values: releasedValues,
-      releasedBy: user.email,
-      releasedByUid: user.uid,
+      releasedBy: writer.email,
+      releasedByUid: writer.uid,
       releasedAt,
     });
     const updates = {
       status: "approved",
-      reviewedBy: user.email,
+      reviewedBy: writer.email,
       reviewedAt: releasedAt,
       reviewNotes: "",
-      reviewedByUid: user.uid,
-      reviewedByRole: role,
-      reviewedByShift: shift ?? null,
+      reviewedByUid: writer.uid,
+      reviewedByRole: writer.role,
+      reviewedByShift: writer.shift ?? null,
       resultVersions: [v1],
       currentResultVersion: 1,
       pendingAmendment: null,
       pendingAmendmentAt: null,
-      ...ownerActingReviewFields(role),
+      selfReleased: ownResults,
+      selfReleaseReasonCode: ownResults ? selfReleaseCode : null,
+      needsFinalReprint: !isOnline,
+      ...ownerActingReviewFields(writer.role || role),
     };
     await trackedSetDoc(
       doc(db, "orders", orderId),
@@ -333,32 +402,37 @@ function OrderDetailContent() {
       })
     );
     setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
-    await auditOrder("order.approved", { status: "approved" });
-    setStatus("Results approved and released.");
-    setTimeout(() => setStatus(""), 2500);
+    await auditOrder("order.approved", {
+      status: "approved",
+      selfReleased: ownResults,
+      selfReleaseReasonCode: ownResults ? selfReleaseCode : null,
+    });
+    setStatus(
+      isOnline
+        ? "Results approved and released."
+        : "Results released on this device. Print will be marked provisional until sync."
+    );
+    setTimeout(() => setStatus(""), 4000);
   }
 
   async function sendBackForCorrection() {
-    if (!user || !canSendBackForCorrection(role)) return;
-    if (!isOnline) {
-      setStatus(OFFLINE_RELEASE_MESSAGE);
-      return;
-    }
-    const notes = reviewNotes.trim();
-    if (!reviewNotesReady(notes)) {
+    if (!user || !canSendBackForCorrection(writer.role || role)) return;
+    if (!justificationReady(SEND_BACK_CODES, sendBackCode, sendBackNote)) {
       setStatus(SEND_BACK_REASON_MESSAGE);
       return;
     }
+    const notes = formatJustification(SEND_BACK_CODES, sendBackCode, sendBackNote);
     setStatus("Sending back...");
     const updates = {
       status: "needs_correction",
-      reviewedBy: user.email,
+      reviewedBy: writer.email,
       reviewedAt: new Date().toISOString(),
       reviewNotes: notes,
-      reviewedByUid: user.uid,
-      reviewedByRole: role,
-      reviewedByShift: shift ?? null,
-      ...ownerActingReviewFields(role),
+      sendBackReasonCode: sendBackCode,
+      reviewedByUid: writer.uid,
+      reviewedByRole: writer.role,
+      reviewedByShift: writer.shift ?? null,
+      ...ownerActingReviewFields(writer.role || role),
     };
     await trackedSetDoc(
       doc(db, "orders", orderId),
@@ -369,9 +443,117 @@ function OrderDetailContent() {
       })
     );
     setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
-    await auditOrder("order.sentBack", { status: "needs_correction", reviewNotes: notes });
-    setReviewNotes("");
+    await auditOrder("order.sentBack", { status: "needs_correction", reasonCode: sendBackCode });
+    setSendBackCode("");
+    setSendBackNote("");
     setStatus("Sent back for correction.");
+    setTimeout(() => setStatus(""), 2500);
+  }
+
+  async function rejectSample() {
+    if (!user || !canRejectSample(writer.role || role) || !order) return;
+    if (!canRejectStatus(order.status)) return;
+    if (!justificationReady(SAMPLE_REJECTION_CODES, rejectCode, rejectNote)) {
+      setStatus("Choose a reason to reject this sample.");
+      return;
+    }
+    const now = new Date().toISOString();
+    const nce = nceFromRejection({
+      clinicId: order.clinicId || clinicId || "",
+      orderId,
+      patientLabId: order.patientLabId,
+      reasonCode: rejectCode,
+      reasonNote: rejectNote,
+      actorUid: writer.uid,
+      now,
+    });
+    const updates = {
+      status: "rejected",
+      rejectionReasonCode: rejectCode,
+      rejectionNote: rejectNote,
+      rejectedAt: now,
+      rejectedByUid: writer.uid,
+      clinicId: order.clinicId || clinicId || undefined,
+    };
+    await trackedSetDoc(
+      doc(db, "orders", orderId),
+      updates,
+      { merge: true },
+      orderWriteMeta(`Rejected sample for ${order.patientName}`, { status: "rejected" })
+    );
+    if (nce.clinicId) {
+      await trackedSetDoc(
+        doc(db, "nonconformingEvents", `${orderId}_reject`),
+        nce,
+        { merge: true },
+        {
+          ...writeActorFromUser({ uid: writer.uid, email: writer.email }, writer.username),
+          operation: "create" as const,
+          summary: `Nonconforming event for ${order.patientLabId}`,
+          clinicId: nce.clinicId,
+          orderId,
+          expected: { status: "open" },
+        }
+      );
+    }
+    setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
+    await auditOrder("order.rejected", { reasonCode: rejectCode });
+    setStatus("Sample rejected. A nonconforming event was recorded.");
+    setTimeout(() => setStatus(""), 4000);
+  }
+
+  async function cancelOrder() {
+    if (!user || !canCancelOrder(writer.role || role) || !order) return;
+    if (!canCancelStatus(order.status)) return;
+    if (!justificationReady(ORDER_CANCEL_CODES, cancelCode, cancelNote)) {
+      setStatus("Choose a reason to stop this order.");
+      return;
+    }
+    const updates = {
+      status: "cancelled",
+      cancelReasonCode: cancelCode,
+      cancelNote,
+      cancelledAt: new Date().toISOString(),
+      cancelledByUid: writer.uid,
+    };
+    await trackedSetDoc(
+      doc(db, "orders", orderId),
+      updates,
+      { merge: true },
+      orderWriteMeta(`Cancelled order for ${order.patientName}`, { status: "cancelled" })
+    );
+    setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
+    await auditOrder("order.cancelled", { reasonCode: cancelCode });
+    setStatus("Order stopped.");
+    setTimeout(() => setStatus(""), 2500);
+  }
+
+  async function recordCriticalNotification() {
+    if (!user || !canRecordCriticalNotification(writer.role || role) || !order) return;
+    if (!criticalNotificationReady({ notifiedName: criticalName, means: criticalMeans, outcome: criticalOutcome })) {
+      setStatus("Record who was told, how, and the outcome.");
+      return;
+    }
+    const notification = {
+      notifiedName: criticalName.trim(),
+      means: criticalMeans,
+      outcome: criticalOutcome,
+      notifiedByUid: writer.uid,
+      notifiedBy: writer.email,
+      at: new Date().toISOString(),
+      readBack: criticalOutcome === "read_back_ok",
+    };
+    await trackedSetDoc(
+      doc(db, "orders", orderId),
+      { criticalNotification: notification },
+      { merge: true },
+      orderWriteMeta(`Recorded critical notification for ${order.patientName}`, {
+        criticalNotification: notification,
+      })
+    );
+    setOrder((prev) => (prev ? { ...prev, criticalNotification: notification, notYetSynced: true } : prev));
+    await auditOrder("order.criticalNotified", { outcome: criticalOutcome });
+    setStatus("Critical-result communication recorded.");
     setTimeout(() => setStatus(""), 2500);
   }
 
@@ -389,7 +571,7 @@ function OrderDetailContent() {
   async function submitAmendment() {
     if (!user || !canApproveResults(role) || !order) return;
     if (!isOnline) {
-      setStatus(OFFLINE_RELEASE_MESSAGE);
+      setStatus(OFFLINE_AMENDMENT_MESSAGE);
       return;
     }
     const actor = amendmentActor();
@@ -406,6 +588,7 @@ function OrderDetailContent() {
       },
       newValues: amendDraft,
       reason: amendReason,
+      reasonNote: amendNote,
       actor,
     });
     if (!result.ok) {
@@ -435,7 +618,7 @@ function OrderDetailContent() {
       await auditOrder(
         "order.amended",
         amendmentAuditDetail({
-          reason: amendReason,
+          reason: formatJustification(AMENDMENT_CODES, amendReason, amendNote),
           previousVersion: result.previousVersion,
           newVersion: result.newVersion,
           amender: actor,
@@ -453,7 +636,7 @@ function OrderDetailContent() {
   async function confirmPendingAmendment() {
     if (!user || !canApproveResults(role) || !order) return;
     if (!isOnline) {
-      setStatus(OFFLINE_RELEASE_MESSAGE);
+      setStatus(OFFLINE_AMENDMENT_MESSAGE);
       return;
     }
     const actor = amendmentActor();
@@ -502,7 +685,7 @@ function OrderDetailContent() {
   async function cancelPendingAmendment() {
     if (!user || !canApproveResults(role) || !order) return;
     if (!isOnline) {
-      setStatus(OFFLINE_RELEASE_MESSAGE);
+      setStatus(OFFLINE_AMENDMENT_MESSAGE);
       return;
     }
     const updates = cancelPendingAmendmentUpdates();
@@ -534,24 +717,26 @@ function OrderDetailContent() {
     );
   }
 
-  const canReview = canApproveResults(role);
-  const canCorrect = canSendBackForCorrection(role);
-  const canCollect = canRecordSampleCollection(role);
-  const canEnter = canEnterResults(role);
-  const ownResults = isSelfRelease(order.resultsEnteredBy, user?.email);
+  const actingRole = writer.role || role;
+  const canReview = canApproveResults(actingRole);
+  const canCorrect = canSendBackForCorrection(actingRole);
+  const canCollect = canRecordSampleCollection(actingRole);
+  const canEnter = canEnterResults(actingRole);
+  const ownResults = isSelfRelease(order.resultsEnteredBy, writer.email);
   const patientSex = patientRecord?.id === order.patientId ? patientRecord.sex : null;
   const collection = interpretCollection(order, catalog);
   const awaitingSample = !collection.allCollected;
-  const statusLabel =
-    collection.awaitingLabel || (order.status === "amended" ? "Amended" : order.status.replace("_", " "));
+  const statusLabel = orderDisplayLabel(order, catalog).label;
   const released = isReleasedResultStatus(order.status);
   const pendingAmendment = parsePendingAmendment(order.pendingAmendment);
   const versions = ensureResultVersions(order);
-  const originalReleaser = actorIsOriginalReleaser(order, { uid: user?.uid, email: user?.email });
+  const originalReleaser = actorIsOriginalReleaser(order, { uid: writer.uid, email: writer.email });
   const pendingInitiator = actorIsPendingInitiator(pendingAmendment, {
-    uid: user?.uid,
-    email: user?.email,
+    uid: writer.uid,
+    email: writer.email,
   });
+  const critical = orderHasCriticalResults(order.tests, order.results || results, catalog, patientSex);
+  const criticalRecord = parseCriticalNotification(order.criticalNotification);
 
   return (
     <main className="min-h-screen bg-white">
@@ -744,36 +929,20 @@ function OrderDetailContent() {
 
                 {isExpanded && definition && (
                   <div className="mt-4 space-y-3 border-t border-gray-100 pt-4">
-                    {definition.parameters.map((p, i) => {
-                      const value = results[t.code]?.[p.name] || "";
-                      const flag = resultFlag(value, p.referenceRange, patientSex);
-                      return (
-                      <div key={i} className="grid grid-cols-3 gap-2 items-center">
-                        <div>
-                          <p className="text-sm text-gray-900">{p.name}</p>
-                          <p className="text-xs text-gray-400">
-                            Ref: {p.referenceRange} {p.unit !== "—" ? `(${p.unit})` : ""}
-                          </p>
-                          {!isTestReviewed(definition) && (
-                            <p className="text-xs text-amber-800 mt-0.5">
-                              {UNREVIEWED_RANGE_CAVEAT}
-                            </p>
-                          )}
-                        </div>
-                        <div className="col-span-2 flex items-center gap-2">
-                          <input
-                            type="text"
-                            value={value}
-                            onChange={(e) => updateResultValue(t.code, p.name, e.target.value)}
-                            disabled={!resultsEditable || !canEnter}
-                            placeholder="Result"
-                            className="border border-gray-300 rounded px-2 py-1 text-sm flex-1 disabled:bg-gray-50 disabled:text-gray-500"
-                          />
-                          <ResultFlagMark flag={flag} />
-                        </div>
+                    {definition.parameters.map((p) => (
+                      <div key={p.name}>
+                        <ResultValueField
+                          parameter={p}
+                          value={results[t.code]?.[p.name] || ""}
+                          sex={patientSex}
+                          disabled={!resultsEditable || !canEnter}
+                          onChange={(value) => updateResultValue(t.code, p.name, value)}
+                        />
+                        {!isTestReviewed(definition) && (
+                          <p className="text-xs text-amber-800 mt-0.5">{UNREVIEWED_RANGE_CAVEAT}</p>
+                        )}
                       </div>
-                      );
-                    })}
+                    ))}
                   </div>
                 )}
 
@@ -798,53 +967,49 @@ function OrderDetailContent() {
 
         {canReview && canCorrect && order.status === "results_entered" && (
           <div className="border border-gray-200 rounded-lg p-4 mt-6">
-            <h2 className="text-sm font-medium text-gray-900 mb-2">Approve</h2>
+            <h2 className="text-sm font-medium text-gray-900 mb-2">Ready to release</h2>
             <p className="text-sm text-gray-600 mb-3">
-              These results are waiting in the review queue. Check the values above, then approve
-              them or send them back for correction.
+              Open the values above, then release or send back. Release is not offered from the list.
             </p>
             {!isOnline && (
               <p className="text-sm text-amber-800 mb-3">
-                {OFFLINE_RELEASE_MESSAGE}
+                Offline release is allowed. A printed copy will be marked provisional until sync.
               </p>
             )}
             {ownResults && (
-              <p className="text-sm text-amber-800 mb-3">
-                {SELF_RELEASE_MESSAGE}
-              </p>
+              <div className="mb-3">
+                <p className="text-sm text-amber-800 mb-2">{SELF_RELEASE_MESSAGE}</p>
+                <ReasonCodeField
+                  list={SELF_RELEASE_CODES}
+                  code={selfReleaseCode}
+                  note={selfReleaseNote}
+                  onCode={setSelfReleaseCode}
+                  onNote={setSelfReleaseNote}
+                  label="Self-release reason"
+                />
+              </div>
             )}
-            <textarea
-              value={reviewNotes}
-              onChange={(e) => setReviewNotes(e.target.value)}
-              placeholder="Reason (required to send back, at least 10 characters)"
-              rows={2}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-1"
+            <ReasonCodeField
+              list={SEND_BACK_CODES}
+              code={sendBackCode}
+              note={sendBackNote}
+              onCode={setSendBackCode}
+              onNote={setSendBackNote}
+              label="Send-back reason"
             />
-            <p className="text-xs text-gray-500 mb-3">
-              A reason is required to send back. Approval may leave this empty.
-            </p>
-            <div className="flex gap-3">
+            <div className="flex gap-3 mt-3">
               <button
                 onClick={approveAndRelease}
-                disabled={!isOnline || ownResults}
-                title={
-                  !isOnline
-                    ? OFFLINE_RELEASE_MESSAGE
-                    : ownResults
-                      ? SELF_RELEASE_MESSAGE
-                      : undefined
-                }
+                disabled={ownResults && !justificationReady(SELF_RELEASE_CODES, selfReleaseCode, selfReleaseNote)}
                 className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50"
               >
-                Approve
+                Release
               </button>
               <button
                 onClick={sendBackForCorrection}
-                disabled={!isOnline}
-                title={!isOnline ? OFFLINE_RELEASE_MESSAGE : undefined}
-                className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50 transition disabled:opacity-50"
+                className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50 transition"
               >
-                Send back for correction
+                Send back
               </button>
             </div>
           </div>
@@ -898,14 +1063,14 @@ function OrderDetailContent() {
               })}
             </div>
             {!isOnline && (
-              <p className="text-sm text-amber-800 mb-3">{OFFLINE_RELEASE_MESSAGE}</p>
+              <p className="text-sm text-amber-800 mb-3">{OFFLINE_AMENDMENT_MESSAGE}</p>
             )}
             <div className="flex gap-3">
               {!pendingInitiator && (
                 <button
                   onClick={() => void confirmPendingAmendment()}
                   disabled={!isOnline}
-                  title={!isOnline ? OFFLINE_RELEASE_MESSAGE : undefined}
+                  title={!isOnline ? OFFLINE_AMENDMENT_MESSAGE : undefined}
                   className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50"
                 >
                   Confirm amendment
@@ -914,7 +1079,7 @@ function OrderDetailContent() {
               <button
                 onClick={() => void cancelPendingAmendment()}
                 disabled={!isOnline}
-                title={!isOnline ? OFFLINE_RELEASE_MESSAGE : undefined}
+                title={!isOnline ? OFFLINE_AMENDMENT_MESSAGE : undefined}
                 className="border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50 transition disabled:opacity-50"
               >
                 Cancel request
@@ -929,7 +1094,7 @@ function OrderDetailContent() {
             <p className="text-sm text-gray-600 mb-3">
               This writes a new version. The original released values stay on the order.
             </p>
-            {!isOnline && <p className="text-sm text-amber-800 mb-3">{OFFLINE_RELEASE_MESSAGE}</p>}
+            {!isOnline && <p className="text-sm text-amber-800 mb-3">{OFFLINE_AMENDMENT_MESSAGE}</p>}
             {originalReleaser && (
               <p className="text-sm text-amber-800 mb-3">{SELF_AMEND_MESSAGE}</p>
             )}
@@ -942,7 +1107,7 @@ function OrderDetailContent() {
                   setAmendOpen(true);
                 }}
                 disabled={!isOnline}
-                title={!isOnline ? OFFLINE_RELEASE_MESSAGE : undefined}
+                title={!isOnline ? OFFLINE_AMENDMENT_MESSAGE : undefined}
                 className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50"
               >
                 Amend result
@@ -977,21 +1142,19 @@ function OrderDetailContent() {
                     );
                   })}
                 </div>
-                <textarea
-                  value={amendReason}
-                  onChange={(e) => setAmendReason(e.target.value)}
-                  placeholder={`Reason (required, at least ${AMENDMENT_REASON_MIN_LENGTH} characters)`}
-                  rows={3}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm mb-1"
+                <ReasonCodeField
+                  list={AMENDMENT_CODES}
+                  code={amendReason}
+                  note={amendNote}
+                  onCode={setAmendReason}
+                  onNote={setAmendNote}
+                  label="Amendment reason"
                 />
-                <p className="text-xs text-gray-500 mb-3">
-                  {amendReason.trim().length}/{AMENDMENT_REASON_MIN_LENGTH} characters
-                </p>
                 <div className="flex gap-3">
                   <button
-                    onClick={() => void submitAmendment()}
+                    onClick={() => withPin("amendment", () => void submitAmendment())}
                     disabled={!isOnline}
-                    title={!isOnline ? OFFLINE_RELEASE_MESSAGE : undefined}
+                    title={!isOnline ? OFFLINE_AMENDMENT_MESSAGE : undefined}
                     className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-800 transition disabled:opacity-50"
                   >
                     {originalReleaser ? "Submit for second approver" : "Amend result"}
@@ -1049,7 +1212,119 @@ function OrderDetailContent() {
           </div>
         )}
 
+        {canRejectSample(actingRole) && canRejectStatus(order.status) && (
+          <div className="border border-red-200 rounded-lg p-4 mt-6">
+            <h2 className="text-sm font-medium text-gray-900 mb-2">Cannot test</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              Reject an untestable sample. This records a nonconforming event.
+            </p>
+            <ReasonCodeField
+              list={SAMPLE_REJECTION_CODES}
+              code={rejectCode}
+              note={rejectNote}
+              onCode={setRejectCode}
+              onNote={setRejectNote}
+            />
+            <button
+              onClick={() => void rejectSample()}
+              className="mt-3 border border-red-300 text-red-800 rounded-lg px-4 py-2 text-sm font-medium hover:bg-red-50"
+            >
+              Reject sample
+            </button>
+          </div>
+        )}
+
+        {canCancelOrder(actingRole) && canCancelStatus(order.status) && (
+          <div className="border border-gray-200 rounded-lg p-4 mt-6">
+            <h2 className="text-sm font-medium text-gray-900 mb-2">Stop this order</h2>
+            <ReasonCodeField
+              list={ORDER_CANCEL_CODES}
+              code={cancelCode}
+              note={cancelNote}
+              onCode={setCancelCode}
+              onNote={setCancelNote}
+            />
+            <button
+              onClick={() => void cancelOrder()}
+              className="mt-3 border border-gray-300 rounded-lg px-4 py-2 text-sm font-medium hover:bg-gray-50"
+            >
+              Cancel order
+            </button>
+          </div>
+        )}
+
+        {released && critical && canRecordCriticalNotification(actingRole) && (
+          <div className="border border-red-200 bg-red-50 rounded-lg p-4 mt-6">
+            <h2 className="text-sm font-medium text-red-950 mb-2">Critical result communication</h2>
+            {criticalRecord ? (
+              <p className="text-sm text-red-900">
+                {criticalRecord.notifiedName} · {criticalRecord.means} · {criticalRecord.outcome} ·{" "}
+                {new Date(criticalRecord.at).toLocaleString()}
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-red-900 mb-3">
+                  Release is not blocked. Record who was told, by what means, and the outcome.
+                </p>
+                <label className="block text-sm text-gray-700 mb-2">
+                  Who was notified
+                  <input
+                    value={criticalName}
+                    onChange={(e) => setCriticalName(e.target.value)}
+                    className="mt-1 w-full rounded-lg border border-gray-300 px-3 py-2"
+                  />
+                </label>
+                <div className="grid grid-cols-2 gap-3 mb-3">
+                  <select
+                    value={criticalMeans}
+                    onChange={(e) => setCriticalMeans(e.target.value)}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    {CRITICAL_NOTIFY_MEANS.map((item) => (
+                      <option key={item.code} value={item.code}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                  <select
+                    value={criticalOutcome}
+                    onChange={(e) => setCriticalOutcome(e.target.value)}
+                    className="rounded-lg border border-gray-300 px-3 py-2 text-sm"
+                  >
+                    {CRITICAL_NOTIFY_OUTCOMES.map((item) => (
+                      <option key={item.code} value={item.code}>
+                        {item.label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <button
+                  onClick={() => void recordCriticalNotification()}
+                  className="bg-gray-900 text-white rounded-lg px-4 py-2 text-sm font-medium"
+                >
+                  Record notification
+                </button>
+              </>
+            )}
+          </div>
+        )}
+
         {status && <p className="text-sm text-gray-600 mt-3">{status}</p>}
+        {pinAction && pendingSensitive && (
+          <SensitivePinPrompt
+            action={pinAction}
+            onClose={() => {
+              setPinAction(null);
+              setPendingSensitive(null);
+            }}
+            onConfirmed={() => {
+              const run = pendingSensitive;
+              setPinAction(null);
+              setPendingSensitive(null);
+              run();
+            }}
+          />
+        )}
       </div>
     </main>
   );

@@ -7,11 +7,13 @@ import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import ActingClinicPrompt from "../lib/ActingClinicPrompt";
 import { useAuth } from "../lib/AuthContext";
-import { clinicCollectionQuery, isOwner, ownerActingCreateFields } from "../lib/clinicScope";
+import { clinicCollectionQuery, isOwner } from "../lib/clinicScope";
 import { canRegisterPatient, canViewPatients } from "../lib/permissions";
 import { isPatientDeleted } from "../lib/patientSoftDelete";
 import { trackedAddDoc, writeActorFromUser } from "../lib/trackedWrites";
 import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../lib/audit";
+import { generateLabId } from "../lib/labId";
+import { useWriteIdentity } from "../lib/pinSession";
 
 const COUNTRY_CODES = [
   { code: "+93", label: "🇦🇫 Afghanistan (+93)" },
@@ -175,12 +177,12 @@ const COUNTRY_CODES = [
   { code: "+263", label: "🇿🇼 Zimbabwe (+263)" },
 ];
 
-function generateLabId() {
-  const today = new Date();
-  const datePart = `${today.getFullYear()}${String(today.getMonth() + 1).padStart(2, "0")}${String(today.getDate()).padStart(2, "0")}`;
-  const randomPart = Math.floor(1000 + Math.random() * 9000);
-  return `LF-${datePart}-${randomPart}`;
-}
+const LAWFUL_BASES = [
+  { code: "consent", label: "Consent" },
+  { code: "legal_obligation", label: "Legal obligation" },
+  { code: "vital_interests", label: "Vital interests" },
+  { code: "public_task", label: "Public task" },
+] as const;
 
 // Normalizes a name: trims extra whitespace, converts to consistent Title Case
 function normalizeName(raw: string): string {
@@ -200,12 +202,18 @@ const NATIONAL_ID_REGEX = /^[a-zA-Z0-9\-]{4,30}$/;
 
 export default function Register() {
   const { user, role, clinicId, writeClinicId, username, shift } = useAuth();
+  const writer = useWriteIdentity();
   const allowed = canRegisterPatient(role);
   const internReceipt = allowed && !canViewPatients(role);
   const [name, setName] = useState("");
   const [preferredName, setPreferredName] = useState("");
   const [sex, setSex] = useState("");
   const [dob, setDob] = useState("");
+  const [ageYears, setAgeYears] = useState("");
+  const [ageMonths, setAgeMonths] = useState("");
+  const [lawfulBasis, setLawfulBasis] = useState("consent");
+  const [referredOutside, setReferredOutside] = useState(false);
+  const [referringFacility, setReferringFacility] = useState("");
   const [countryCode, setCountryCode] = useState("+220");
   const [phoneLocal, setPhoneLocal] = useState("");
   const [address, setAddress] = useState("");
@@ -231,22 +239,22 @@ export default function Register() {
     if (!sex) {
       newErrors.sex = "Please select a sex.";
     }
-    if (!dob) {
-      newErrors.dob = "Date of birth is required.";
-    } else if (new Date(dob) > new Date()) {
+    if (!dob && !ageYears.trim()) {
+      newErrors.dob = "Enter a date of birth, or age in years if the date is unknown.";
+    } else if (dob && new Date(dob) > new Date()) {
       newErrors.dob = "Date of birth cannot be in the future.";
     }
-    if (!PHONE_DIGITS_REGEX.test(phoneLocal.trim())) {
+    if (phoneLocal.trim() && !PHONE_DIGITS_REGEX.test(phoneLocal.trim())) {
       newErrors.phone = "Enter a valid phone number (digits only, 6-10 digits, no country code).";
-    }
-    if (address.trim().length < 2) {
-      newErrors.address = "Address is required.";
     }
     if (nationalId.trim() && !NATIONAL_ID_REGEX.test(nationalId.trim())) {
       newErrors.nationalId = "National ID should be letters/numbers only, 4-30 characters.";
     }
-    if (!NAME_REGEX.test(referringClinician.trim())) {
+    if (referredOutside && !NAME_REGEX.test(referringClinician.trim())) {
       newErrors.referringClinician = "Enter the referring clinician's name (letters only).";
+    }
+    if (!LAWFUL_BASES.some((item) => item.code === lawfulBasis)) {
+      newErrors.lawfulBasis = "Choose a lawful basis.";
     }
     if (!consentGiven) {
       newErrors.consent = "Patient consent is required before registration.";
@@ -317,10 +325,10 @@ export default function Register() {
 
     setStatus("Saving...");
     const labId = generateLabId();
-    const fullPhone = `${countryCode}${phoneLocal.trim()}`;
+    const fullPhone = phoneLocal.trim() ? `${countryCode}${phoneLocal.trim()}` : "";
     const cleanName = normalizeName(name);
     const cleanPreferredName = preferredName.trim() ? normalizeName(preferredName) : null;
-    const cleanClinician = normalizeName(referringClinician);
+    const cleanClinician = referringClinician.trim() ? normalizeName(referringClinician) : null;
 
     try {
       const docRef = await trackedAddDoc(
@@ -330,20 +338,29 @@ export default function Register() {
           name: cleanName,
           preferredName: cleanPreferredName,
           sex,
-          dob,
+          dob: dob || null,
+          ageYears: ageYears.trim() ? Number(ageYears) : null,
+          ageMonths: ageMonths.trim() ? Number(ageMonths) : null,
           phone: fullPhone,
-          address: address.trim(),
+          address: address.trim() || null,
           nationalId: nationalId.trim() || null,
           nextOfKin: nextOfKin.trim() || null,
           referringClinician: cleanClinician,
+          referringFacility: referringFacility.trim() || null,
           reasonForVisit: reasonForVisit.trim() || null,
           consentGiven: true,
+          lawfulBasis,
           createdAt: new Date().toISOString(),
           clinicId: writeClinicId,
-          ...ownerActingCreateFields(role),
+          createdByUid: writer.uid || user?.uid || "",
+          createdByRole: isOwner(role) ? "owner" : writer.role || role,
+          ...(isOwner(role) ? { actingAsOwner: true as const } : {}),
         },
         {
-          ...writeActorFromUser(user, username),
+          ...writeActorFromUser(
+            { uid: writer.uid || user?.uid || "", email: writer.email ?? user?.email ?? null },
+            writer.username ?? username
+          ),
           summary: `Registered patient ${cleanName}`,
           clinicId: writeClinicId,
           patientName: cleanName,
@@ -351,7 +368,11 @@ export default function Register() {
           expected: { labId, name: cleanName },
         }
       );
-      const actor = actorFromAuth(user, role, shift);
+      const actor = actorFromAuth(
+        { uid: writer.uid || user?.uid || "", email: writer.email ?? user?.email ?? null },
+        writer.role || role,
+        writer.shift ?? shift
+      );
       if (actor) {
         await safeLogAudit({
           clinicId: writeClinicId,
@@ -359,7 +380,7 @@ export default function Register() {
           action: "patient.register",
           targetCollection: "patients",
           targetId: docRef.id,
-          targetLabel: auditTargetLabel(cleanName, labId),
+          targetLabel: auditTargetLabel(labId, "patient"),
           detail: { fields: ["labId", "name"] },
         });
       }
@@ -438,11 +459,33 @@ export default function Register() {
               onChange={(e) => setDob(e.target.value)}
               className={`w-full border rounded-lg px-3 py-2 ${errors.dob ? "border-red-500" : "border-gray-300"}`}
             />
+            <p className="text-xs text-gray-500 mt-1">If unknown, enter age instead.</p>
+            <div className="grid grid-cols-2 gap-2 mt-2">
+              <input
+                type="number"
+                min={0}
+                value={ageYears}
+                onChange={(e) => setAgeYears(e.target.value)}
+                placeholder="Age (years)"
+                className="border border-gray-300 rounded-lg px-3 py-2"
+              />
+              <input
+                type="number"
+                min={0}
+                max={11}
+                value={ageMonths}
+                onChange={(e) => setAgeMonths(e.target.value)}
+                placeholder="Months"
+                className="border border-gray-300 rounded-lg px-3 py-2"
+              />
+            </div>
             {errors.dob && <p className="text-sm text-red-600 mt-1">{errors.dob}</p>}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Phone number</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Phone number <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
             <div className="flex gap-2">
               <select
                 value={countryCode}
@@ -465,7 +508,9 @@ export default function Register() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Address / Locality</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Address / Locality <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
             <input
               type="text"
               value={address}
@@ -503,6 +548,14 @@ export default function Register() {
           </div>
 
           <div>
+            <label className="flex items-center gap-2 text-sm text-gray-700 mb-2">
+              <input
+                type="checkbox"
+                checked={referredOutside}
+                onChange={(e) => setReferredOutside(e.target.checked)}
+              />
+              Request came from outside this clinic
+            </label>
             <label className="block text-sm font-medium text-gray-700 mb-1">Referring clinician</label>
             <input
               type="text"
@@ -512,6 +565,33 @@ export default function Register() {
               className={`w-full border rounded-lg px-3 py-2 ${errors.referringClinician ? "border-red-500" : "border-gray-300"}`}
             />
             {errors.referringClinician && <p className="text-sm text-red-600 mt-1">{errors.referringClinician}</p>}
+            {referredOutside && (
+              <input
+                type="text"
+                value={referringFacility}
+                onChange={(e) => setReferringFacility(e.target.value)}
+                placeholder="Referring facility (optional)"
+                className="mt-2 w-full border border-gray-300 rounded-lg px-3 py-2"
+              />
+            )}
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Lawful basis</label>
+            <select
+              value={lawfulBasis}
+              onChange={(e) => setLawfulBasis(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2"
+            >
+              {LAWFUL_BASES.map((item) => (
+                <option key={item.code} value={item.code}>
+                  {item.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs text-gray-500 mt-1">
+              A consent checkbox is not a lawful basis on its own. Confirm with counsel before production use.
+            </p>
           </div>
 
           <div>
@@ -553,7 +633,7 @@ export default function Register() {
           )}
           {lastLabId && internReceipt && (
             <p className="text-sm text-gray-600 mt-2">
-              Give this Lab ID to the clinician. Interns cannot browse the patient list or order tests.
+              Give this Lab ID to the clinician. You can open Patients to see records you registered.
             </p>
           )}
         </form>

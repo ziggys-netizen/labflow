@@ -24,10 +24,10 @@ describe("isSelfRelease", () => {
 });
 
 describe("reviewNotesReady", () => {
-  it("requires ten non-whitespace characters", () => {
-    expect(reviewNotesReady("too short")).toBe(false);
-    expect(reviewNotesReady("  123456789  ")).toBe(false);
-    expect(reviewNotesReady("Please recheck Hb")).toBe(true);
+  it("requires a non-empty reason", () => {
+    expect(reviewNotesReady("")).toBe(false);
+    expect(reviewNotesReady("   ")).toBe(false);
+    expect(reviewNotesReady("transcription_error")).toBe(true);
   });
 });
 

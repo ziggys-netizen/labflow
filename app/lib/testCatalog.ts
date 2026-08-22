@@ -1,8 +1,24 @@
-export interface TestParameter {
-  name: string;
-  unit: string;
-  referenceRange: string;
-}
+import {
+  ABO_VALUE_SET,
+  CLINIC_TIERS,
+  DIPSTICK_VALUE_SET,
+  MALARIA_FILM_VALUE_SET,
+  RDT_VALUE_SET,
+  RH_VALUE_SET,
+  SEROLOGY_VALUE_SET,
+  SICKLE_VALUE_SET,
+  STOOL_OVA_VALUE_SET,
+  WIDAL_TITRE_VALUE_SET,
+  numericParam,
+  qualitativeParam,
+  semiQuantitativeParam,
+  textParam,
+  type ClinicTier,
+  type TestParameter,
+} from "./resultModel";
+
+export type { TestParameter, ClinicTier } from "./resultModel";
+export { CLINIC_TIERS, CLINIC_TIER_LABELS, isClinicTier, parseClinicTier } from "./resultModel";
 
 export const SPECIMEN_TYPES = [
   "blood",
@@ -55,203 +71,269 @@ export interface LabTest {
   reviewedBy?: string | null;
   reviewedAt?: string | null;
   seededAt?: string;
-  seededFrom?: "default";
+  seededFrom?: "default" | "national_tier";
+  /** Which clinic tiers receive this test on seed. */
+  tiers?: ClinicTier[];
+  /** Named in the National Health Laboratory Services Policy 2021–2025. */
+  onNationalMenu?: boolean;
 }
 
-// Seed source for new clinics. Never used as a runtime fallback — empty
-// catalogues stay empty until seeded or tests are added in Settings.
-// Reference ranges are typical adult values compiled from WHO and standard
-// hematology/chemistry references. Per ISO 15189, each laboratory must verify
-// and, where needed, adjust these against its own analyzer, method, and
-// local population before clinical use.
+const PRIMARY: ClinicTier[] = ["primary", "secondary", "tertiary"];
+const SECONDARY: ClinicTier[] = ["secondary", "tertiary"];
+
+function test(
+  partial: Omit<LabTest, "tiers" | "onNationalMenu"> & {
+    tiers: ClinicTier[];
+    onNationalMenu: boolean;
+  }
+): LabTest {
+  return partial;
+}
+
+/**
+ * Seed source for new clinics. Never used as a runtime fallback — empty
+ * catalogues stay empty until seeded or tests are added in Settings.
+ *
+ * Primary-tier rows follow the national policy menu (PRD v0.4 §7.2).
+ * Widal is carried for West African practice but marked off the national menu.
+ * Reference ranges are typical adult values; each laboratory must confirm them.
+ */
 export const TEST_CATALOG: LabTest[] = [
-  {
-    code: "FBC",
-    name: "Full Blood Count (FBC)",
-    category: "Haematology",
-    specimenType: "blood",
-    parameters: [
-      { name: "Haemoglobin (Hb)", unit: "g/dL", referenceRange: "M: 13-18, F: 12-16" },
-      { name: "White Blood Cells (WBC)", unit: "x10^9/L", referenceRange: "4.5-11.0" },
-      { name: "Red Blood Cells (RBC)", unit: "x10^12/L", referenceRange: "M: 4.5-5.9, F: 4.0-5.2" },
-      { name: "Platelets", unit: "x10^9/L", referenceRange: "150-400" },
-      { name: "Haematocrit (HCT/PCV)", unit: "%", referenceRange: "M: 40-54, F: 36-48" },
-      { name: "Neutrophils", unit: "%", referenceRange: "40-75" },
-      { name: "Lymphocytes", unit: "%", referenceRange: "20-45" },
-      { name: "Monocytes", unit: "%", referenceRange: "2-10" },
-      { name: "Eosinophils", unit: "%", referenceRange: "1-6" },
-      { name: "Basophils", unit: "%", referenceRange: "0-2" },
-    ],
-  },
-  {
-    code: "MAL-RDT",
-    name: "Malaria Rapid Diagnostic Test",
-    category: "Parasitology",
-    specimenType: "blood",
-    parameters: [
-      { name: "Result", unit: "—", referenceRange: "Negative" },
-      { name: "Parasite species (if positive)", unit: "—", referenceRange: "N/A" },
-    ],
-  },
-  {
-    code: "MAL-MICRO",
-    name: "Malaria Blood Film (Microscopy)",
-    category: "Parasitology",
-    specimenType: "blood",
-    parameters: [
-      { name: "Result", unit: "—", referenceRange: "No parasites seen" },
-      { name: "Parasite density", unit: "parasites/µL", referenceRange: "N/A" },
-      { name: "Species identified", unit: "—", referenceRange: "N/A" },
-    ],
-  },
-  {
-    code: "HIV",
-    name: "HIV Rapid Test",
-    category: "Serology",
-    specimenType: "blood",
-    parameters: [
-      { name: "Screening result", unit: "—", referenceRange: "Non-reactive" },
-      { name: "Confirmatory result (if reactive)", unit: "—", referenceRange: "N/A" },
-    ],
-  },
-  {
-    code: "HBSAG",
-    name: "Hepatitis B Surface Antigen (HBsAg)",
-    category: "Serology",
-    specimenType: "blood",
-    parameters: [
-      { name: "Result", unit: "—", referenceRange: "Non-reactive" },
-    ],
-  },
-  {
-    code: "WIDAL",
-    name: "Widal Test",
-    category: "Serology",
-    specimenType: "blood",
-    parameters: [
-      { name: "S. Typhi O", unit: "titre", referenceRange: "< 1:80" },
-      { name: "S. Typhi H", unit: "titre", referenceRange: "< 1:80" },
-      { name: "S. Paratyphi A", unit: "titre", referenceRange: "< 1:80" },
-      { name: "S. Paratyphi B", unit: "titre", referenceRange: "< 1:80" },
-    ],
-  },
-  {
+  test({
     code: "UA",
     name: "Urinalysis",
     category: "Clinical Chemistry",
     specimenType: "urine",
+    tiers: PRIMARY,
+    onNationalMenu: true,
     parameters: [
-      { name: "Colour", unit: "—", referenceRange: "Pale yellow" },
-      { name: "Protein", unit: "—", referenceRange: "Negative" },
-      { name: "Glucose", unit: "—", referenceRange: "Negative" },
-      { name: "Ketones", unit: "—", referenceRange: "Negative" },
-      { name: "Blood", unit: "—", referenceRange: "Negative" },
-      { name: "Leukocytes", unit: "—", referenceRange: "Negative" },
-      { name: "Nitrites", unit: "—", referenceRange: "Negative" },
-      { name: "pH", unit: "—", referenceRange: "5.0-8.0" },
+      textParam("Colour", "Pale yellow"),
+      textParam("Appearance", ""),
+      numericParam("pH", "pH", "5.0-8.0"),
+      semiQuantitativeParam("Protein", DIPSTICK_VALUE_SET, "Nil"),
+      semiQuantitativeParam("Glucose", DIPSTICK_VALUE_SET, "Nil"),
+      semiQuantitativeParam("Ketones", DIPSTICK_VALUE_SET, "Nil"),
+      qualitativeParam("Blood", RDT_VALUE_SET, "Negative"),
+      qualitativeParam("Leukocytes", RDT_VALUE_SET, "Negative"),
+      qualitativeParam("Nitrites", RDT_VALUE_SET, "Negative"),
     ],
-  },
-  {
-    code: "FBS",
-    name: "Fasting Blood Sugar",
-    category: "Clinical Chemistry",
+  }),
+  test({
+    code: "MAL-MICRO",
+    name: "Malaria Blood Film (Microscopy)",
+    category: "Parasitology",
     specimenType: "blood",
+    tiers: PRIMARY,
+    onNationalMenu: true,
     parameters: [
-      { name: "Glucose", unit: "mmol/L", referenceRange: "3.9-5.6" },
+      qualitativeParam("Result", MALARIA_FILM_VALUE_SET, "No parasites seen"),
+      textParam("Species / description", ""),
+      numericParam("Parasite density", "parasites/µL", ""),
     ],
-  },
-  {
-    code: "PREG",
-    name: "Pregnancy Test (Urine hCG)",
-    category: "Clinical Chemistry",
-    specimenType: "urine",
-    parameters: [
-      { name: "Result", unit: "—", referenceRange: "Negative" },
-    ],
-  },
-  {
+  }),
+  test({
     code: "STOOL",
     name: "Stool Microscopy",
     category: "Parasitology",
     specimenType: "stool",
+    tiers: PRIMARY,
+    onNationalMenu: true,
     parameters: [
-      { name: "Ova/cysts seen", unit: "—", referenceRange: "None seen" },
-      { name: "Occult blood", unit: "—", referenceRange: "Negative" },
+      qualitativeParam("Ova/cysts seen", STOOL_OVA_VALUE_SET, "None seen"),
+      textParam("Description", ""),
+      qualitativeParam("Occult blood", RDT_VALUE_SET, "Negative"),
     ],
-  },
-  {
-    code: "RFT",
-    name: "Renal Function Test (U&E)",
+  }),
+  test({
+    code: "HB",
+    name: "Haemoglobin estimation",
+    category: "Haematology",
+    specimenType: "blood",
+    tiers: PRIMARY,
+    onNationalMenu: true,
+    parameters: [numericParam("Haemoglobin (Hb)", "g/dL", "M: 13-18, F: 12-16")],
+  }),
+  test({
+    code: "FBS",
+    name: "Blood glucose",
     category: "Clinical Chemistry",
     specimenType: "blood",
-    parameters: [
-      { name: "Urea", unit: "mmol/L", referenceRange: "2.5-7.8" },
-      { name: "Creatinine", unit: "µmol/L", referenceRange: "M: 53-106, F: 44-97" },
-      { name: "Sodium", unit: "mmol/L", referenceRange: "135-145" },
-      { name: "Potassium", unit: "mmol/L", referenceRange: "3.5-5.0" },
-      { name: "Chloride", unit: "mmol/L", referenceRange: "98-107" },
-    ],
-  },
-  {
-    code: "LFT",
-    name: "Liver Function Test (LFT)",
-    category: "Clinical Chemistry",
+    tiers: PRIMARY,
+    onNationalMenu: true,
+    parameters: [numericParam("Glucose", "mmol/L", "3.9-5.6")],
+  }),
+  test({
+    code: "SICKLE",
+    name: "Sickle cell testing",
+    category: "Haematology",
     specimenType: "blood",
-    parameters: [
-      { name: "ALT", unit: "U/L", referenceRange: "7-56" },
-      { name: "AST", unit: "U/L", referenceRange: "10-40" },
-      { name: "ALP", unit: "U/L", referenceRange: "44-147" },
-      { name: "Total Bilirubin", unit: "mg/dL", referenceRange: "0.1-1.2" },
-      { name: "Albumin", unit: "g/dL", referenceRange: "3.5-5.0" },
-      { name: "Total Protein", unit: "g/dL", referenceRange: "6.3-8.2" },
-    ],
-  },
-  {
-    code: "LIPID",
-    name: "Lipid Profile",
-    category: "Clinical Chemistry",
+    tiers: PRIMARY,
+    onNationalMenu: true,
+    parameters: [qualitativeParam("Result", SICKLE_VALUE_SET, "Negative")],
+  }),
+  test({
+    code: "MAL-RDT",
+    name: "Malaria Rapid Diagnostic Test",
+    category: "Parasitology",
     specimenType: "blood",
+    tiers: PRIMARY,
+    onNationalMenu: true,
     parameters: [
-      { name: "Total Cholesterol", unit: "mmol/L", referenceRange: "< 5.0 (desirable)" },
-      { name: "HDL Cholesterol", unit: "mmol/L", referenceRange: "> 1.0" },
-      { name: "LDL Cholesterol", unit: "mmol/L", referenceRange: "< 4.0" },
-      { name: "Triglycerides", unit: "mmol/L", referenceRange: "< 1.7" },
+      qualitativeParam("Result", RDT_VALUE_SET, "Negative"),
+      textParam("Parasite species (if positive)", ""),
     ],
-  },
-  {
+  }),
+  test({
+    code: "HIV",
+    name: "HIV Rapid Test",
+    category: "Serology",
+    specimenType: "blood",
+    tiers: PRIMARY,
+    onNationalMenu: true,
+    parameters: [
+      qualitativeParam("Screening result", SEROLOGY_VALUE_SET, "Non-reactive"),
+      qualitativeParam("Confirmatory result (if reactive)", SEROLOGY_VALUE_SET, "Non-reactive"),
+    ],
+  }),
+  test({
+    code: "HBSAG",
+    name: "Hepatitis B Surface Antigen (HBsAg)",
+    category: "Serology",
+    specimenType: "blood",
+    tiers: PRIMARY,
+    onNationalMenu: true,
+    parameters: [qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive")],
+  }),
+  test({
     code: "HCV",
     name: "Hepatitis C Antibody",
     category: "Serology",
     specimenType: "blood",
-    parameters: [
-      { name: "Result", unit: "—", referenceRange: "Non-reactive" },
-    ],
-  },
-  {
+    tiers: PRIMARY,
+    onNationalMenu: true,
+    parameters: [qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive")],
+  }),
+  test({
+    code: "PREG",
+    name: "Pregnancy Test (Urine hCG)",
+    category: "Clinical Chemistry",
+    specimenType: "urine",
+    tiers: PRIMARY,
+    onNationalMenu: true,
+    parameters: [qualitativeParam("Result", RDT_VALUE_SET, "Negative")],
+  }),
+  test({
     code: "VDRL",
     name: "Syphilis Test (VDRL/RPR)",
     category: "Serology",
     specimenType: "blood",
+    tiers: PRIMARY,
+    onNationalMenu: true,
     parameters: [
-      { name: "Result", unit: "—", referenceRange: "Non-reactive" },
-      { name: "Titre (if reactive)", unit: "—", referenceRange: "N/A" },
+      qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive"),
+      textParam("Titre (if reactive)", ""),
     ],
-  },
-  {
+  }),
+  test({
+    code: "FBC",
+    name: "Full Blood Count (FBC)",
+    category: "Haematology",
+    specimenType: "blood",
+    tiers: SECONDARY,
+    onNationalMenu: true,
+    parameters: [
+      numericParam("Haemoglobin (Hb)", "g/dL", "M: 13-18, F: 12-16"),
+      numericParam("White Blood Cells (WBC)", "x10^9/L", "4.5-11.0"),
+      numericParam("Red Blood Cells (RBC)", "x10^12/L", "M: 4.5-5.9, F: 4.0-5.2"),
+      numericParam("Platelets", "x10^9/L", "150-400"),
+      numericParam("Haematocrit (HCT/PCV)", "%", "M: 40-54, F: 36-48"),
+      numericParam("Neutrophils", "%", "40-75"),
+      numericParam("Lymphocytes", "%", "20-45"),
+      numericParam("Monocytes", "%", "2-10"),
+      numericParam("Eosinophils", "%", "1-6"),
+      numericParam("Basophils", "%", "0-2"),
+    ],
+  }),
+  test({
     code: "BGRH",
     name: "Blood Group & Rhesus Factor",
     category: "Haematology",
     specimenType: "blood",
+    tiers: SECONDARY,
+    onNationalMenu: true,
     parameters: [
-      { name: "ABO Group", unit: "—", referenceRange: "A / B / AB / O" },
-      { name: "Rhesus (Rh) Factor", unit: "—", referenceRange: "Positive / Negative" },
+      qualitativeParam("ABO Group", ABO_VALUE_SET, "A / B / AB / O"),
+      qualitativeParam("Rhesus (Rh) Factor", RH_VALUE_SET, "Positive / Negative"),
     ],
-  },
+  }),
+  test({
+    code: "RFT",
+    name: "Renal Function Test (U&E)",
+    category: "Clinical Chemistry",
+    specimenType: "blood",
+    tiers: SECONDARY,
+    onNationalMenu: true,
+    parameters: [
+      numericParam("Urea", "mmol/L", "2.5-7.8"),
+      numericParam("Creatinine", "µmol/L", "M: 53-106, F: 44-97"),
+      numericParam("Sodium", "mmol/L", "135-145"),
+      numericParam("Potassium", "mmol/L", "3.5-5.0"),
+      numericParam("Chloride", "mmol/L", "98-107"),
+    ],
+  }),
+  test({
+    code: "LFT",
+    name: "Liver Function Test (LFT)",
+    category: "Clinical Chemistry",
+    specimenType: "blood",
+    tiers: SECONDARY,
+    onNationalMenu: true,
+    parameters: [
+      numericParam("ALT", "U/L", "7-56"),
+      numericParam("AST", "U/L", "10-40"),
+      numericParam("ALP", "U/L", "44-147"),
+      numericParam("Total Bilirubin", "mg/dL", "0.1-1.2"),
+      numericParam("Albumin", "g/dL", "3.5-5.0"),
+      numericParam("Total Protein", "g/dL", "6.3-8.2"),
+    ],
+  }),
+  test({
+    code: "LIPID",
+    name: "Lipid Profile",
+    category: "Clinical Chemistry",
+    specimenType: "blood",
+    tiers: SECONDARY,
+    onNationalMenu: true,
+    parameters: [
+      numericParam("Total Cholesterol", "mmol/L", "< 5.0 (desirable)"),
+      numericParam("HDL Cholesterol", "mmol/L", "> 1.0"),
+      numericParam("LDL Cholesterol", "mmol/L", "< 4.0"),
+      numericParam("Triglycerides", "mmol/L", "< 1.7"),
+    ],
+  }),
+  test({
+    code: "WIDAL",
+    name: "Widal Test",
+    category: "Serology",
+    specimenType: "blood",
+    tiers: SECONDARY,
+    onNationalMenu: false,
+    parameters: [
+      qualitativeParam("S. Typhi O", WIDAL_TITRE_VALUE_SET, "< 1:80"),
+      qualitativeParam("S. Typhi H", WIDAL_TITRE_VALUE_SET, "< 1:80"),
+      qualitativeParam("S. Paratyphi A", WIDAL_TITRE_VALUE_SET, "< 1:80"),
+      qualitativeParam("S. Paratyphi B", WIDAL_TITRE_VALUE_SET, "< 1:80"),
+    ],
+  }),
 ];
 
-const SEED_SPECIMEN_BY_CODE = new Map(TEST_CATALOG.map((test) => [test.code, test.specimenType]));
+export function testsForTier(tier: ClinicTier): LabTest[] {
+  return TEST_CATALOG.filter((row) => (row.tiers ?? [...CLINIC_TIERS]).includes(tier));
+}
 
-/** Stored value, then the 16-test seed, then `other`. Does not invent per-specimen times. */
+const SEED_SPECIMEN_BY_CODE = new Map(TEST_CATALOG.map((row) => [row.code, row.specimenType]));
+
+/** Stored value, then the seed, then `other`. Does not invent per-specimen times. */
 export function resolveSpecimenType(
   stored: unknown,
   code?: string | null,
@@ -260,7 +342,7 @@ export function resolveSpecimenType(
   const direct = parseSpecimenType(stored);
   if (direct) return direct;
   if (code && catalog) {
-    const fromCatalog = catalog.find((test) => test.code === code);
+    const fromCatalog = catalog.find((row) => row.code === code);
     const parsed = parseSpecimenType(fromCatalog?.specimenType);
     if (parsed) return parsed;
   }

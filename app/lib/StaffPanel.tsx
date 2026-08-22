@@ -39,6 +39,8 @@ import {
 } from "./staffOps";
 import { actorFromAuth, safeLogAudit } from "./audit";
 import PreApprovalsPanel from "./PreApprovalsPanel";
+import { useStaffSession } from "./pinSession";
+import { SensitivePinPrompt } from "./PinGate";
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -187,6 +189,8 @@ export default function StaffPanel({
   embedded?: boolean;
 }) {
   const { user, role, clinicId, username: myUsername, shift } = useAuth();
+  const { resetStaffPin } = useStaffSession();
+  const [pinResetUid, setPinResetUid] = useState<string | null>(null);
   const canAccess = canManageStaff(role);
   const owner = isOwner(role);
 
@@ -450,6 +454,13 @@ export default function StaffPanel({
     }
   }
 
+  async function confirmPinReset() {
+    if (!pinResetUid) return;
+    const err = await resetStaffPin(pinResetUid);
+    setPinResetUid(null);
+    setStatusMsg(err || "PIN reset. They must set a new PIN at next unlock.");
+  }
+
   function usernameProps(row: StaffRow) {
     return {
       uid: row.uid,
@@ -604,6 +615,13 @@ export default function StaffPanel({
                             Revoke
                           </button>
                           <button
+                            type="button"
+                            onClick={() => setPinResetUid(row.uid)}
+                            className="text-sm text-gray-900 underline"
+                          >
+                            Reset PIN
+                          </button>
+                          <button
                             onClick={() =>
                               setExpanded((prev) => ({ ...prev, [key]: !prev[key] }))
                             }
@@ -656,6 +674,13 @@ export default function StaffPanel({
   const body = (
     <>
       {statusMsg && <p className="text-sm text-gray-600 mb-4">{statusMsg}</p>}
+      {pinResetUid && (
+        <SensitivePinPrompt
+          action="staff"
+          onClose={() => setPinResetUid(null)}
+          onConfirmed={() => void confirmPinReset()}
+        />
+      )}
       {loading && <p className="text-gray-600">Loading...</p>}
       {!loading && (
         <>

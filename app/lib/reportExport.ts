@@ -32,6 +32,10 @@ export type RecentExport = {
   recipient: string;
 };
 
+export const EXPORT_DELIVERIES = ["download", "email"] as const;
+
+export type ExportDelivery = (typeof EXPORT_DELIVERIES)[number];
+
 export type ParsedExportRequest = {
   startDate: string;
   endDate: string;
@@ -39,6 +43,7 @@ export type ParsedExportRequest = {
   startIso: string;
   endExclusiveIso: string;
   dayCount: number;
+  delivery: ExportDelivery;
 };
 
 export function isReportType(value: unknown): value is ReportType {
@@ -82,6 +87,7 @@ export function parseExportRequest(body: Record<string, unknown>): ParsedExportR
   const start = new Date(`${startDate}T00:00:00.000Z`);
   const endExclusive = new Date(start);
   endExclusive.setUTCDate(endExclusive.getUTCDate() + dayCount);
+  const delivery: ExportDelivery = body.delivery === "email" ? "email" : "download";
   return {
     startDate,
     endDate,
@@ -89,6 +95,7 @@ export function parseExportRequest(body: Record<string, unknown>): ParsedExportR
     startIso: start.toISOString(),
     endExclusiveIso: endExclusive.toISOString(),
     dayCount,
+    delivery,
   };
 }
 

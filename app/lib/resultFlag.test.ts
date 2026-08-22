@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TEST_CATALOG } from "./testCatalog";
-import { isParseableNumericRange, orderHasAbnormalResults, resultFlag } from "./resultFlag";
+import { normalizeParameter } from "./resultModel";
+import { isParseableNumericRange, orderHasAbnormalResults, parameterFlag, resultFlag } from "./resultFlag";
 
 describe("resultFlag", () => {
   it("returns null for missing values", () => {
@@ -67,11 +68,20 @@ describe("isParseableNumericRange", () => {
     expect(isParseableNumericRange(null)).toBe(false);
   });
 
-  it("counts seed parameters that lack a parseable numeric range", () => {
-    const missing = TEST_CATALOG.flatMap((test) => test.parameters).filter(
-      (parameter) => !isParseableNumericRange(parameter.referenceRange)
-    );
-    expect(missing.length).toBe(27);
+  it("requires a parseable range on every numeric seed parameter except optional density", () => {
+    const missing = TEST_CATALOG.flatMap((test) => test.parameters).filter((parameter) => {
+      const normalized = normalizeParameter(parameter);
+      return normalized.resultType === "numeric" && !isParseableNumericRange(normalized.referenceRange);
+    });
+    expect(missing.map((parameter) => parameter.name)).toEqual(["Parasite density"]);
+  });
+
+  it("does not treat a qualitative Positive as a numeric high flag", () => {
+    const malaria = TEST_CATALOG.find((test) => test.code === "MAL-RDT");
+    const result = malaria?.parameters.find((parameter) => parameter.name === "Result");
+    expect(result).toBeTruthy();
+    expect(parameterFlag("Positive", result)).toBe("A");
+    expect(resultFlag("Positive", "Negative")).toBeNull();
   });
 });
 
@@ -79,11 +89,11 @@ describe("orderHasAbnormalResults", () => {
   const catalog = [
     {
       code: "FBC",
-      parameters: [{ name: "WBC", referenceRange: "4.5-11.0" }],
+      parameters: [{ name: "WBC", unit: "10^9/L", referenceRange: "4.5-11.0", resultType: "numeric" as const }],
     },
     {
       code: "HIV",
-      parameters: [{ name: "Screening result", referenceRange: "Non-reactive" }],
+      parameters: [{ name: "Screening result", unit: "—", referenceRange: "Non-reactive", resultType: "text" as const }],
     },
   ];
 

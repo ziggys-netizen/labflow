@@ -21,12 +21,14 @@ import { seedClinicCatalog, backfillEmptyClinicCatalogs } from "../lib/catalogSe
 import { actorFromAuth, safeLogAudit } from "../lib/audit";
 import {
   ClinicRecord,
+  GAMBIA_HEALTH_REGIONS,
   loadAllClinics,
   loadPatientCountsByClinic,
   uniqueJoinCode,
 } from "../lib/clinics";
 import { loadStaffRows, staffCountsByClinic, subscribeStaffChanged } from "../lib/staffOps";
 import { syncCustomClaims } from "../lib/authApi";
+import { CLINIC_TIER_LABELS, CLINIC_TIERS, parseClinicTier, type ClinicTier } from "../lib/resultModel";
 
 function OwnerContent() {
   const { user, role, username, shift } = useAuth();
@@ -45,6 +47,8 @@ function OwnerContent() {
   const [tin, setTin] = useState("");
   const [businessRegNumber, setBusinessRegNumber] = useState("");
   const [responsiblePerson, setResponsiblePerson] = useState("");
+  const [tier, setTier] = useState<ClinicTier | "">("");
+  const [region, setRegion] = useState("");
   const [creating, setCreating] = useState(false);
 
   const [adminEmail, setAdminEmail] = useState("");
@@ -92,6 +96,11 @@ function OwnerContent() {
       setStatus("Clinic name is required.");
       return;
     }
+    const clinicTier = parseClinicTier(tier);
+    if (!clinicTier) {
+      setStatus("Choose the clinic tier. It decides which tests are seeded.");
+      return;
+    }
     setCreating(true);
     setCreatedClinicId("");
     setStatus("Creating clinic...");
@@ -103,11 +112,14 @@ function OwnerContent() {
         tin: tin.trim(),
         businessRegNumber: businessRegNumber.trim(),
         responsiblePerson: responsiblePerson.trim(),
+        tier: clinicTier,
+        region: region.trim(),
         joinCode,
         createdAt: new Date().toISOString(),
         createdBy: user.uid,
         active: true,
         brandColor: null,
+        idleLockMinutes: 5,
       });
       const createdActor = actorFromAuth(user, role, shift);
       if (createdActor) {
@@ -118,15 +130,18 @@ function OwnerContent() {
           targetCollection: "clinics",
           targetId: docRef.id,
           targetLabel: name.trim(),
-          detail: { fields: ["name", "address", "tin", "businessRegNumber", "responsiblePerson", "joinCode"] },
+          detail: {
+            fields: ["name", "address", "tin", "businessRegNumber", "responsiblePerson", "tier", "region", "joinCode"],
+            tier: clinicTier,
+          },
         });
       }
       setCreatedClinicId(docRef.id);
       try {
         const actor = actorFromAuth(user, role, shift);
-        const seeded = await seedClinicCatalog(docRef.id, { actor });
+        const seeded = await seedClinicCatalog(docRef.id, { actor, tier: clinicTier });
         setStatus(
-          `Clinic created. Join code: ${joinCode}. Seeded ${seeded} default tests (not reviewed).`
+          `Clinic created. Join code: ${joinCode}. Seeded ${seeded} ${clinicTier}-tier tests (not reviewed).`
         );
       } catch (seedErr) {
         console.error(seedErr);
@@ -141,6 +156,8 @@ function OwnerContent() {
       setTin("");
       setBusinessRegNumber("");
       setResponsiblePerson("");
+      setTier("");
+      setRegion("");
       setCreatedClinicId(docRef.id);
       await loadClinics();
     } catch (err) {
@@ -231,10 +248,7 @@ function OwnerContent() {
     setBackfilling(true);
     setStatus("Checking clinic catalogues...");
     try {
-      const result = await backfillEmptyClinicCatalogs(
-        clinics.map((c) => c.id),
-        actor
-      );
+      const result = await backfillEmptyClinicCatalogs(clinics, actor);
       if (result.testsCreated === 0) {
         setStatus("Every clinic already has a catalogue. Nothing was seeded.");
       } else {
@@ -325,6 +339,9 @@ function OwnerContent() {
                   <div className="min-w-0">
                     <p className="font-medium text-gray-900 truncate">
                       {c.name || c.id}
+                      {c.tier && (
+                        <span className="ml-2 text-xs font-normal capitalize text-gray-500">{c.tier}</span>
+                      )}
                       {!c.active && (
                         <span className="ml-2 text-xs font-normal uppercase tracking-wide text-gray-500">
                           Inactive
@@ -379,6 +396,31 @@ function OwnerContent() {
               placeholder="Responsible person"
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
             />
+            <select
+              value={tier}
+              onChange={(e) => setTier(parseClinicTier(e.target.value) || "")}
+              required
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="">Clinic tier (required)</option>
+              {CLINIC_TIERS.map((value) => (
+                <option key={value} value={value}>
+                  {CLINIC_TIER_LABELS[value]}
+                </option>
+              ))}
+            </select>
+            <select
+              value={region}
+              onChange={(e) => setRegion(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+            >
+              <option value="">Health region (optional)</option>
+              {GAMBIA_HEALTH_REGIONS.map((value) => (
+                <option key={value} value={value}>
+                  {value}
+                </option>
+              ))}
+            </select>
             <button
               type="submit"
               disabled={creating}
@@ -392,7 +434,7 @@ function OwnerContent() {
         <section className="border border-gray-200 rounded-lg p-4 mb-6">
           <h2 className="font-medium text-gray-900 mb-2">Seed empty clinic catalogues</h2>
           <p className="text-sm text-gray-600 mb-3">
-            Clinics with no catalogue documents get the 16 default tests, marked not reviewed.
+            Clinics with no catalogue documents get the national menu for their tier, marked not reviewed.
             Clinics that already have any catalogue are left unchanged.
           </p>
           <button

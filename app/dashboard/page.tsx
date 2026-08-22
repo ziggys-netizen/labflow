@@ -14,11 +14,17 @@ import { getTimeWindow, isWithin, summarizeTurnaround, formatTurnaroundExclusion
 import CatalogReviewBanner from "../lib/CatalogReviewBanner";
 import { interpretCollection, orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../lib/sampleCollection";
 import { countAmendmentsInWindow, isReleasedResultStatus } from "../lib/resultAmendment";
+import { criticalAwaitingCommunication } from "../lib/criticalResults";
+import { orderHasCriticalResults } from "../lib/resultFlag";
+import { SAMPLE_REJECTION_CODES } from "../lib/reasonCodes";
+import { SensitivePinPrompt } from "../lib/PinGate";
+import type { LabTest } from "../lib/testCatalog";
 import {
   MAX_EXPORT_RANGE_DAYS,
   MAX_EXPORTS_PER_HOUR,
   REPORT_TYPE_LABELS,
   REPORT_TYPES,
+  exportFilename,
   parseRecentExports,
   type RecentExport,
   type ReportType,
@@ -35,6 +41,13 @@ interface OrderRecord {
   resultVersions?: unknown;
   lastAmendedAt?: string | null;
   notYetSynced?: boolean;
+  selfReleased?: boolean;
+  rejectionReasonCode?: string | null;
+  rejectedAt?: string | null;
+  needsFinalReprint?: boolean;
+  criticalNotification?: unknown;
+  results?: Record<string, Record<string, string>> | null;
+  patientSex?: string | null;
 }
 
 const WINDOWS: { key: TimeWindowKey; label: string }[] = [
@@ -68,6 +81,7 @@ function ExportReports() {
   const [confirmation, setConfirmation] = useState("");
   const [recipient, setRecipient] = useState<string | null>(null);
   const [recent, setRecent] = useState<RecentExport[]>([]);
+  const [pinFor, setPinFor] = useState<"download" | "email" | null>(null);
 
   useEffect(() => {
     if (!isOnline) return;
@@ -98,34 +112,65 @@ function ExportReports() {
     };
   }, [isOnline]);
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault();
+  async function runExport(delivery: "download" | "email") {
     setError("");
     setConfirmation("");
     if (!isOnline) {
-      setError("Export emails a spreadsheet from the server, so it is unavailable while this device is offline.");
+      setError("Export needs the server, so it is unavailable while this device is offline.");
       return;
     }
     setBusy(true);
     try {
-      const res = await authedPost("/api/reports/export", { startDate, endDate, reportType });
+      const res = await authedPost("/api/reports/export", { startDate, endDate, reportType, delivery });
+      if (res.status === 429) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        setError(data.error || `Too many exports. Limit is ${MAX_EXPORTS_PER_HOUR} per hour.`);
+        return;
+      }
+      if (!res.ok) {
+        const data = (await res.json().catch(() => ({}))) as { error?: string };
+        if (res.status === 503) {
+          setError(data.error || "Export is temporarily unavailable. Try again shortly.");
+          return;
+        }
+        setError(data.error || "Could not build the export.");
+        return;
+      }
+
+      if (delivery === "download") {
+        const blob = await res.blob();
+        const headerCount = Number(res.headers.get("X-Export-Row-Count") || 0);
+        const filename = exportFilename(reportType, startDate, endDate);
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        setConfirmation(
+          `Downloaded ${headerCount} row${headerCount === 1 ? "" : "s"}. Email still creates the traceable copy if you need it.`
+        );
+        setRecent((prev) =>
+          [
+            {
+              at: new Date().toISOString(),
+              reportType,
+              startDate,
+              endDate,
+              rowCount: headerCount,
+              recipient: recipient || "download",
+            },
+            ...prev,
+          ].slice(0, 10)
+        );
+        return;
+      }
+
       const data = (await res.json().catch(() => ({}))) as {
         error?: string;
         recipient?: string;
         rowCount?: number;
       };
-      if (res.status === 429) {
-        setError(data.error || `Too many exports. Limit is ${MAX_EXPORTS_PER_HOUR} per hour.`);
-        return;
-      }
-      if (res.status === 503) {
-        setError(data.error || "Export is temporarily unavailable. Try again shortly.");
-        return;
-      }
-      if (!res.ok) {
-        setError(data.error || "Could not send the export.");
-        return;
-      }
       const emailedTo = typeof data.recipient === "string" ? data.recipient : recipient;
       const rows = typeof data.rowCount === "number" ? data.rowCount : 0;
       setRecipient(emailedTo);
@@ -157,17 +202,22 @@ function ExportReports() {
     <section className="border border-gray-200 rounded-lg p-4 mt-8 mb-8">
       <h2 className="text-sm font-medium text-gray-900 mb-1">Excel export</h2>
       <p className="text-sm text-gray-500 mb-4">
-        Spreadsheets are emailed to the address on your account. Maximum {MAX_EXPORT_RANGE_DAYS}{" "}
-        days and {MAX_EXPORTS_PER_HOUR} exports per hour.
+        Download the file on this device. Email still goes only to the address on your account.
+        Maximum {MAX_EXPORT_RANGE_DAYS} days and {MAX_EXPORTS_PER_HOUR} exports per hour.
         {recipient ? ` This account: ${recipient}.` : ""}
       </p>
       {!isOnline && (
         <p className="text-sm text-amber-800 mb-4">
-          Export emails a spreadsheet from the server, so it is unavailable while this device is
-          offline.
+          Export needs the server, so it is unavailable while this device is offline.
         </p>
       )}
-      <form onSubmit={(e) => void handleSubmit(e)} className="grid gap-3 md:grid-cols-4 md:items-end">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault();
+          setPinFor("download");
+        }}
+        className="grid gap-3 md:grid-cols-5 md:items-end"
+      >
         <label className="text-sm text-gray-700">
           Start
           <input
@@ -207,9 +257,28 @@ function ExportReports() {
           disabled={busy || !isOnline}
           className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
         >
-          {busy ? "Sending…" : "Email spreadsheet"}
+          {busy ? "Working…" : "Download"}
+        </button>
+        <button
+          type="button"
+          disabled={busy || !isOnline}
+          onClick={() => setPinFor("email")}
+          className="rounded-lg border border-gray-300 px-4 py-2 text-sm font-medium text-gray-800 hover:bg-gray-50 disabled:opacity-50"
+        >
+          Email copy
         </button>
       </form>
+      {pinFor && (
+        <SensitivePinPrompt
+          action="export"
+          onClose={() => setPinFor(null)}
+          onConfirmed={() => {
+            const delivery = pinFor;
+            setPinFor(null);
+            void runExport(delivery);
+          }}
+        />
+      )}
       {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
       {confirmation && <p className="text-sm text-gray-900 mt-3">{confirmation}</p>}
       <h3 className="text-sm font-medium text-gray-900 mt-6 mb-2">Your recent exports</h3>
@@ -249,6 +318,7 @@ function DashboardContent() {
   const allowed = canViewDashboard(role);
   const ordersQuery = useClinicCollection("orders", role, clinicId, { enabled: allowed });
   const patientsQuery = useClinicCollection("patients", role, clinicId, { enabled: allowed });
+  const catalogQuery = useClinicCollection("testCatalog", role, clinicId, { enabled: allowed });
 
   const orders: OrderRecord[] = ordersQuery.docs
     .filter((d) => !isOrderForDeletedPatient(d.data()))
@@ -265,13 +335,20 @@ function DashboardContent() {
         resultVersions: d.data().resultVersions,
         lastAmendedAt: d.data().lastAmendedAt || null,
         notYetSynced: parsed.notYetSynced,
+        selfReleased: d.data().selfReleased === true,
+        rejectionReasonCode: typeof d.data().rejectionReasonCode === "string" ? d.data().rejectionReasonCode : null,
+        rejectedAt: typeof d.data().rejectedAt === "string" ? d.data().rejectedAt : null,
+        needsFinalReprint: d.data().needsFinalReprint === true,
+        criticalNotification: d.data().criticalNotification,
+        results: (d.data().results as Record<string, Record<string, string>>) || null,
       };
     });
+  const catalog = catalogQuery.docs.map((d) => d.data() as LabTest);
   const patientDates = patientsQuery.docs
     .filter((d) => !isPatientDeleted(d.data()))
     .map((d) => d.data().createdAt)
     .filter(Boolean);
-  const loading = ordersQuery.loading || patientsQuery.loading;
+  const loading = ordersQuery.loading || patientsQuery.loading || catalogQuery.loading;
   const error = ordersQuery.error
     ? `Could not load dashboard data. ${ordersQuery.error}`
     : patientsQuery.error
@@ -314,8 +391,30 @@ function DashboardContent() {
       pending: orders.filter((o) => o.status === "pending").length,
       awaitingReview: orders.filter((o) => o.status === "results_entered").length,
       returned: orders.filter((o) => o.status === "needs_correction").length,
+      rejected: orders.filter(
+        (o) => o.status === "rejected" && isWithin(o.rejectedAt || o.createdAt, window)
+      ).length,
+      rejectedByReason: SAMPLE_REJECTION_CODES.map((item) => ({
+        code: item.code,
+        label: item.label,
+        count: orders.filter(
+          (o) =>
+            o.status === "rejected" &&
+            o.rejectionReasonCode === item.code &&
+            isWithin(o.rejectedAt || o.createdAt, window)
+        ).length,
+      })).filter((row) => row.count > 0),
+      selfReleased: approvedInWindow.filter((o) => o.selfReleased).length,
+      criticalAwaiting: orders.filter((o) =>
+        criticalAwaitingCommunication({
+          status: o.status,
+          hasCritical: orderHasCriticalResults(o.tests, o.results, catalog, null),
+          criticalNotification: o.criticalNotification,
+        })
+      ).length,
+      pendingReprints: orders.filter((o) => o.needsFinalReprint).length,
     };
-  }, [orders, patientDates, windowKey]);
+  }, [orders, patientDates, windowKey, catalog]);
 
   if (!allowed) return null;
 
@@ -378,6 +477,16 @@ function DashboardContent() {
                 value={String(stats.awaitingSample)}
                 hint="A required specimen has no collection time"
               />
+              <Metric
+                label="Critical results awaiting communication"
+                value={String(stats.criticalAwaiting)}
+                hint="Released, named person not yet recorded as told"
+              />
+              <Metric
+                label="Pending final reprints"
+                value={String(stats.pendingReprints)}
+                hint="Provisional reports waiting for a confirmed copy"
+              />
             </div>
 
             <h2 className="text-sm font-medium text-gray-900 mb-3">{stats.window.label}</h2>
@@ -389,6 +498,20 @@ function DashboardContent() {
                 label="Amendments"
                 value={String(stats.amendments)}
                 hint="Released results rewritten in this period"
+              />
+              <Metric
+                label="Rejected samples"
+                value={String(stats.rejected)}
+                hint={
+                  stats.rejectedByReason.length
+                    ? stats.rejectedByReason.map((row) => `${row.label} ${row.count}`).join(" · ")
+                    : "By reason code in this period"
+                }
+              />
+              <Metric
+                label="Self-released"
+                value={String(stats.selfReleased)}
+                hint="Approver released their own entry"
               />
               <div className="border border-gray-200 rounded-lg p-4 md:col-span-2">
                 <p className="text-sm text-gray-600">Median turnaround</p>

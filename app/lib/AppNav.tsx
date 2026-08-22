@@ -14,6 +14,7 @@ import {
   canRegisterPatient,
   canViewDashboard,
   canViewInventory,
+  canViewOwnRegisteredPatients,
   canViewPatients,
 } from "./permissions";
 import { loadClinicNames } from "./clinicScope";
@@ -21,6 +22,7 @@ import { useClinicCollection } from "./clinicListen";
 import { loadPendingApprovalCount, subscribeStaffChanged } from "./staffOps";
 import { SyncStatus } from "./ConnectionContext";
 import { countResultsEntered } from "./reviewQueue";
+import { useStaffSession } from "./pinSession";
 
 export default function AppNav() {
   const {
@@ -36,6 +38,7 @@ export default function AppNav() {
     setActingClinic,
     logout,
   } = useAuth();
+  const { acting, lock, locked } = useStaffSession();
   const pathname = usePathname();
   const [clinicNames, setClinicNames] = useState<Record<string, string>>({});
   const [switching, setSwitching] = useState(false);
@@ -129,9 +132,16 @@ export default function AppNav() {
           </Link>
           <div className="flex items-center gap-4">
             {internOnly ? (
-              <Link href="/register" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                Register
-              </Link>
+              <>
+                <Link href="/register" className="text-sm font-medium text-gray-700 hover:text-gray-900">
+                  Register
+                </Link>
+                {canViewOwnRegisteredPatients(role) && (
+                  <Link href="/patients" className="text-sm font-medium text-gray-700 hover:text-gray-900">
+                    My patients
+                  </Link>
+                )}
+              </>
             ) : (
               <>
                 {canViewPatients(role) && (
@@ -237,8 +247,17 @@ export default function AppNav() {
                   href="/profile"
                   className="text-sm text-gray-600 hover:text-gray-900 hover:underline"
                 >
-                  {username || "Set username"}
+                  {acting?.displayName || username || "Set username"}
                 </Link>
+                {acting && !locked && (
+                  <button
+                    type="button"
+                    onClick={lock}
+                    className="text-sm font-medium text-gray-700 hover:text-gray-900 underline"
+                  >
+                    Lock
+                  </button>
+                )}
                 <button
                   onClick={logout}
                   className="text-sm font-medium text-gray-700 hover:text-gray-900 underline"

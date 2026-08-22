@@ -8,13 +8,18 @@ import { useAuth } from "../../../lib/AuthContext";
 import ProtectedRoute from "../../../lib/ProtectedRoute";
 import PrintIcon from "../../../lib/PrintIcon";
 import { clinicCollectionQuery, isOwner } from "../../../lib/clinicScope";
-import { canViewPatients } from "../../../lib/permissions";
 import { isPatientDeleted } from "../../../lib/patientSoftDelete";
 import { LabTest, SPECIMEN_TYPE_LABELS } from "../../../lib/testCatalog";
 import { isTestReviewed, UNREVIEWED_RANGE_CAVEAT } from "../../../lib/catalogSeed";
-import { resultFlag } from "../../../lib/resultFlag";
+import { parameterFlag } from "../../../lib/resultFlag";
+import { isProvisionalPrint, PROVISIONAL_HEADING, PROVISIONAL_NOTICE } from "../../../lib/provisionalReport";
+import { canViewOwnRegisteredPatients, canViewPatients } from "../../../lib/permissions";
 import ResultFlagMark from "../../../lib/ResultFlagMark";
-import { interpretCollection, orderCollectionFromData, orderStatusLabel, type OrderTestRef, type SampleCollections } from "../../../lib/sampleCollection";
+import { interpretCollection, orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../../../lib/sampleCollection";
+import { orderDisplayLabel } from "../../../lib/orderLifecycle";
+import { useWriteIdentity } from "../../../lib/pinSession";
+import { trackedSetDoc, writeActorFromUser } from "../../../lib/trackedWrites";
+import { actorFromAuth, safeLogAudit } from "../../../lib/audit";
 import {
   changedResultValues,
   isReleasedResultStatus,
@@ -25,6 +30,7 @@ import {
 
 interface PatientRecord {
   clinicId?: string;
+  createdByUid?: string;
   labId?: string;
   name?: string;
   preferredName?: string | null;
@@ -60,6 +66,7 @@ interface OrderRecord {
   reviewedAt?: string | null;
   resultVersions?: unknown;
   lastAmendedAt?: string | null;
+  notYetSynced?: boolean;
 }
 
 const PRINT_CSS = `
@@ -100,7 +107,8 @@ function Field({
 function PatientPrintContent() {
   const params = useParams();
   const patientId = params.patientId as string;
-  const { role, clinicId } = useAuth();
+  const { user, role, clinicId } = useAuth();
+  const writer = useWriteIdentity();
 
   const [patient, setPatient] = useState<PatientRecord | null>(null);
   const [clinic, setClinic] = useState<ClinicRecord | null>(null);
@@ -125,6 +133,15 @@ function PatientPrintContent() {
           return;
         }
         if (!isOwner(role) && clinicId && data.clinicId && data.clinicId !== clinicId) {
+          setNotFound(true);
+          return;
+        }
+        if (
+          canViewOwnRegisteredPatients(role) &&
+          !canViewPatients(role) &&
+          data.createdByUid &&
+          data.createdByUid !== writer.uid
+        ) {
           setNotFound(true);
           return;
         }
@@ -158,18 +175,17 @@ function PatientPrintContent() {
                 reviewedAt: o.reviewedAt || null,
                 resultVersions: o.resultVersions,
                 lastAmendedAt: o.lastAmendedAt || null,
+                notYetSynced: d.metadata.hasPendingWrites,
               };
             })
             .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
         );
 
-        const unsyncedReleased = orderSnap.docs.filter(
-          (d) => isReleasedResultStatus(String(d.data().status || "")) && d.metadata.hasPendingWrites
+        const hasReleased = orderSnap.docs.some((d) =>
+          isReleasedResultStatus(String(d.data().status || ""))
         );
-        if (unsyncedReleased.length > 0) {
-          setPrintBlocked(
-            "This report includes results that have not been confirmed by the server. Printing is blocked until they sync — a printed result that is not in the laboratory record must not leave the building."
-          );
+        if (!hasReleased) {
+          setPrintBlocked("Results that have not been released cannot be printed.");
         }
 
         const catalogRows = catalogSnap.docs.map((d) => d.data() as LabTest);
@@ -186,15 +202,62 @@ function PatientPrintContent() {
       }
     }
     load();
-  }, [patientId, role, clinicId]);
+  }, [patientId, role, clinicId, writer.uid]);
 
   useEffect(() => {
     if (loading || !patient || printed.current || printBlocked) return;
     printed.current = true;
+    const actor = writeActorFromUser(user ? { uid: writer.uid, email: writer.email } : null, writer.username);
+    const provisional = orders.filter((order) =>
+      isProvisionalPrint({
+        released: isReleasedResultStatus(order.status),
+        locallyConfirmed: true,
+        synced: !order.notYetSynced,
+      })
+    );
+    if (provisional.length > 0) {
+      void Promise.all(
+        provisional.map((order) =>
+          trackedSetDoc(
+            doc(db, "orders", order.id),
+            {
+              needsFinalReprint: true,
+              provisionalPrintedAt: new Date().toISOString(),
+            },
+            { merge: true },
+            {
+              summary: `Provisional report printed for ${patient.labId || patientId}`,
+              actorUid: actor.actorUid,
+              actorLabel: actor.actorLabel,
+              clinicId: patient.clinicId,
+              patientLabId: patient.labId,
+              orderId: order.id,
+            }
+          )
+        )
+      ).then(() => {
+        const auditActor = actorFromAuth(
+          user ? { uid: writer.uid, email: writer.email } : null,
+          writer.role,
+          writer.shift
+        );
+        if (auditActor) {
+          void safeLogAudit({
+            clinicId: patient.clinicId || clinicId,
+            actor: auditActor,
+            action: "order.provisionalPrinted",
+            targetCollection: "orders",
+            targetId: provisional[0].id,
+            targetLabel: `${patient.labId || "LF"} · report`,
+            detail: { orderIds: provisional.map((order) => order.id) },
+          });
+        }
+      });
+    }
     // Wait for layout so the dialog previews the finished sheet.
     const timer = setTimeout(() => window.print(), 300);
     return () => clearTimeout(timer);
-  }, [loading, patient, printBlocked]);
+  }, [loading, patient, printBlocked, orders, user, writer, clinicId, patientId]);
 
   if (loading) {
     return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading record...</main>;
@@ -242,6 +305,18 @@ function PatientPrintContent() {
 
       <div className="print-sheet bg-white mx-auto w-[210mm] min-h-[297mm] p-[15mm] shadow-sm">
         <header className="border-b border-gray-300 pb-4 mb-6">
+          {orders.some((order) =>
+            isProvisionalPrint({
+              released: isReleasedResultStatus(order.status),
+              locallyConfirmed: true,
+              synced: !order.notYetSynced,
+            })
+          ) && (
+            <div className="mb-3 border-2 border-amber-700 bg-amber-50 px-3 py-2">
+              <p className="text-sm font-semibold tracking-wide text-amber-950">{PROVISIONAL_HEADING}</p>
+              <p className="text-xs text-amber-900 mt-1">{PROVISIONAL_NOTICE}</p>
+            </div>
+          )}
           <h1 className="text-xl font-semibold text-gray-900">{clinic?.name || "Clinic"}</h1>
           {clinic?.address && <p className="text-sm text-gray-600">{clinic.address}</p>}
           <p className="text-xs text-gray-500 mt-1">
@@ -296,7 +371,7 @@ function PatientPrintContent() {
                       {order.tests.map((t) => t.name).join(", ") || "No tests"}
                     </p>
                     <p className="text-[10px] uppercase tracking-wide text-gray-500">
-                      {orderStatusLabel(order, catalog)}
+                      {orderDisplayLabel(order, catalog).label}
                     </p>
                   </div>
                   <p className="text-xs text-gray-500 mb-2">
@@ -346,7 +421,7 @@ function PatientPrintContent() {
                           }
                           return rows.map((p, i) => {
                             const value = values[p.name] || "";
-                            const flag = resultFlag(value, p.referenceRange, patient.sex);
+                            const flag = parameterFlag(value, p, patient.sex);
                             return (
                             <tr key={`${t.code}-${i}`} className="border-b border-gray-100">
                               <td className="py-1 pr-3 text-gray-900">
@@ -432,7 +507,7 @@ function PatientPrintContent() {
 
 export default function PatientPrint() {
   return (
-    <ProtectedRoute require={canViewPatients}>
+    <ProtectedRoute require={(role) => canViewPatients(role) || canViewOwnRegisteredPatients(role)}>
       <PatientPrintContent />
     </ProtectedRoute>
   );

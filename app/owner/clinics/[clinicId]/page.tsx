@@ -16,10 +16,12 @@ import {
 import { isOwner } from "../../../lib/clinicScope";
 import {
   ClinicRecord,
+  GAMBIA_HEALTH_REGIONS,
   loadClinic,
   regenerateClinicJoinCode,
   saveClinicProfile,
 } from "../../../lib/clinics";
+import { CLINIC_TIER_LABELS, CLINIC_TIERS, parseClinicTier, type ClinicTier } from "../../../lib/resultModel";
 import { actorFromAuth, safeLogAudit } from "../../../lib/audit";
 
 function ClinicProfileContent() {
@@ -97,6 +99,11 @@ function ClinicProfileEditor({
   const [tin, setTin] = useState("");
   const [businessRegNumber, setBusinessRegNumber] = useState("");
   const [responsiblePerson, setResponsiblePerson] = useState("");
+  const [tier, setTier] = useState<ClinicTier | "">("");
+  const [region, setRegion] = useState("");
+  const [licenceNumber, setLicenceNumber] = useState("");
+  const [licenceExpiry, setLicenceExpiry] = useState("");
+  const [idleLockMinutes, setIdleLockMinutes] = useState("5");
   const [active, setActive] = useState(true);
 
   useEffect(() => {
@@ -112,6 +119,11 @@ function ClinicProfileEditor({
           setTin(record.tin);
           setBusinessRegNumber(record.businessRegNumber);
           setResponsiblePerson(record.responsiblePerson);
+          setTier(record.tier ?? "");
+          setRegion(record.region);
+          setLicenceNumber(record.licenceNumber);
+          setLicenceExpiry(record.licenceExpiry);
+          setIdleLockMinutes(String(record.idleLockMinutes || 5));
           setActive(record.active);
         }
       })
@@ -136,6 +148,11 @@ function ClinicProfileEditor({
       setTin(record.tin);
       setBusinessRegNumber(record.businessRegNumber);
       setResponsiblePerson(record.responsiblePerson);
+      setTier(record.tier ?? "");
+      setRegion(record.region);
+      setLicenceNumber(record.licenceNumber);
+      setLicenceExpiry(record.licenceExpiry);
+      setIdleLockMinutes(String(record.idleLockMinutes || 5));
       setActive(record.active);
     }
     return record;
@@ -159,6 +176,11 @@ function ClinicProfileEditor({
         businessRegNumber,
         responsiblePerson,
         active,
+        tier: parseClinicTier(tier),
+        region,
+        licenceNumber,
+        licenceExpiry,
+        idleLockMinutes: Number(idleLockMinutes) || 5,
         actor: { uid: user.uid, email: user.email },
       });
       const actor = actorFromAuth(user, role, shift);
@@ -171,7 +193,19 @@ function ClinicProfileEditor({
           targetId: clinicId,
           targetLabel: name.trim() || clinicId,
           detail: {
-            fields: ["name", "address", "tin", "businessRegNumber", "responsiblePerson", "active"],
+            fields: [
+              "name",
+              "address",
+              "tin",
+              "businessRegNumber",
+              "responsiblePerson",
+              "active",
+              "tier",
+              "region",
+              "licenceNumber",
+              "licenceExpiry",
+              "idleLockMinutes",
+            ],
           },
         });
       }
@@ -319,6 +353,70 @@ function ClinicProfileEditor({
                 onChange={(e) => setResponsiblePerson(e.target.value)}
                 disabled={!canEdit}
                 className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-gray-600">Tier</span>
+              <select
+                value={tier}
+                onChange={(e) => setTier(parseClinicTier(e.target.value) || "")}
+                disabled={!canEdit}
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+              >
+                <option value="">Not set</option>
+                {CLINIC_TIERS.map((value) => (
+                  <option key={value} value={value}>
+                    {CLINIC_TIER_LABELS[value]}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm text-gray-600">Health region</span>
+              <select
+                value={region}
+                onChange={(e) => setRegion(e.target.value)}
+                disabled={!canEdit}
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+              >
+                <option value="">Not set</option>
+                {GAMBIA_HEALTH_REGIONS.map((value) => (
+                  <option key={value} value={value}>
+                    {value}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="block">
+              <span className="text-sm text-gray-600">Licence number (optional)</span>
+              <input
+                type="text"
+                value={licenceNumber}
+                onChange={(e) => setLicenceNumber(e.target.value)}
+                disabled={!canEdit}
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-gray-600">Licence expiry (optional)</span>
+              <input
+                type="date"
+                value={licenceExpiry}
+                onChange={(e) => setLicenceExpiry(e.target.value)}
+                disabled={!canEdit}
+                className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-gray-600">Idle lock (minutes)</span>
+              <input
+                type="number"
+                min={1}
+                max={60}
+                value={idleLockMinutes}
+                onChange={(e) => setIdleLockMinutes(e.target.value)}
+                disabled={!canEdit}
+                className="mt-1 w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
               />
             </label>
             <label className="flex items-center gap-2 text-sm text-gray-700">

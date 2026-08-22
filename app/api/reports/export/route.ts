@@ -140,10 +140,9 @@ export async function POST(request: Request) {
     if ("error" in scope) return jsonError(403, scope.error);
 
     const recipient = auth.email;
-    if (!recipient) return jsonError(400, "No registered email on this account.");
-
-    const resend = getResend();
-    const from = resendFromAddress();
+    if (parsed.delivery === "email" && !recipient) {
+      return jsonError(400, "No registered email on this account.");
+    }
 
     if (await consumeExportQuota(auth.token.uid)) {
       return jsonError(
@@ -175,27 +174,31 @@ export async function POST(request: Request) {
     const filename = exportFilename(parsed.reportType, parsed.startDate, parsed.endDate);
     const label = REPORT_TYPE_LABELS[parsed.reportType];
 
-    const sent = await resend.emails.send({
-      from,
-      to: recipient,
-      subject: `LabFlow ${label} export ${parsed.startDate} to ${parsed.endDate}`,
-      text: [
-        `A ${label.toLowerCase()} spreadsheet for ${parsed.startDate} to ${parsed.endDate} is attached.`,
-        `${workbook.rowCount} row${workbook.rowCount === 1 ? "" : "s"}.`,
-        scope.allClinics ? "Scope: all clinics (owner)." : "Scope: your clinic.",
-        "This message was sent only to the address on your LabFlow account.",
-      ].join("\n"),
-      attachments: [
-        {
-          filename,
-          content: workbook.buffer,
-          contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        },
-      ],
-    });
-    if (sent.error) {
-      console.error(sent.error);
-      return jsonError(502, "The spreadsheet was built but email delivery failed. Try again shortly.");
+    if (parsed.delivery === "email") {
+      const resend = getResend();
+      const from = resendFromAddress();
+      const sent = await resend.emails.send({
+        from,
+        to: recipient as string,
+        subject: `LabFlow ${label} export ${parsed.startDate} to ${parsed.endDate}`,
+        text: [
+          `A ${label.toLowerCase()} spreadsheet for ${parsed.startDate} to ${parsed.endDate} is attached.`,
+          `${workbook.rowCount} row${workbook.rowCount === 1 ? "" : "s"}.`,
+          scope.allClinics ? "Scope: all clinics (owner)." : "Scope: your clinic.",
+          "This message was sent only to the address on your LabFlow account.",
+        ].join("\n"),
+        attachments: [
+          {
+            filename,
+            content: workbook.buffer,
+            contentType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          },
+        ],
+      });
+      if (sent.error) {
+        console.error(sent.error);
+        return jsonError(502, "The spreadsheet was built but email delivery failed. Try again shortly.");
+      }
     }
 
     const at = new Date().toISOString();
@@ -205,7 +208,7 @@ export async function POST(request: Request) {
       startDate: parsed.startDate,
       endDate: parsed.endDate,
       rowCount: workbook.rowCount,
-      recipient,
+      recipient: recipient || (parsed.delivery === "download" ? "download" : ""),
     };
     await logAudit({
       clinicId: scope.clinicId,
@@ -225,11 +228,23 @@ export async function POST(request: Request) {
         startDate: parsed.startDate,
         endDate: parsed.endDate,
         rowCount: workbook.rowCount,
-        recipient,
+        recipient: recipient || null,
+        delivery: parsed.delivery,
         allClinics: scope.allClinics,
       },
     });
     await appendRecentExport(auth.token.uid, recent);
+
+    if (parsed.delivery === "download") {
+      return new Response(new Uint8Array(workbook.buffer), {
+        status: 200,
+        headers: {
+          "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+          "Content-Disposition": `attachment; filename="${filename}"`,
+          "X-Export-Row-Count": String(workbook.rowCount),
+        },
+      });
+    }
 
     return Response.json({
       ok: true,
@@ -238,6 +253,7 @@ export async function POST(request: Request) {
       reportType: parsed.reportType,
       startDate: parsed.startDate,
       endDate: parsed.endDate,
+      delivery: parsed.delivery,
     });
   } catch (err) {
     if (err instanceof ResendUnavailableError) return jsonResend503();

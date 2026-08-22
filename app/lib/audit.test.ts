@@ -45,7 +45,7 @@ describe("audit log shape", () => {
       action: "order.approved",
       targetCollection: "orders",
       targetId: "o1",
-      targetLabel: "Ada Lovelace — LF-1",
+      targetLabel: "LF-1 · order",
     });
     expect(payload.clinicId).toBe("clinicA");
     expect(payload.actorUid).toBe("uid-1");
@@ -56,7 +56,7 @@ describe("audit log shape", () => {
     expect(payload.action).toBe("order.approved");
     expect(payload.targetCollection).toBe("orders");
     expect(payload.targetId).toBe("o1");
-    expect(payload.targetLabel).toBe("Ada Lovelace — LF-1");
+    expect(payload.targetLabel).toBe("LF-1 · order");
     expect(typeof payload.at).toBe("string");
     expect("detail" in payload).toBe(false);
     expect("joinCode" in payload).toBe(false);
@@ -68,9 +68,10 @@ describe("audit log shape", () => {
     expect(actor?.shift).toBe(null);
   });
 
-  it("labels patients as name + Lab ID, never a full record", () => {
-    expect(auditTargetLabel("Ada Lovelace", "LF-1")).toBe("Ada Lovelace — LF-1");
-    expect(auditTargetLabel("Ada", null)).toBe("Ada");
+  it("labels records as Lab ID + type, never a patient name", () => {
+    expect(auditTargetLabel("LF-1", "patient")).toBe("LF-1 · patient");
+    expect(auditTargetLabel("LF-1", "order")).toBe("LF-1 · order");
+    expect(auditTargetLabel(null, "patient")).toBe("patient");
   });
 });
 

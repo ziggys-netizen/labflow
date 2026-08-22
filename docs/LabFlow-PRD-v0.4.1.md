@@ -2,7 +2,7 @@
 
 **Changelog:** v0.4.1 — adversarial audit 22 Aug 2026
 
-**Status:** Corrected working specification (reconstructed)  
+**Status:** Superseded by [`LabFlow-PRD-v0.5.md`](LabFlow-PRD-v0.5.md) (22 August 2026). Do not build from this file.  
 **Date:** 22 August 2026  
 **Owner:** Isaac Kanu  
 **Market:** The Gambia, West Africa (first deployments)  

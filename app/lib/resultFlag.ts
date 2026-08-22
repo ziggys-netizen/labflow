@@ -1,4 +1,10 @@
-export type ResultFlag = "H" | "L" | null;
+import {
+  normalizeParameter,
+  type ResultFlag,
+  type TestParameter,
+} from "./resultModel";
+
+export type { ResultFlag } from "./resultModel";
 
 function parseNumeric(raw: string): number | null {
   const text = raw.trim().replace(/,/g, "");
@@ -25,7 +31,9 @@ function rangeTextForSex(referenceRange: string, sex: string | null | undefined)
   return null;
 }
 
-function parseBounds(text: string): { low: number | null; high: number | null; highInclusive: boolean; lowInclusive: boolean } | null {
+function parseBounds(
+  text: string
+): { low: number | null; high: number | null; highInclusive: boolean; lowInclusive: boolean } | null {
   if (/\d+:\d+/.test(text)) return null;
   const cleaned = text.replace(/\(.*?\)/g, " ").trim();
   const between = cleaned.match(/(-?\d+(?:\.\d+)?)\s*(?:[-–—]|to)\s*(-?\d+(?:\.\d+)?)/i);
@@ -48,11 +56,7 @@ function parseBounds(text: string): { low: number | null; high: number | null; h
   return null;
 }
 
-/**
- * High / low flag against a catalogue reference range.
- * Missing values, non-numeric results, and unparseable ranges do not flag.
- */
-export function resultFlag(
+function numericHl(
   value: string | number | null | undefined,
   referenceRange: string | null | undefined,
   sex?: string | null
@@ -74,11 +78,73 @@ export function resultFlag(
   return null;
 }
 
+function numericCritical(
+  value: string | number | null | undefined,
+  parameter: TestParameter
+): boolean {
+  const numeric = typeof value === "number" ? (Number.isFinite(value) ? value : null) : parseNumeric(String(value ?? ""));
+  if (numeric === null) return false;
+  if (parameter.criticalLow != null && numeric <= parameter.criticalLow) return true;
+  if (parameter.criticalHigh != null && numeric >= parameter.criticalHigh) return true;
+  return false;
+}
+
+/**
+ * High / low flag against a catalogue reference range.
+ * Missing values, non-numeric results, and unparseable ranges do not flag.
+ */
+export function resultFlag(
+  value: string | number | null | undefined,
+  referenceRange: string | null | undefined,
+  sex?: string | null
+): ResultFlag {
+  return numericHl(value, referenceRange, sex);
+}
+
+/**
+ * Type-aware flag. Qualitative/semi-quantitative use the value set.
+ * Text never flags. Critical ("C") outranks H/L/A.
+ */
+export function parameterFlag(
+  value: string | number | null | undefined,
+  parameter: TestParameter | null | undefined,
+  sex?: string | null
+): ResultFlag {
+  if (!parameter) return resultFlag(value, undefined, sex);
+  const normalized = normalizeParameter(parameter);
+  const raw = value === null || value === undefined ? "" : String(value);
+  if (!raw.trim()) return null;
+
+  if (normalized.resultType === "text") return null;
+
+  if (normalized.resultType === "qualitative" || normalized.resultType === "semi_quantitative") {
+    const match = normalized.valueSet?.find((item) => item.value === raw);
+    if (!match) return null;
+    if (match.critical) return "C";
+    if (normalized.resultType === "semi_quantitative" && normalized.abnormalFromIndex != null) {
+      const index = normalized.valueSet?.findIndex((item) => item.value === raw) ?? -1;
+      if (index >= normalized.abnormalFromIndex) return match.critical ? "C" : "A";
+    }
+    if (match.abnormal) return "A";
+    return null;
+  }
+
+  if (normalized.resultType === "numeric" || normalized.resultType === "calculated") {
+    if (numericCritical(value, normalized)) return "C";
+    return numericHl(value, normalized.referenceRange, sex);
+  }
+
+  return numericHl(value, normalized.referenceRange, sex);
+}
+
+export function isCriticalFlag(flag: ResultFlag): boolean {
+  return flag === "C";
+}
+
 /**
  * True when the catalogue range can be compared to a numeric result.
  * Titres (`1:80`), qualitative strings, and empty ranges are not parseable —
- * callers must not invent H/L flags for them. There is no criticalLow/criticalHigh
- * on catalogue parameters.
+ * callers must not invent H/L flags for them.
  */
 export function isParseableNumericRange(referenceRange: string | null | undefined): boolean {
   if (!referenceRange || !referenceRange.trim()) return false;
@@ -95,7 +161,7 @@ export function isParseableNumericRange(referenceRange: string | null | undefine
 export function orderHasAbnormalResults(
   tests: { code: string }[],
   results: Record<string, Record<string, string>> | null | undefined,
-  catalog: { code: string; parameters: { name: string; referenceRange: string }[] }[],
+  catalog: { code: string; parameters: TestParameter[] }[],
   sex?: string | null
 ): boolean {
   if (!results) return false;
@@ -104,7 +170,25 @@ export function orderHasAbnormalResults(
     if (!definition) continue;
     const values = results[test.code] || {};
     for (const parameter of definition.parameters) {
-      if (resultFlag(values[parameter.name], parameter.referenceRange, sex)) return true;
+      if (parameterFlag(values[parameter.name], parameter, sex)) return true;
+    }
+  }
+  return false;
+}
+
+export function orderHasCriticalResults(
+  tests: { code: string }[],
+  results: Record<string, Record<string, string>> | null | undefined,
+  catalog: { code: string; parameters: TestParameter[] }[],
+  sex?: string | null
+): boolean {
+  if (!results) return false;
+  for (const test of tests) {
+    const definition = catalog.find((row) => row.code === test.code);
+    if (!definition) continue;
+    const values = results[test.code] || {};
+    for (const parameter of definition.parameters) {
+      if (parameterFlag(values[parameter.name], parameter, sex) === "C") return true;
     }
   }
   return false;

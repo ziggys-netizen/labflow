@@ -9,6 +9,18 @@ import {
 } from "firebase/firestore";
 import { db } from "./firebase";
 import { isPatientDeleted } from "./patientSoftDelete";
+import { parseClinicTier, type ClinicTier } from "./resultModel";
+
+/** Seven health regions used by the Ministry of Health. */
+export const GAMBIA_HEALTH_REGIONS = [
+  "Banjul",
+  "Kanifing",
+  "West Coast",
+  "North Bank",
+  "Lower River",
+  "Central River",
+  "Upper River",
+] as const;
 
 const CODE_CHARS = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
 
@@ -22,6 +34,11 @@ export interface ClinicRecord {
   joinCode: string;
   createdAt: string;
   active: boolean;
+  tier: ClinicTier | null;
+  region: string;
+  licenceNumber: string;
+  licenceExpiry: string;
+  idleLockMinutes: number;
 }
 
 export function clinicFromData(id: string, data: Record<string, unknown>): ClinicRecord {
@@ -35,6 +52,11 @@ export function clinicFromData(id: string, data: Record<string, unknown>): Clini
     joinCode: typeof data.joinCode === "string" ? data.joinCode : "",
     createdAt: typeof data.createdAt === "string" ? data.createdAt : "",
     active: data.active !== false,
+    tier: parseClinicTier(data.tier),
+    region: typeof data.region === "string" ? data.region : "",
+    licenceNumber: typeof data.licenceNumber === "string" ? data.licenceNumber : "",
+    licenceExpiry: typeof data.licenceExpiry === "string" ? data.licenceExpiry : "",
+    idleLockMinutes: typeof data.idleLockMinutes === "number" ? data.idleLockMinutes : 5,
   };
 }
 
@@ -84,8 +106,17 @@ export async function saveClinicProfile(params: {
   businessRegNumber: string;
   responsiblePerson: string;
   active: boolean;
+  tier: ClinicTier | null;
+  region: string;
+  licenceNumber: string;
+  licenceExpiry: string;
+  idleLockMinutes: number;
   actor: { uid: string; email: string | null };
 }) {
+  const idle =
+    typeof params.idleLockMinutes === "number" && params.idleLockMinutes > 0
+      ? Math.min(60, Math.round(params.idleLockMinutes))
+      : 5;
   await updateDoc(doc(db, "clinics", params.clinicId), {
     name: params.name.trim(),
     address: params.address.trim(),
@@ -93,6 +124,11 @@ export async function saveClinicProfile(params: {
     businessRegNumber: params.businessRegNumber.trim(),
     responsiblePerson: params.responsiblePerson.trim(),
     active: params.active,
+    tier: params.tier,
+    region: params.region.trim(),
+    licenceNumber: params.licenceNumber.trim(),
+    licenceExpiry: params.licenceExpiry.trim(),
+    idleLockMinutes: idle,
     ...auditFields(params.actor),
   });
 }
