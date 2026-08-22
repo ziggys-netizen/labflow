@@ -10,6 +10,8 @@ import {
 } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
 import { getFirestore, type Firestore } from "firebase-admin/firestore";
+import { ExternalAccountClient } from "google-auth-library";
+import { getVercelOidcToken } from "@vercel/oidc";
 
 /**
  * Admin SDK must be lazy. Importing this file during `next build` must not
@@ -24,11 +26,59 @@ export class AdminUnavailableError extends Error {
 
 function projectId(): string | undefined {
   return (
+    process.env.GCP_PROJECT_ID ||
     process.env.GCLOUD_PROJECT ||
     process.env.GOOGLE_CLOUD_PROJECT ||
     process.env.FIREBASE_PROJECT_ID ||
     process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID
   );
+}
+
+function requiredEnv(name: string): string | null {
+  const value = process.env[name]?.trim();
+  return value || null;
+}
+
+/**
+ * Vercel OIDC → GCP Workload Identity Federation (ADR-001 Option B).
+ * Returns null unless every pool/provider/SA env var is set, so local
+ * `next build` and Production without WIF still fail at request time (503).
+ */
+function vercelOidcCredential(): Credential | null {
+  const projectNumber = requiredEnv("GCP_PROJECT_NUMBER");
+  const poolId = requiredEnv("GCP_WORKLOAD_IDENTITY_POOL_ID");
+  const providerId = requiredEnv("GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID");
+  const saEmail = requiredEnv("GCP_SERVICE_ACCOUNT_EMAIL");
+  if (!projectNumber || !poolId || !providerId || !saEmail) return null;
+
+  const wifAudience = `//iam.googleapis.com/projects/${projectNumber}/locations/global/workloadIdentityPools/${poolId}/providers/${providerId}`;
+  const tokenAudience = requiredEnv("GCP_AUDIENCE");
+
+  const client = ExternalAccountClient.fromJSON({
+    type: "external_account",
+    audience: wifAudience,
+    subject_token_type: "urn:ietf:params:oauth:token-type:jwt",
+    token_url: "https://sts.googleapis.com/v1/token",
+    service_account_impersonation_url: `https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/${saEmail}:generateAccessToken`,
+    subject_token_supplier: {
+      getSubjectToken: () =>
+        tokenAudience
+          ? getVercelOidcToken({ audience: tokenAudience })
+          : getVercelOidcToken(),
+    },
+  });
+  if (!client) return null;
+
+  return {
+    async getAccessToken() {
+      const token = await client.getAccessToken();
+      const access_token = token.token;
+      if (!access_token) {
+        throw new AdminUnavailableError("OIDC token exchange returned no access token.");
+      }
+      return { access_token, expires_in: 3600 };
+    },
+  };
 }
 
 function parseServiceAccountJson(raw: string): ServiceAccount {
@@ -76,9 +126,12 @@ function resolveCredential(): Credential {
   if (fromEnvJson) return fromEnvJson;
   const fromPem = envPemCredential();
   if (fromPem) return fromPem;
+  const fromOidc = vercelOidcCredential();
+  if (fromOidc) return fromOidc;
   const fromDevFile = fileCredentialFromDevPath();
   if (fromDevFile) return fromDevFile;
-  // OIDC/WIF on Vercel, or `gcloud auth application-default login` locally.
+  // Local: `gcloud auth application-default login`. On Vercel this fails
+  // unless OIDC env vars above are set.
   return applicationDefault();
 }
 
