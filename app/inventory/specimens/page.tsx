@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
-import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
+import { useMemo, useState } from "react";
+import { collection, doc } from "firebase/firestore";
 import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
+import NotYetSynced from "../../lib/NotYetSynced";
 import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
-import { getClinicDocs, isOwner } from "../../lib/clinicScope";
+import { isOwner } from "../../lib/clinicScope";
+import { useClinicCollection } from "../../lib/clinicListen";
+import { trackedAddDoc, trackedUpdateDoc, writeActorFromUser } from "../../lib/trackedWrites";
 import { actorLabel, makeActorStamp } from "../../lib/identity";
 import { canRecordSpecimenMovement, canViewInventory } from "../../lib/permissions";
 import { fromDateTimeLocal, toDateTimeLocal } from "../../lib/datetime";
@@ -50,11 +53,8 @@ function SpecimensContent() {
   const allowed = canViewInventory(role);
   const canRecord = canRecordSpecimenMovement(role);
 
-  const [entries, setEntries] = useState<SpecimenMovement[]>([]);
-  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
   const [saving, setSaving] = useState(false);
-  const [reloadToken, setReloadToken] = useState(0);
 
   const [direction, setDirection] = useState<"received" | "sent">("received");
   const [specimenType, setSpecimenType] = useState<string>(SPECIMEN_TYPES[0]);
@@ -72,30 +72,13 @@ function SpecimensContent() {
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
 
-  useEffect(() => {
-    if (!allowed) return;
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const docs = await getClinicDocs("specimenMovements", role, clinicId, {
-          sortBy: "occurredAt",
-          direction: "desc",
-        });
-        if (!cancelled) setEntries(docs.map(mapSpecimen));
-      } catch (err) {
-        console.error(err);
-        if (!cancelled) setStatus("Could not load the specimen register.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [allowed, role, clinicId, reloadToken]);
+  const entriesQuery = useClinicCollection("specimenMovements", role, clinicId, {
+    sortBy: "occurredAt",
+    direction: "desc",
+    enabled: allowed,
+  });
+  const entries = entriesQuery.docs.map(mapSpecimen);
+  const loading = entriesQuery.loading;
 
   const filtered = useMemo(() => {
     const from = filterFrom ? new Date(`${filterFrom}T00:00:00`).getTime() : null;
@@ -142,34 +125,45 @@ function SpecimensContent() {
 
     setSaving(true);
     try {
-      await addDoc(collection(db, "specimenMovements"), {
-        clinicId: writeClinicId,
-        direction,
-        specimenType,
-        container,
-        quantity: qty,
-        orderReference: orderReference.trim(),
-        department,
-        destination: destination.trim(),
-        occurredAt: when,
-        recordedAt: new Date().toISOString(),
-        actor: makeActorStamp(user, username),
-        condition,
-        transport,
-        status:
-          condition === "Acceptable"
-            ? direction === "received"
-              ? "in_lab"
-              : "in_transit"
-            : "rejected",
-        note: note.trim() || null,
-      });
+      await trackedAddDoc(
+        collection(db, "specimenMovements"),
+        {
+          clinicId: writeClinicId,
+          direction,
+          specimenType,
+          container,
+          quantity: qty,
+          orderReference: orderReference.trim(),
+          department,
+          destination: destination.trim(),
+          occurredAt: when,
+          recordedAt: new Date().toISOString(),
+          actor: makeActorStamp(user, username),
+          condition,
+          transport,
+          status:
+            condition === "Acceptable"
+              ? direction === "received"
+                ? "in_lab"
+                : "in_transit"
+              : "rejected",
+          note: note.trim() || null,
+        },
+        {
+          ...writeActorFromUser(user, username),
+          summary:
+            direction === "received"
+              ? `Logged specimen receipt (${specimenType})`
+              : `Logged specimen despatch (${specimenType})`,
+          clinicId: writeClinicId,
+          expected: { specimenType, direction },
+        }
+      );
       setStatus(direction === "received" ? "Specimen receipt logged." : "Specimen despatch logged.");
       setOrderReference("");
       setNote("");
       setQuantity("1");
       setOccurredAt(toDateTimeLocal(null));
-      setReloadToken((n) => n + 1);
     } catch (err) {
       console.error(err);
       setStatus("Failed to log the specimen movement.");
@@ -181,8 +175,16 @@ function SpecimensContent() {
   async function advanceStatus(entry: SpecimenMovement, next: string) {
     setStatus("");
     try {
-      await updateDoc(doc(db, "specimenMovements", entry.id), { status: next });
-      setReloadToken((n) => n + 1);
+      await trackedUpdateDoc(
+        doc(db, "specimenMovements", entry.id),
+        { status: next },
+        {
+          ...writeActorFromUser(user, username),
+          summary: `Updated specimen status to ${next}`,
+          clinicId: entry.clinicId,
+          expected: { status: next },
+        }
+      );
     } catch (err) {
       console.error(err);
       setStatus("Failed to update the status.");
@@ -418,7 +420,9 @@ function SpecimensContent() {
                     return (
                       <tr key={entry.id} className="border-b border-gray-100 last:border-0">
                         <Td>{entry.direction === "received" ? "Received" : "Sent"}</Td>
-                        <Td>{entry.specimenType}</Td>
+                        <Td>
+                          {entry.specimenType} <NotYetSynced show={entry.notYetSynced} />
+                        </Td>
                         <Td>{entry.container || "—"}</Td>
                         <Td>{entry.quantity}</Td>
                         <Td>{entry.orderReference || "—"}</Td>

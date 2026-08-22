@@ -17,6 +17,8 @@ import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import StaffPanel from "../lib/StaffPanel";
 import { resolveIdentity } from "../lib/membership";
+import { seedClinicCatalog, backfillEmptyClinicCatalogs } from "../lib/catalogSeed";
+import { actorFromAuth, safeLogAudit } from "../lib/audit";
 import {
   ClinicRecord,
   loadAllClinics,
@@ -24,9 +26,10 @@ import {
   uniqueJoinCode,
 } from "../lib/clinics";
 import { loadStaffRows, staffCountsByClinic, subscribeStaffChanged } from "../lib/staffOps";
+import { syncCustomClaims } from "../lib/authApi";
 
 function OwnerContent() {
-  const { user, role, username } = useAuth();
+  const { user, role, username, shift } = useAuth();
   const canAccess = role === "owner";
 
   const [clinics, setClinics] = useState<ClinicRecord[]>([]);
@@ -47,6 +50,7 @@ function OwnerContent() {
   const [adminEmail, setAdminEmail] = useState("");
   const [adminClinicId, setAdminClinicId] = useState("");
   const [assigning, setAssigning] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
 
   async function loadClinics() {
     try {
@@ -105,7 +109,33 @@ function OwnerContent() {
         active: true,
         brandColor: null,
       });
-      setStatus(`Clinic created. Join code: ${joinCode}`);
+      const createdActor = actorFromAuth(user, role, shift);
+      if (createdActor) {
+        await safeLogAudit({
+          clinicId: docRef.id,
+          actor: createdActor,
+          action: "clinic.create",
+          targetCollection: "clinics",
+          targetId: docRef.id,
+          targetLabel: name.trim(),
+          detail: { fields: ["name", "address", "tin", "businessRegNumber", "responsiblePerson", "joinCode"] },
+        });
+      }
+      setCreatedClinicId(docRef.id);
+      try {
+        const actor = actorFromAuth(user, role, shift);
+        const seeded = await seedClinicCatalog(docRef.id, { actor });
+        setStatus(
+          `Clinic created. Join code: ${joinCode}. Seeded ${seeded} default tests (not reviewed).`
+        );
+      } catch (seedErr) {
+        console.error(seedErr);
+        setStatus(
+          `Clinic created. Join code: ${joinCode}. Catalogue seed failed — use “Seed empty clinic catalogues” below to retry.`
+        );
+        await loadClinics();
+        return;
+      }
       setName("");
       setAddress("");
       setTin("");
@@ -171,6 +201,19 @@ function OwnerContent() {
         approvedByUsername: username ?? null,
         approvedAt,
       });
+      await syncCustomClaims(userSnap.id);
+      const assignActor = actorFromAuth(user, role, shift);
+      if (assignActor) {
+        await safeLogAudit({
+          clinicId: adminClinicId,
+          actor: assignActor,
+          action: existing?.status === "approved" ? "staff.roleChange" : "staff.approve",
+          targetCollection: "users",
+          targetId: userSnap.id,
+          targetLabel: identity.username || identity.name || email,
+          detail: { role: "clinic_admin", status: "approved" },
+        });
+      }
       setStatus("Clinic administrator assigned.");
       setAdminEmail("");
     } catch (err) {
@@ -178,6 +221,34 @@ function OwnerContent() {
       setStatus("Failed to assign clinic administrator.");
     } finally {
       setAssigning(false);
+    }
+  }
+
+  async function handleBackfillCatalogs() {
+    if (!user || role !== "owner") return;
+    const actor = actorFromAuth(user, role, shift);
+    if (!actor) return;
+    setBackfilling(true);
+    setStatus("Checking clinic catalogues...");
+    try {
+      const result = await backfillEmptyClinicCatalogs(
+        clinics.map((c) => c.id),
+        actor
+      );
+      if (result.testsCreated === 0) {
+        setStatus("Every clinic already has a catalogue. Nothing was seeded.");
+      } else {
+        setStatus(
+          `Created ${result.testsCreated} catalogue documents across ${result.clinicsSeeded} clinic${
+            result.clinicsSeeded === 1 ? "" : "s"
+          }.`
+        );
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus("Failed to seed empty clinic catalogues.");
+    } finally {
+      setBackfilling(false);
     }
   }
 
@@ -316,6 +387,22 @@ function OwnerContent() {
               {creating ? "Creating..." : "Create clinic"}
             </button>
           </form>
+        </section>
+
+        <section className="border border-gray-200 rounded-lg p-4 mb-6">
+          <h2 className="font-medium text-gray-900 mb-2">Seed empty clinic catalogues</h2>
+          <p className="text-sm text-gray-600 mb-3">
+            Clinics with no catalogue documents get the 16 default tests, marked not reviewed.
+            Clinics that already have any catalogue are left unchanged.
+          </p>
+          <button
+            type="button"
+            onClick={handleBackfillCatalogs}
+            disabled={backfilling || loadingClinics || clinics.length === 0}
+            className="bg-gray-900 text-white text-sm rounded-lg px-4 py-2 disabled:opacity-50"
+          >
+            {backfilling ? "Seeding..." : "Seed empty clinic catalogues"}
+          </button>
         </section>
 
         <section className="border border-gray-200 rounded-lg p-4 mb-6">

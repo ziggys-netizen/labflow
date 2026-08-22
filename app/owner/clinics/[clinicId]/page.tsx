@@ -20,16 +20,72 @@ import {
   regenerateClinicJoinCode,
   saveClinicProfile,
 } from "../../../lib/clinics";
+import { actorFromAuth, safeLogAudit } from "../../../lib/audit";
 
 function ClinicProfileContent() {
   const params = useParams();
   const clinicId = String(params.clinicId || "");
-  const { user, role, clinicId: actorClinicId, setActingClinic } = useAuth();
+  const { user, role, clinicId: actorClinicId, setActingClinic, shift } = useAuth();
   const owner = isOwner(role);
   const allowed = canAccessClinicWorkspace(role, actorClinicId, clinicId);
   const canEdit = allowed && canEditClinicProfile(role);
   const showJoinCode = allowed && canViewJoinCode(role);
 
+  useEffect(() => {
+    if (owner && clinicId) setActingClinic(clinicId);
+  }, [owner, clinicId, setActingClinic]);
+
+  if (!allowed) {
+    return (
+      <main className="min-h-screen bg-white">
+        <AppNav />
+        <div className="max-w-sm mx-auto px-6 py-16 text-center">
+          <p className="text-gray-600 mb-4">You can only open your own clinic.</p>
+          <Link
+            href={landingPathForRole(role, actorClinicId)}
+            className="text-gray-900 underline font-medium"
+          >
+            Go to your workspace
+          </Link>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <ClinicProfileEditor
+      key={clinicId}
+      clinicId={clinicId}
+      user={user}
+      role={role}
+      actorClinicId={actorClinicId}
+      owner={owner}
+      canEdit={canEdit}
+      showJoinCode={showJoinCode}
+      shift={shift}
+    />
+  );
+}
+
+function ClinicProfileEditor({
+  clinicId,
+  user,
+  role,
+  actorClinicId,
+  owner,
+  canEdit,
+  showJoinCode,
+  shift,
+}: {
+  clinicId: string;
+  user: ReturnType<typeof useAuth>["user"];
+  role: string | null;
+  actorClinicId: string | null;
+  owner: boolean;
+  canEdit: boolean;
+  showJoinCode: boolean;
+  shift: string | null;
+}) {
   const [clinic, setClinic] = useState<ClinicRecord | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -44,17 +100,8 @@ function ClinicProfileContent() {
   const [active, setActive] = useState(true);
 
   useEffect(() => {
-    if (owner && clinicId) setActingClinic(clinicId);
-  }, [owner, clinicId, setActingClinic]);
-
-  useEffect(() => {
-    if (!allowed || !clinicId) {
-      setLoading(false);
-      setClinic(null);
-      return;
-    }
+    if (!clinicId) return;
     let cancelled = false;
-    setLoading(true);
     loadClinic(clinicId)
       .then((record) => {
         if (cancelled) return;
@@ -78,7 +125,7 @@ function ClinicProfileContent() {
     return () => {
       cancelled = true;
     };
-  }, [allowed, clinicId]);
+  }, [clinicId]);
 
   async function reload() {
     const record = await loadClinic(clinicId);
@@ -114,6 +161,20 @@ function ClinicProfileContent() {
         active,
         actor: { uid: user.uid, email: user.email },
       });
+      const actor = actorFromAuth(user, role, shift);
+      if (actor) {
+        await safeLogAudit({
+          clinicId,
+          actor,
+          action: "clinic.update",
+          targetCollection: "clinics",
+          targetId: clinicId,
+          targetLabel: name.trim() || clinicId,
+          detail: {
+            fields: ["name", "address", "tin", "businessRegNumber", "responsiblePerson", "active"],
+          },
+        });
+      }
       await reload();
       setStatus("Clinic profile saved.");
     } catch (err) {
@@ -134,6 +195,18 @@ function ClinicProfileContent() {
         uid: user.uid,
         email: user.email,
       });
+      const actor = actorFromAuth(user, role, shift);
+      if (actor) {
+        await safeLogAudit({
+          clinicId,
+          actor,
+          action: "joinCode.regenerate",
+          targetCollection: "clinics",
+          targetId: clinicId,
+          targetLabel: clinic?.name || clinicId,
+          detail: { fields: ["joinCode"] },
+        });
+      }
       await reload();
       setStatus(`Join code updated: ${next}`);
     } catch (err) {
@@ -142,23 +215,6 @@ function ClinicProfileContent() {
     } finally {
       setRegenerating(false);
     }
-  }
-
-  if (!allowed) {
-    return (
-      <main className="min-h-screen bg-white">
-        <AppNav />
-        <div className="max-w-sm mx-auto px-6 py-16 text-center">
-          <p className="text-gray-600 mb-4">You can only open your own clinic.</p>
-          <Link
-            href={landingPathForRole(role, actorClinicId)}
-            className="text-gray-900 underline font-medium"
-          >
-            Go to your workspace
-          </Link>
-        </div>
-      </main>
-    );
   }
 
   if (loading) {
@@ -317,6 +373,17 @@ function ClinicProfileContent() {
               </p>
             </Link>
           )}
+          {canManageStaff(role) && (
+            <Link
+              href={`/owner/clinics/${clinic.id}/audit`}
+              className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50"
+            >
+              <p className="font-medium text-gray-900">Audit log</p>
+              <p className="text-sm text-gray-600 mt-1">
+                Who changed what, with role and shift. Download as CSV.
+              </p>
+            </Link>
+          )}
           {owner && (
             <Link
               href={`/owner/clinics/${clinic.id}/migration`}
@@ -325,6 +392,17 @@ function ClinicProfileContent() {
               <p className="font-medium text-gray-900">Data Migration</p>
               <p className="text-sm text-gray-600 mt-1">
                 Claim unassigned records or import a spreadsheet.
+              </p>
+            </Link>
+          )}
+          {owner && (
+            <Link
+              href={`/owner/clinics/${clinic.id}/data-quality`}
+              className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50"
+            >
+              <p className="font-medium text-gray-900">Data quality</p>
+              <p className="text-sm text-gray-600 mt-1">
+                Clear bulk-stamped or impossible collection times so turnaround stays honest.
               </p>
             </Link>
           )}

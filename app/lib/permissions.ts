@@ -3,6 +3,10 @@
  *
  * Pages must call these predicates. Do not compare role strings in UI except
  * `role === "owner"` for the Owner nav link. `admin` is not a role.
+ *
+ * `technician_assistant` is not a technician: register patients, view patients,
+ * record sample collection, record specimen movement, view inventory. They do
+ * not order tests, enter results, approve, or manage catalogue/staff/stock.
  */
 
 export const ROLES = [
@@ -114,6 +118,7 @@ export function canViewPatients(role: string | null | undefined) {
 }
 
 export function canOrderTests(role: string | null | undefined) {
+  // technician_assistant is excluded — collection only, no ordering.
   return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");
 }
 
@@ -129,6 +134,8 @@ export function canRecordSampleCollection(role: string | null | undefined) {
 }
 
 export function canEnterResults(role: string | null | undefined) {
+  // technician_assistant is excluded — they may open an order to collect a
+  // sample, but results stay read-only.
   return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");
 }
 
@@ -184,7 +191,7 @@ export function canImportData(role: string | null | undefined) {
 }
 
 export function canDeletePatient(role: string | null | undefined) {
-  return allows(role, "owner", "clinic_admin", "lab_manager");
+  return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
 }
 
 export function canViewInventory(role: string | null | undefined) {
@@ -205,7 +212,7 @@ export function canRecordStockMovement(role: string | null | undefined) {
 }
 
 export function canManageInventoryItems(role: string | null | undefined) {
-  return allows(role, "owner", "lab_manager", "storekeeper");
+  return allows(role, "owner", "lab_manager", "lab_supervisor", "storekeeper");
 }
 
 export function canRecordSpecimenMovement(role: string | null | undefined) {
@@ -261,4 +268,46 @@ export function capabilityRedirect(
     return "/register";
   }
   return null;
+}
+
+export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined) => boolean> = {
+  canRegisterPatient,
+  canViewPatients,
+  canOrderTests,
+  canRecordSampleCollection,
+  canEnterResults,
+  canApproveResults,
+  canSendBackForCorrection,
+  canEditTestCatalogue,
+  canViewDashboard,
+  canExportData,
+  canManageStaff,
+  canViewJoinCode,
+  canEditClinicProfile,
+  canImportData,
+  canDeletePatient,
+  canViewInventory,
+  canRecordStockMovement,
+  canManageInventoryItems,
+  canRecordSpecimenMovement,
+};
+
+/**
+ * Development-only dump of every role × every unary capability. Call from a
+ * client module that actually loads (AuthProvider) so it appears in the
+ * browser console — do not leave this unused.
+ */
+export function logPermissionsMatrix() {
+  if (process.env.NODE_ENV !== "development") return;
+  if (typeof window === "undefined") return;
+  const table: Record<string, Record<string, boolean>> = {};
+  for (const role of ROLES) {
+    const row: Record<string, boolean> = {};
+    for (const [name, check] of Object.entries(CAPABILITY_CHECKS)) {
+      row[name] = check(role);
+    }
+    table[role] = row;
+  }
+  console.info("LabFlow permissions matrix (development)");
+  console.table(table);
 }

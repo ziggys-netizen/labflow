@@ -227,6 +227,7 @@ export interface InventoryItem {
   createdAt: string | null;
   createdBy: ActorStamp | string | null;
   updatedAt: string | null;
+  notYetSynced?: boolean;
 }
 
 export interface InventoryBatch {
@@ -242,6 +243,7 @@ export interface InventoryBatch {
   acceptance: string;
   createdAt: string | null;
   createdBy: ActorStamp | string | null;
+  notYetSynced?: boolean;
 }
 
 export interface InventoryMovement {
@@ -270,6 +272,7 @@ export interface InventoryMovement {
   destination: string | null;
   reason: string | null;
   note: string | null;
+  notYetSynced?: boolean;
 }
 
 export const SPECIMEN_TYPES = [
@@ -350,6 +353,7 @@ export interface SpecimenMovement {
   transport: string;
   status: string;
   note: string | null;
+  notYetSynced?: boolean;
 }
 
 function text(value: unknown, fallback = ""): string {
@@ -387,6 +391,7 @@ export function mapItem(snap: QueryDocumentSnapshot): InventoryItem {
     createdAt: optionalText(d.createdAt),
     createdBy: readActorStamp(d.createdBy),
     updatedAt: optionalText(d.updatedAt),
+    notYetSynced: snap.metadata.hasPendingWrites,
   };
 }
 
@@ -405,6 +410,7 @@ export function mapBatch(snap: QueryDocumentSnapshot): InventoryBatch {
     acceptance: text(d.acceptance, "accepted"),
     createdAt: optionalText(d.createdAt),
     createdBy: readActorStamp(d.createdBy),
+    notYetSynced: snap.metadata.hasPendingWrites,
   };
 }
 
@@ -437,6 +443,7 @@ export function mapMovement(snap: QueryDocumentSnapshot): InventoryMovement {
     destination: optionalText(d.destination),
     reason: optionalText(d.reason),
     note: optionalText(d.note),
+    notYetSynced: snap.metadata.hasPendingWrites,
   };
 }
 
@@ -459,6 +466,7 @@ export function mapSpecimen(snap: QueryDocumentSnapshot): SpecimenMovement {
     transport: text(d.transport),
     status: text(d.status, "in_lab"),
     note: optionalText(d.note),
+    notYetSynced: snap.metadata.hasPendingWrites,
   };
 }
 

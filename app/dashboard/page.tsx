@@ -3,19 +3,38 @@
 import { useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
+import NotYetSynced from "../lib/NotYetSynced";
 import { useAuth } from "../lib/AuthContext";
-import { getClinicDocs } from "../lib/clinicScope";
+import { useConnection } from "../lib/ConnectionContext";
+import { useClinicCollection } from "../lib/clinicListen";
+import { authedGet, authedPost } from "../lib/authApi";
 import { canExportData, canViewDashboard } from "../lib/permissions";
 import { isOrderForDeletedPatient, isPatientDeleted } from "../lib/patientSoftDelete";
-import { getTimeWindow, isWithin, median, TimeWindowKey } from "../lib/datetime";
+import { getTimeWindow, isWithin, summarizeTurnaround, formatTurnaroundExclusionCopy, TimeWindowKey, TURNAROUND_DEFINITION } from "../lib/datetime";
+import CatalogReviewBanner from "../lib/CatalogReviewBanner";
+import { interpretCollection, orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../lib/sampleCollection";
+import { countAmendmentsInWindow, isReleasedResultStatus } from "../lib/resultAmendment";
+import {
+  MAX_EXPORT_RANGE_DAYS,
+  MAX_EXPORTS_PER_HOUR,
+  REPORT_TYPE_LABELS,
+  REPORT_TYPES,
+  parseRecentExports,
+  type RecentExport,
+  type ReportType,
+} from "../lib/reportExport";
 
 interface OrderRecord {
   id: string;
   status: string;
   createdAt: string;
-  tests: { code: string; name: string }[];
+  tests: OrderTestRef[];
   sampleCollectedAt?: string | null;
+  sampleCollections?: SampleCollections | null;
   reviewedAt?: string | null;
+  resultVersions?: unknown;
+  lastAmendedAt?: string | null;
+  notYetSynced?: boolean;
 }
 
 const WINDOWS: { key: TimeWindowKey; label: string }[] = [
@@ -23,6 +42,194 @@ const WINDOWS: { key: TimeWindowKey; label: string }[] = [
   { key: "yesterday", label: "Yesterday" },
   { key: "week", label: "This week" },
 ];
+
+function ymdLocal(d: Date) {
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function defaultExportEnd() {
+  return ymdLocal(new Date());
+}
+
+function defaultExportStart() {
+  const d = new Date();
+  d.setDate(d.getDate() - 6);
+  return ymdLocal(d);
+}
+
+function ExportReports() {
+  const { isOnline } = useConnection();
+  const [startDate, setStartDate] = useState(defaultExportStart);
+  const [endDate, setEndDate] = useState(defaultExportEnd);
+  const [reportType, setReportType] = useState<ReportType>("patients");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [confirmation, setConfirmation] = useState("");
+  const [recipient, setRecipient] = useState<string | null>(null);
+  const [recent, setRecent] = useState<RecentExport[]>([]);
+
+  useEffect(() => {
+    if (!isOnline) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const res = await authedGet("/api/reports/export");
+        const data = (await res.json().catch(() => ({}))) as {
+          recipient?: string | null;
+          recent?: RecentExport[];
+          error?: string;
+        };
+        if (cancelled) return;
+        if (!res.ok) {
+          setError(data.error || "Could not load recent exports.");
+          return;
+        }
+        setRecipient(typeof data.recipient === "string" ? data.recipient : null);
+        setRecent(parseRecentExports(data.recent));
+        setError("");
+      } catch (err) {
+        console.error(err);
+        if (!cancelled) setError("Could not load recent exports.");
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOnline]);
+
+  async function handleSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setConfirmation("");
+    if (!isOnline) {
+      setError("Export emails a spreadsheet from the server, so it is unavailable while this device is offline.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const res = await authedPost("/api/reports/export", { startDate, endDate, reportType });
+      const data = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        recipient?: string;
+        rowCount?: number;
+      };
+      if (res.status === 429) {
+        setError(data.error || `Too many exports. Limit is ${MAX_EXPORTS_PER_HOUR} per hour.`);
+        return;
+      }
+      if (res.status === 503) {
+        setError(data.error || "Export is temporarily unavailable. Try again shortly.");
+        return;
+      }
+      if (!res.ok) {
+        setError(data.error || "Could not send the export.");
+        return;
+      }
+      const emailedTo = typeof data.recipient === "string" ? data.recipient : recipient;
+      const rows = typeof data.rowCount === "number" ? data.rowCount : 0;
+      setRecipient(emailedTo);
+      setConfirmation(
+        emailedTo
+          ? `Emailed ${rows} row${rows === 1 ? "" : "s"} to ${emailedTo}.`
+          : `Emailed ${rows} row${rows === 1 ? "" : "s"}.`
+      );
+      setRecent((prev) => [
+        {
+          at: new Date().toISOString(),
+          reportType,
+          startDate,
+          endDate,
+          rowCount: rows,
+          recipient: emailedTo || "",
+        },
+        ...prev,
+      ].slice(0, 10));
+    } catch (err) {
+      console.error(err);
+      setError("Could not send the export.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="border border-gray-200 rounded-lg p-4 mt-8 mb-8">
+      <h2 className="text-sm font-medium text-gray-900 mb-1">Excel export</h2>
+      <p className="text-sm text-gray-500 mb-4">
+        Spreadsheets are emailed to the address on your account. Maximum {MAX_EXPORT_RANGE_DAYS}{" "}
+        days and {MAX_EXPORTS_PER_HOUR} exports per hour.
+        {recipient ? ` This account: ${recipient}.` : ""}
+      </p>
+      {!isOnline && (
+        <p className="text-sm text-amber-800 mb-4">
+          Export emails a spreadsheet from the server, so it is unavailable while this device is
+          offline.
+        </p>
+      )}
+      <form onSubmit={(e) => void handleSubmit(e)} className="grid gap-3 md:grid-cols-4 md:items-end">
+        <label className="text-sm text-gray-700">
+          Start
+          <input
+            type="date"
+            value={startDate}
+            onChange={(e) => setStartDate(e.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"
+            required
+          />
+        </label>
+        <label className="text-sm text-gray-700">
+          End
+          <input
+            type="date"
+            value={endDate}
+            onChange={(e) => setEndDate(e.target.value)}
+            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"
+            required
+          />
+        </label>
+        <label className="text-sm text-gray-700">
+          Report
+          <select
+            value={reportType}
+            onChange={(e) => setReportType(e.target.value as ReportType)}
+            className="mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"
+          >
+            {REPORT_TYPES.map((type) => (
+              <option key={type} value={type}>
+                {REPORT_TYPE_LABELS[type]}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          type="submit"
+          disabled={busy || !isOnline}
+          className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white hover:bg-gray-800 disabled:opacity-50"
+        >
+          {busy ? "Sending…" : "Email spreadsheet"}
+        </button>
+      </form>
+      {error && <p className="text-sm text-red-600 mt-3">{error}</p>}
+      {confirmation && <p className="text-sm text-gray-900 mt-3">{confirmation}</p>}
+      <h3 className="text-sm font-medium text-gray-900 mt-6 mb-2">Your recent exports</h3>
+      {recent.length === 0 ? (
+        <p className="text-sm text-gray-600">No exports from this account yet.</p>
+      ) : (
+        <ul className="text-sm text-gray-700 space-y-1">
+          {recent.map((item) => (
+            <li key={`${item.at}-${item.reportType}-${item.startDate}`}>
+              {new Date(item.at).toLocaleString()} — {REPORT_TYPE_LABELS[item.reportType]}{" "}
+              {item.startDate} to {item.endDate}, {item.rowCount} row
+              {item.rowCount === 1 ? "" : "s"}
+              {item.recipient ? `, emailed to ${item.recipient}` : ""}
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
 
 function Metric({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
@@ -37,53 +244,40 @@ function Metric({ label, value, hint }: { label: string; value: string; hint?: s
 function DashboardContent() {
   const { role, clinicId } = useAuth();
 
-  const [orders, setOrders] = useState<OrderRecord[]>([]);
-  const [patientDates, setPatientDates] = useState<string[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
   const [windowKey, setWindowKey] = useState<TimeWindowKey>("today");
 
   const allowed = canViewDashboard(role);
+  const ordersQuery = useClinicCollection("orders", role, clinicId, { enabled: allowed });
+  const patientsQuery = useClinicCollection("patients", role, clinicId, { enabled: allowed });
 
-  useEffect(() => {
-    if (!allowed) return;
-    async function load() {
-      try {
-        const [orderDocs, patientDocs] = await Promise.all([
-          getClinicDocs("orders", role, clinicId),
-          getClinicDocs("patients", role, clinicId),
-        ]);
-        setOrders(
-          orderDocs
-            .filter((d) => !isOrderForDeletedPatient(d.data()))
-            .map((d) => {
-              const data = d.data();
-              return {
-                id: d.id,
-                status: data.status || "pending",
-                createdAt: data.createdAt,
-                tests: data.tests || [],
-                sampleCollectedAt: data.sampleCollectedAt || null,
-                reviewedAt: data.reviewedAt || null,
-              };
-            })
-        );
-        setPatientDates(
-          patientDocs
-            .filter((d) => !isPatientDeleted(d.data()))
-            .map((d) => d.data().createdAt)
-            .filter(Boolean)
-        );
-      } catch (err) {
-        console.error(err);
-        const detail = err instanceof Error ? ` ${err.message}` : "";
-        setError(`Could not load dashboard data.${detail}`);
-      } finally {
-        setLoading(false);
-      }
-    }
-    load();
-  }, [allowed, role, clinicId]);
+  const orders: OrderRecord[] = ordersQuery.docs
+    .filter((d) => !isOrderForDeletedPatient(d.data()))
+    .map((d) => {
+      const parsed = orderCollectionFromData(d.id, d.data(), d.metadata.hasPendingWrites);
+      return {
+        id: parsed.id,
+        status: parsed.status,
+        createdAt: d.data().createdAt,
+        tests: parsed.tests,
+        sampleCollectedAt: parsed.sampleCollectedAt,
+        sampleCollections: parsed.sampleCollections,
+        reviewedAt: d.data().reviewedAt || null,
+        resultVersions: d.data().resultVersions,
+        lastAmendedAt: d.data().lastAmendedAt || null,
+        notYetSynced: parsed.notYetSynced,
+      };
+    });
+  const patientDates = patientsQuery.docs
+    .filter((d) => !isPatientDeleted(d.data()))
+    .map((d) => d.data().createdAt)
+    .filter(Boolean);
+  const loading = ordersQuery.loading || patientsQuery.loading;
+  const error = ordersQuery.error
+    ? `Could not load dashboard data. ${ordersQuery.error}`
+    : patientsQuery.error
+      ? `Could not load dashboard data. ${patientsQuery.error}`
+      : "";
+  const hasUnsynced = orders.some((o) => o.notYetSynced) || patientsQuery.docs.some((d) => d.metadata.hasPendingWrites);
 
   const stats = useMemo(() => {
     const window = getTimeWindow(windowKey);
@@ -94,29 +288,15 @@ function DashboardContent() {
     const byType = new Map<string, number>();
     for (const order of ordersInWindow) {
       for (const test of order.tests) {
-        byType.set(test.name, (byType.get(test.name) || 0) + 1);
+        byType.set(test.name || test.code, (byType.get(test.name || test.code) || 0) + 1);
       }
     }
 
     const approvedInWindow = orders.filter(
-      (o) => o.status === "approved" && isWithin(o.reviewedAt, window)
+      (o) => isReleasedResultStatus(o.status) && isWithin(o.reviewedAt, window)
     );
 
-    const turnaroundHours: number[] = [];
-    let excluded = 0;
-    for (const order of approvedInWindow) {
-      if (!order.sampleCollectedAt || !order.reviewedAt) {
-        excluded += 1;
-        continue;
-      }
-      const collected = new Date(order.sampleCollectedAt).getTime();
-      const approved = new Date(order.reviewedAt).getTime();
-      if (Number.isNaN(collected) || Number.isNaN(approved) || approved < collected) {
-        excluded += 1;
-        continue;
-      }
-      turnaroundHours.push((approved - collected) / 3600000);
-    }
+    const tat = summarizeTurnaround(approvedInWindow);
 
     return {
       window,
@@ -124,10 +304,13 @@ function DashboardContent() {
       testsOrdered,
       byType: [...byType.entries()].sort((a, b) => b[1] - a[1]),
       approved: approvedInWindow.length,
-      turnaround: median(turnaroundHours),
-      turnaroundCounted: turnaroundHours.length,
-      turnaroundExcluded: excluded,
-      awaitingSample: orders.filter((o) => !o.sampleCollectedAt && o.status !== "approved").length,
+      amendments: countAmendmentsInWindow(orders, (iso) => isWithin(iso, window)),
+      turnaround: tat.median,
+      turnaroundLegacy: tat.legacyCounted,
+      turnaroundCopy: formatTurnaroundExclusionCopy(tat),
+      awaitingSample: orders.filter(
+        (o) => !isReleasedResultStatus(o.status) && !interpretCollection(o).allCollected
+      ).length,
       pending: orders.filter((o) => o.status === "pending").length,
       awaitingReview: orders.filter((o) => o.status === "results_entered").length,
       returned: orders.filter((o) => o.status === "needs_correction").length,
@@ -139,11 +322,14 @@ function DashboardContent() {
   return (
     <main className="min-h-screen bg-white">
       <AppNav />
+      <CatalogReviewBanner />
       <div className="max-w-5xl mx-auto px-6 py-16">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-1">Laboratory dashboard</h1>
+        <h1 className="text-2xl font-semibold text-gray-900 mb-1 inline-flex items-center gap-2">
+          Laboratory dashboard
+          <NotYetSynced show={hasUnsynced} />
+        </h1>
         <p className="text-gray-600 mb-6">
-          {role === "owner" ? "All clinics" : "Your clinic"} — turnaround measured from sample
-          collection to result approval.
+          {role === "owner" ? "All clinics" : "Your clinic"}. {TURNAROUND_DEFINITION}
         </p>
 
         <div className="flex gap-2 mb-8">
@@ -190,7 +376,7 @@ function DashboardContent() {
               <Metric
                 label="Awaiting sample"
                 value={String(stats.awaitingSample)}
-                hint="No collection time recorded"
+                hint="A required specimen has no collection time"
               />
             </div>
 
@@ -200,14 +386,22 @@ function DashboardContent() {
               <Metric label="Tests ordered" value={String(stats.testsOrdered)} />
               <Metric label="Approved / released" value={String(stats.approved)} />
               <Metric
-                label="Median turnaround"
-                value={stats.turnaround === null ? "—" : `${stats.turnaround.toFixed(1)} h`}
-                hint={
-                  stats.turnaroundExcluded > 0
-                    ? `${stats.turnaroundCounted} counted, ${stats.turnaroundExcluded} excluded (no collection time)`
-                    : `${stats.turnaroundCounted} counted`
-                }
+                label="Amendments"
+                value={String(stats.amendments)}
+                hint="Released results rewritten in this period"
               />
+              <div className="border border-gray-200 rounded-lg p-4 md:col-span-2">
+                <p className="text-sm text-gray-600">Median turnaround</p>
+                <p className="text-2xl font-semibold text-gray-900 mt-1">
+                  {stats.turnaround === null ? "—" : `${stats.turnaround.toFixed(1)} h`}
+                </p>
+                <p className="text-sm text-gray-500 mt-2">{stats.turnaroundCopy}</p>
+                {stats.turnaroundLegacy > 0 && (
+                  <p className="text-xs text-gray-400 mt-1">
+                    Includes {stats.turnaroundLegacy} with a legacy single timestamp.
+                  </p>
+                )}
+              </div>
             </div>
 
             <div className="border border-gray-200 rounded-lg p-4 mb-8">
@@ -227,13 +421,16 @@ function DashboardContent() {
                 </table>
               )}
             </div>
-
-            <p className="text-xs text-gray-400">
-              {canExportData(role)
-                ? "Reporting beyond the current week is by Excel export, which is not built yet — it depends on an email delivery provider being chosen."
-                : "Excel export is not available for this role. Ask a clinic admin, lab manager, or the owner if a report is needed."}
-            </p>
           </>
+        )}
+
+        {canExportData(role) ? (
+          <ExportReports />
+        ) : (
+          <p className="text-xs text-gray-400 mt-8">
+            Excel export is not available for this role. Ask a clinic admin, lab manager, or the
+            owner if a report is needed.
+          </p>
         )}
       </div>
     </main>

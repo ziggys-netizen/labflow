@@ -6,7 +6,8 @@ import {
   PACKING_UNITS,
   STORAGE_CONDITIONS,
 } from "./inventory";
-import type { TestParameter } from "./testCatalog";
+import type { SpecimenType, TestParameter } from "./testCatalog";
+import { parseSpecimenType } from "./testCatalog";
 
 export type MigrationDataType = "patients" | "testCatalog" | "historicalOrders" | "inventory";
 export type MappingTarget = string | "ignore";
@@ -50,6 +51,7 @@ export interface ExistingTestRef {
   code: string;
   name: string;
   parameters: TestParameter[];
+  specimenType: SpecimenType | null;
 }
 
 export interface ExistingOrderRef {
@@ -111,6 +113,7 @@ export interface TestCatalogImportData {
   code: string;
   name: string;
   category: string;
+  specimenType: SpecimenType;
   parameters: TestParameter[];
   price?: number;
 }
@@ -125,7 +128,7 @@ export interface HistoricalOrderImportData {
   patientId: string;
   patientName: string;
   patientLabId: string;
-  tests: { code: string; name: string }[];
+  tests: { code: string; name: string; specimenType?: SpecimenType }[];
   status: HistoricalOrderStatus;
   createdAt: string;
   sampleCollectedAt?: string;
@@ -343,6 +346,13 @@ const TEST_CATALOG_FIELDS: MigrationField[] = [
     required: true,
     aliases: ["category", "department", "section", "discipline"],
     help: "Required. No category is invented for blank rows.",
+  },
+  {
+    key: "specimenType",
+    label: "Specimen type",
+    required: true,
+    aliases: ["specimen type", "sample type", "specimen", "sample"],
+    help: "Required. One of: blood, urine, stool, sputum, swab, csf, other.",
   },
   {
     key: "price",
@@ -1383,6 +1393,10 @@ function validateTestCatalog(
     if (!name) issues.push("Test name is required.");
     const category = normalizeText(values.category || "");
     if (!category) issues.push("Category is required.");
+    const specimenType = parseSpecimenType(values.specimenType);
+    if (!specimenType) {
+      issues.push("Specimen type is required (blood, urine, stool, sputum, swab, csf, or other).");
+    }
 
     let price: number | undefined;
     if (values.price) {
@@ -1391,11 +1405,12 @@ function validateTestCatalog(
     }
     const parameters = parseParameters(values, issues, warnings);
     const data: TestCatalogImportData | null =
-      issues.length === 0 && parameters
+      issues.length === 0 && parameters && specimenType
         ? {
             code,
             name,
             category,
+            specimenType,
             parameters,
             ...(price !== undefined ? { price } : {}),
           }
@@ -1725,7 +1740,11 @@ function validateHistoricalOrders(
             patientId: patient.id,
             patientName: patient.name,
             patientLabId: patient.labId,
-            tests: tests.map((test) => ({ code: test.code, name: test.name })),
+            tests: tests.map((test) => ({
+              code: test.code,
+              name: test.name,
+              ...(test.specimenType ? { specimenType: test.specimenType } : {}),
+            })),
             status,
             createdAt,
             ...(sampleCollectedAt ? { sampleCollectedAt } : {}),

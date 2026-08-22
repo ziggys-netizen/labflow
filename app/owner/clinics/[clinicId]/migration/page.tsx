@@ -48,6 +48,8 @@ import {
   ValidationContext,
   ValidationSummary,
 } from "../../../../lib/migration";
+import { parseSpecimenType } from "../../../../lib/testCatalog";
+import { actorFromAuth, safeLogAudit } from "../../../../lib/audit";
 
 const STEPS = [
   "Select Clinic",
@@ -155,8 +157,8 @@ const CATEGORY_OPTIONS: CategoryOption[] = [
     id: "staff",
     title: "Staff pre-approvals",
     description:
-      "The required pre-approval collection and sign-in integration are not implemented, so accounts cannot be imported safely.",
-    availability: "Unavailable until the pre-approval workflow exists",
+      "Do not import live accounts. Add emails and roles on the clinic staff page; matching Google sign-ins are auto-approved on join.",
+    availability: "Use Staff → pre-approvals (email + role). Spreadsheet paste is supported there.",
   },
 ];
 
@@ -301,7 +303,7 @@ function MigrationContent() {
   const params = useParams();
   const rawClinicId = params.clinicId;
   const selectedClinicId = Array.isArray(rawClinicId) ? rawClinicId[0] : rawClinicId;
-  const { user, role, username } = useAuth();
+  const { user, role, username, shift } = useAuth();
   const canAccess = role === "owner";
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -586,6 +588,7 @@ function MigrationContent() {
           code: readString(data.code) || entry.id,
           name: readString(data.name),
           parameters: readParameters(data.parameters),
+          specimenType: parseSpecimenType(data.specimenType),
         };
       }) || [];
     const existingOrders: ExistingOrderRef[] =
@@ -720,6 +723,7 @@ function MigrationContent() {
             code: row.record.data.code,
             name: row.record.data.name,
             category: row.record.data.category,
+            specimenType: row.record.data.specimenType,
             parameters: row.record.data.parameters,
             clinicId: selectedClinicId,
           };
@@ -1006,6 +1010,25 @@ function MigrationContent() {
     };
     const historySaved = await saveHistoryReport(report, historyId);
 
+    const importActor = actorFromAuth(user, role, shift);
+    if (importActor && committed > 0) {
+      await safeLogAudit({
+        clinicId: clinic.id,
+        actor: importActor,
+        action: "import.run",
+        targetCollection: "migrationHistory",
+        targetId: historyId,
+        targetLabel: fileName || clinic.name,
+        detail: {
+          dataType,
+          imported,
+          updated,
+          failed,
+          status,
+        },
+      });
+    }
+
     setImportResult({
       status,
       imported,
@@ -1116,6 +1139,23 @@ function MigrationContent() {
       collectionCounts,
       claimedDocuments: claimedDocuments.slice(0, committed),
     });
+
+    const claimActor = actorFromAuth(user, role, shift);
+    if (claimActor && committed > 0) {
+      await safeLogAudit({
+        clinicId: clinic.id,
+        actor: claimActor,
+        action: "legacyRecords.claim",
+        targetCollection: "migrationHistory",
+        targetId: clinic.id,
+        targetLabel: clinic.name,
+        detail: {
+          claimed: committed,
+          failed,
+          collectionCounts,
+        },
+      });
+    }
 
     if (reportStatus === "completed") {
       setAssignStatus(

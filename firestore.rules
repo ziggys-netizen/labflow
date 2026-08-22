@@ -19,16 +19,32 @@ service cloud.firestore {
       return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
     }
 
-    function isOwner() {
-      return userExists() && userDoc().role == "owner";
+    // Claims-first (ADR-001 §8.1). Guard with `key in request.auth.token` —
+    // dereferencing a missing claim fails the whole evaluation.
+    function hasClaim(key) {
+      return request.auth != null && key in request.auth.token;
+    }
+
+    function callerEmailLower() {
+      return hasClaim("email")
+        ? request.auth.token.email.lower()
+        : (userExists() ? userDoc().get("email", "").lower() : "");
     }
 
     function myClinicId() {
-      return userDoc().get("clinicId", null);
+      return hasClaim('clinicId')
+        ? request.auth.token.clinicId
+        : userDoc().get("clinicId", null);
     }
 
     function myRole() {
-      return userDoc().get("role", "");
+      return hasClaim('role')
+        ? request.auth.token.role
+        : userDoc().get("role", "");
+    }
+
+    function isOwner() {
+      return signedIn() && myRole() == "owner";
     }
 
     function approved() {
@@ -218,19 +234,7 @@ service cloud.firestore {
         && changedKeys().hasOnly(["username", "usernameUpdatedAt", "activeClinicId"]);
     }
 
-    // App-compatible: /join writes only clinicId on a pending account.
-    function isJoinClinicId() {
-      return isSelf()
-        && resource.data.get("role", "") == "pending"
-        && resource.data.get("status", "") == "pending"
-        && (resource.data.get("clinicId", null) == null || resource.data.get("clinicId", "") == "")
-        && changedKeys().hasOnly(["clinicId"])
-        && request.resource.data.clinicId is string
-        && request.resource.data.clinicId.size() > 0
-        && request.resource.data.role == "pending"
-        && request.resource.data.status == "pending"
-        && !setsAnyOwnerRole();
-    }
+    // Join clinicId is written by POST /api/join/confirm (Admin SDK), not the client.
 
     // App-compatible: setActiveClinic writes the legacy mirror of an
     // already-approved membership. Role cannot be invented or set to owner.
@@ -302,20 +306,22 @@ service cloud.firestore {
       allow create: if isSelfCreate();
 
       allow update: if !setsAnyOwnerRole()
-        && (isSelfProfileUpdate() || isJoinClinicId() || isActiveClinicSwitch() || isStaffMembershipWrite());
+        && (isSelfProfileUpdate() || isActiveClinicSwitch() || isStaffMembershipWrite());
 
       allow delete: if false;
     }
 
     // ------------------------------------------------------------------
     // clinics/{id}
-    // Join-code lookup: rules cannot see query constraints, so any signed-in
-    // user may read every clinic document. joinCode is the secret. Leak:
-    // clinic names, addresses, and other profile fields are visible to any
-    // signed-in pending user. Cloud Functions were not used.
+    // Join-code lookup is POST /api/join/redeem (Admin SDK). Clients must
+    // not query by joinCode. Pending users cannot list clinics.
     // ------------------------------------------------------------------
     match /clinics/{clinicId} {
-      allow read: if signedIn();
+      allow read: if isOwner()
+        || (approved() && (
+          myClinicId() == clinicId
+          || userDoc().get("clinicIds", []).hasAny([clinicId])
+        ));
       allow create: if isOwner();
       allow update: if isOwner()
         || (canEditClinicProfile() && approved() && myClinicId() == clinicId);
@@ -370,6 +376,30 @@ service cloud.firestore {
         );
     }
 
+    function orderAmendmentTouched() {
+      return changedKeys().hasAny([
+          "resultVersions",
+          "pendingAmendment",
+          "pendingAmendmentAt",
+          "currentResultVersion",
+          "lastAmendedAt",
+          "lastAmendedBy",
+          "lastAmendedByUid",
+          "lastAmendedByRole",
+          "lastAmendedByShift",
+          "amendmentConfirmedBy",
+          "amendmentConfirmedByUid"
+        ])
+        || (
+          request.resource.data.get("status", "") == "amended"
+          && resource.data.get("status", "") != "amended"
+        )
+        || (
+          changedKeys().hasAny(["results"])
+          && resource.data.get("status", "") in ["approved", "amended"]
+        );
+    }
+
     function orderResultsTouched() {
       return changedKeys().hasAny(["results", "resultsEnteredBy", "resultsEnteredAt"])
         || (
@@ -407,10 +437,12 @@ service cloud.firestore {
       allow create: if scopedCreate() && canOrderTests() && orderCreateClean();
       allow update: if scopedUpdate()
         && (!orderApprovalTouched() || canApproveResults())
+        && (!orderAmendmentTouched() || canApproveResults())
         && (!orderResultsTouched() || canEnterResults())
         && (!orderSampleTouched() || canRecordSampleCollection())
         && (
           orderApprovalTouched()
+          || orderAmendmentTouched()
           || orderResultsTouched()
           || orderSampleTouched()
           || canOrderTests()
@@ -461,6 +493,83 @@ service cloud.firestore {
         && resource.data.uid == request.auth.uid
         && request.resource.data.uid == request.auth.uid;
       allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    match /preApprovals/{id} {
+      function notOwnPreApproval(data) {
+        return data.email is string
+          && data.email.lower() != callerEmailLower();
+      }
+
+      function preApprovalShiftOk(data) {
+        return data.role == "lab_supervisor"
+          ? data.shift in ["morning", "afternoon", "night"]
+          : data.shift == null;
+      }
+
+      function preApprovalWritable() {
+        return isOwner()
+          || (canManageStaff() && approved() && sameClinic(resource.data));
+      }
+
+      function preApprovalCreateOk() {
+        let data = request.resource.data;
+        return canManageStaff()
+          && scopedCreate()
+          && data.email is string
+          && data.email.size() > 3
+          && data.email == data.email.lower()
+          && data.role in [
+            "clinic_admin",
+            "lab_manager",
+            "lab_supervisor",
+            "technician",
+            "technician_assistant",
+            "intern",
+            "storekeeper"
+          ]
+          && data.role != "owner"
+          && preApprovalShiftOk(data)
+          && data.status == "pending"
+          && data.expiresAt is string
+          && data.createdAt is string
+          && data.createdByUid == request.auth.uid
+          && data.get("consumedByUid", null) == null
+          && data.get("consumedAt", null) == null;
+      }
+
+      // Managers/owner may read a clinic's pre-approvals except the row
+      // matching their own email. Consume/lapse are Admin SDK only.
+      allow read: if notOwnPreApproval(resource.data)
+        && (isOwner() || (canManageStaff() && approved() && sameClinic(resource.data)));
+      allow create: if preApprovalCreateOk();
+      allow update: if false;
+      allow delete: if preApprovalWritable()
+        && resource.data.get("status", "pending") == "pending"
+        && resource.data.get("consumedAt", null) == null
+        && resource.data.get("usedAt", null) == null;
+    }
+
+    // Create-only. No update/delete for anyone, including owner.
+    // Read: owner, or clinic_admin (canManageStaff) for their clinic.
+    match /auditLogs/{id} {
+      function auditCreateOk() {
+        let data = request.resource.data;
+        return signedIn()
+          && data.actorUid == request.auth.uid
+          && data.action is string
+          && data.action.size() > 0
+          && data.at is string
+          && (
+            isOwner()
+            || (approved() && hasClinicId(data) && data.clinicId == myClinicId())
+          );
+      }
+
+      allow create: if auditCreateOk();
+      allow read: if isOwner()
+        || (canManageStaff() && approved() && sameClinic(resource.data));
+      allow update, delete: if false;
     }
 
     match /migrationHistory/{id} {

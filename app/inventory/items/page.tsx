@@ -1,12 +1,15 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { addDoc, collection, doc, updateDoc } from "firebase/firestore";
+import { collection, doc } from "firebase/firestore";
 import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
+import NotYetSynced from "../../lib/NotYetSynced";
 import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
 import { getClinicDocs, isOwner, loadClinicNames, ownerActingCreateFields } from "../../lib/clinicScope";
+import { useClinicCollection } from "../../lib/clinicListen";
+import { trackedAddDoc, trackedUpdateDoc, writeActorFromUser } from "../../lib/trackedWrites";
 import ActingClinicPrompt from "../../lib/ActingClinicPrompt";
 import { makeActorStamp } from "../../lib/identity";
 import { canManageInventoryItems, canViewInventory } from "../../lib/permissions";
@@ -80,33 +83,34 @@ function ItemsContent() {
   const allowed = canViewInventory(role);
   const canEdit = canManageInventoryItems(role);
 
-  const [items, setItems] = useState<InventoryItem[]>([]);
   const [catalog, setCatalog] = useState<CatalogOption[]>([]);
   const [clinicNames, setClinicNames] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
-  const [reloadToken, setReloadToken] = useState(0);
 
   const [showForm, setShowForm] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState<FormState>(BLANK);
   const [saving, setSaving] = useState(false);
 
+  const itemsQuery = useClinicCollection("inventoryItems", role, clinicId, {
+    sortBy: "name",
+    enabled: allowed,
+  });
+  const items = itemsQuery.docs.map(mapItem);
+  const loading = itemsQuery.loading;
+
   useEffect(() => {
     if (!allowed) return;
     let cancelled = false;
 
-    async function load() {
+    async function loadCatalog() {
       try {
-        const [itemDocs, catalogDocs] = await Promise.all([
-          getClinicDocs("inventoryItems", role, clinicId, { sortBy: "name" }),
-          getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" }),
+        const catalogDocs = await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" });
+        const names = await loadClinicNames(role, [
+          clinicId,
+          ...itemsQuery.docs.map((d) => (d.data().clinicId as string | null) ?? null),
         ]);
-        const mapped = itemDocs.map(mapItem);
-        const names = await loadClinicNames(role, [clinicId, ...mapped.map((i) => i.clinicId)]);
-
         if (cancelled) return;
-        setItems(mapped);
         setClinicNames(names);
         const seen = new Set<string>();
         setCatalog(
@@ -120,16 +124,14 @@ function ItemsContent() {
       } catch (err) {
         console.error(err);
         if (!cancelled) setStatus("Could not load the item list.");
-      } finally {
-        if (!cancelled) setLoading(false);
       }
     }
 
-    load();
+    loadCatalog();
     return () => {
       cancelled = true;
     };
-  }, [allowed, role, clinicId, reloadToken]);
+  }, [allowed, role, clinicId, itemsQuery.docs]);
 
   function set<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -219,21 +221,34 @@ function ItemsContent() {
     setSaving(true);
     try {
       if (editingId) {
-        await updateDoc(doc(db, "inventoryItems", editingId), payload);
+        await trackedUpdateDoc(doc(db, "inventoryItems", editingId), payload, {
+          ...writeActorFromUser(user, username),
+          summary: `Updated stock item ${form.name.trim()}`,
+          clinicId: targetClinicId,
+          expected: { name: form.name.trim() },
+        });
         setStatus("Item updated.");
       } else {
-        await addDoc(collection(db, "inventoryItems"), {
-          ...payload,
-          createdAt: new Date().toISOString(),
-          createdBy: makeActorStamp(user, username),
-          ...ownerActingCreateFields(role),
-        });
+        await trackedAddDoc(
+          collection(db, "inventoryItems"),
+          {
+            ...payload,
+            createdAt: new Date().toISOString(),
+            createdBy: makeActorStamp(user, username),
+            ...ownerActingCreateFields(role),
+          },
+          {
+            ...writeActorFromUser(user, username),
+            summary: `Added stock item ${form.name.trim()}`,
+            clinicId: targetClinicId,
+            expected: { name: form.name.trim() },
+          }
+        );
         setStatus("Item added.");
       }
       setShowForm(false);
       setEditingId(null);
       setForm(BLANK);
-      setReloadToken((n) => n + 1);
     } catch (err) {
       console.error(err);
       setStatus("Failed to save the item.");
@@ -246,12 +261,20 @@ function ItemsContent() {
     if (!canEdit) return;
     setStatus("");
     try {
-      await updateDoc(doc(db, "inventoryItems", item.id), {
-        active: !item.active,
-        updatedAt: new Date().toISOString(),
-      });
+      await trackedUpdateDoc(
+        doc(db, "inventoryItems", item.id),
+        {
+          active: !item.active,
+          updatedAt: new Date().toISOString(),
+        },
+        {
+          ...writeActorFromUser(user, username),
+          summary: item.active ? `Retired stock item ${item.name}` : `Restored stock item ${item.name}`,
+          clinicId: item.clinicId,
+          expected: { active: !item.active },
+        }
+      );
       setStatus(item.active ? "Item retired." : "Item restored.");
-      setReloadToken((n) => n + 1);
     } catch (err) {
       console.error(err);
       setStatus("Failed to update the item.");
@@ -480,7 +503,8 @@ function ItemsContent() {
                 <div>
                   <p className="font-medium text-gray-900">
                     {item.name}
-                    {!item.active && <span className="text-sm text-gray-500"> — retired</span>}
+                    {!item.active && <span className="text-sm text-gray-500"> — retired</span>}{" "}
+                    <NotYetSynced show={item.notYetSynced} />
                   </p>
                   <p className="text-sm text-gray-600">
                     {item.category} · {packDescription(item)}

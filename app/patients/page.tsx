@@ -1,19 +1,19 @@
 "use client";
 
 import Link from "next/link";
-import { startTransition, useCallback, useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { db } from "../lib/firebase";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc } from "firebase/firestore";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import PrintIcon from "../lib/PrintIcon";
+import NotYetSynced from "../lib/NotYetSynced";
 import { useAuth } from "../lib/AuthContext";
-import { getClinicDocs } from "../lib/clinicScope";
-import {
-  isOrderForDeletedPatient,
-  isPatientDeleted,
-  softDeletePatient,
-} from "../lib/patientSoftDelete";
+import { useClinicCollection } from "../lib/clinicListen";
+import { trackedSetDoc, writeActorFromUser } from "../lib/trackedWrites";
+import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../lib/audit";
+import { isOrderForDeletedPatient, isPatientDeleted, softDeletePatient } from "../lib/patientSoftDelete";
+import { isReleasedResultStatus } from "../lib/resultAmendment";
 import {
   canDeletePatient,
   canOrderTests,
@@ -24,8 +24,13 @@ import {
 import {
   SAMPLE_COLLECTED_SOURCE,
   getPatientCollectionCheckboxState,
-  sampleCollectedSourceFromData,
+  interpretCollection,
+  mergeSpecimenCollections,
+  orderCollectionFromData,
+  parseSampleCollections,
+  specimenCollectionWrite,
   type OrderCollectionFields,
+  type SampleCollections,
 } from "../lib/sampleCollection";
 
 interface Patient {
@@ -42,6 +47,7 @@ interface Patient {
   nextOfKin: string;
   referringClinician: string;
   createdAt: string;
+  notYetSynced?: boolean;
 }
 
 function sampleActionTitle(
@@ -50,6 +56,9 @@ function sampleActionTitle(
 ) {
     if (!canCollect) {
     return "Only a technician, laboratory lead, or owner can record sample collection";
+  }
+  if (state.multiSpecimenExplanation) {
+    return state.multiSpecimenExplanation;
   }
   if (state.currentOrders.length === 0) {
     return "No current order is available; create or open an order to record collection";
@@ -67,16 +76,15 @@ function sampleActionTitle(
 }
 
 function PatientsContent() {
-  const { user, role, clinicId } = useAuth();
-  const [patients, setPatients] = useState<Patient[]>([]);
-  const [ordersByPatient, setOrdersByPatient] = useState<Record<string, OrderCollectionFields[]>>(
-    {}
-  );
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
+  const { user, role, clinicId, username, shift } = useAuth();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [savingSampleId, setSavingSampleId] = useState<string | null>(null);
-  const [pendingDelete, setPendingDelete] = useState<{ id: string; name: string } | null>(null);
+  const [pendingDelete, setPendingDelete] = useState<{
+    id: string;
+    name: string;
+    labId: string;
+    clinicId: string;
+  } | null>(null);
   const [deletionReason, setDeletionReason] = useState("");
   const [deleteError, setDeleteError] = useState("");
 
@@ -85,13 +93,15 @@ function PatientsContent() {
   const canOrder = canOrderTests(role);
   const canRegister = canRegisterPatient(role);
 
-  const fetchPatients = useCallback(async () => {
-    try {
-      const [docs, orderDocs] = await Promise.all([
-        getClinicDocs("patients", role, clinicId, { sortBy: "createdAt", direction: "desc" }),
-        getClinicDocs("orders", role, clinicId),
-      ]);
-      const results: Patient[] = docs
+  const patientsQuery = useClinicCollection("patients", role, clinicId, {
+    sortBy: "createdAt",
+    direction: "desc",
+  });
+  const ordersQuery = useClinicCollection("orders", role, clinicId);
+
+  const patients = useMemo<Patient[]>(
+    () =>
+      patientsQuery.docs
         .filter((docSnap) => !isPatientDeleted(docSnap.data()))
         .map((docSnap) => {
           const data = docSnap.data();
@@ -109,43 +119,39 @@ function PatientsContent() {
             nextOfKin: data.nextOfKin || "—",
             referringClinician: data.referringClinician || "—",
             createdAt: data.createdAt,
+            notYetSynced: docSnap.metadata.hasPendingWrites,
           };
-        });
+        }),
+    [patientsQuery.docs]
+  );
 
-      const grouped: Record<string, OrderCollectionFields[]> = {};
-      for (const orderDoc of orderDocs) {
-        const data = orderDoc.data();
-        if (!data.patientId || isOrderForDeletedPatient(data)) continue;
-        (grouped[data.patientId] ||= []).push({
-          id: orderDoc.id,
-          sampleCollectedAt: data.sampleCollectedAt || null,
-          status: data.status || "pending",
-          sampleCollectedSource: sampleCollectedSourceFromData(data),
-        });
-      }
-
-      startTransition(() => {
-        setPatients(results);
-        setOrdersByPatient(grouped);
-      });
-    } catch (err) {
-      console.error(err);
-      const detail = err instanceof Error ? ` ${err.message}` : "";
-      startTransition(() => {
-        setError(`Could not load patients.${detail}`);
-      });
-    } finally {
-      startTransition(() => {
-        setLoading(false);
-      });
+  const ordersByPatient = useMemo(() => {
+    const grouped: Record<string, OrderCollectionFields[]> = {};
+    for (const orderDoc of ordersQuery.docs) {
+      const data = orderDoc.data();
+      if (!data.patientId || isOrderForDeletedPatient(data)) continue;
+      (grouped[data.patientId] ||= []).push(
+        orderCollectionFromData(orderDoc.id, data, orderDoc.metadata.hasPendingWrites)
+      );
     }
-  }, [role, clinicId]);
+    return grouped;
+  }, [ordersQuery.docs]);
+
+  const loading = patientsQuery.loading || ordersQuery.loading;
+  const error = patientsQuery.error
+    ? `Could not load patients. ${patientsQuery.error}`
+    : ordersQuery.error
+      ? `Could not load patients. ${ordersQuery.error}`
+      : "";
 
   useEffect(() => {
-    startTransition(() => {
-      void fetchPatients();
-    });
-  }, [fetchPatients]);
+    if (patientsQuery.error) {
+      console.error(patientsQuery.error);
+    }
+    if (ordersQuery.error) {
+      console.error(ordersQuery.error);
+    }
+  }, [patientsQuery.error, ordersQuery.error]);
 
   async function toggleSampleCollected(patient: Patient, collected: boolean) {
     if (!user || !canCollect) return;
@@ -167,44 +173,72 @@ function PatientsContent() {
     try {
       const orderRef = doc(db, "orders", target.id);
       const snapshot = await getDoc(orderRef);
-      const current = snapshot.exists() ? snapshot.data() : null;
-      const stillCurrent = current && (current.status || "pending") !== "approved";
+      const current = snapshot.exists()
+        ? orderCollectionFromData(target.id, snapshot.data() || {})
+        : null;
+      const stillCurrent = current && !isReleasedResultStatus(current.status);
+      const collection = current ? interpretCollection(current) : null;
       const canApply = collected
-        ? Boolean(stillCurrent && current && !current.sampleCollectedAt)
+        ? Boolean(stillCurrent && collection && !collection.allCollected && !collection.isMultiSpecimen)
         : Boolean(
             stillCurrent &&
-              current?.sampleCollectedAt &&
-              sampleCollectedSourceFromData(current) === SAMPLE_COLLECTED_SOURCE.patientCheckbox
+              collection?.allCollected &&
+              current.sampleCollectedSource === SAMPLE_COLLECTED_SOURCE.patientCheckbox
           );
 
-      if (!canApply) {
-        await fetchPatients();
+      if (!canApply || !current || !collection) {
         return;
       }
 
-      await setDoc(
+      let sampleCollections: SampleCollections;
+      if (collected && timestamp) {
+        const updates: SampleCollections = {};
+        for (const type of collection.required) {
+          updates[type] = specimenCollectionWrite(timestamp, user.email, SAMPLE_COLLECTED_SOURCE.patientCheckbox);
+        }
+        sampleCollections = mergeSpecimenCollections(current.sampleCollections, updates);
+      } else {
+        sampleCollections = parseSampleCollections(current.sampleCollections);
+        for (const type of collection.required) {
+          delete sampleCollections[type];
+        }
+      }
+
+      await trackedSetDoc(
         orderRef,
         {
-          sampleCollectedAt: timestamp,
-          sampleCollectedBy: collected ? user.email : null,
+          sampleCollections,
           sampleCollectedSource: source,
           sampleCollectionQuickAction: null,
         },
-        { merge: true }
+        { merge: true },
+        {
+          ...writeActorFromUser(user, username),
+          operation: "update",
+          summary: collected
+            ? `Recorded sample collection for ${patient.name}`
+            : `Cleared sample collection for ${patient.name}`,
+          clinicId: patient.clinicId,
+          patientName: patient.name,
+          patientLabId: patient.labId,
+          orderId: target.id,
+          expected: { sampleCollections },
+        }
       );
-
-      setOrdersByPatient((prev) => ({
-        ...prev,
-        [patient.id]: (prev[patient.id] || []).map((order) =>
-          order.id === target.id
-            ? {
-                ...order,
-                sampleCollectedAt: timestamp,
-                sampleCollectedSource: source,
-              }
-            : order
-        ),
-      }));
+      if (collected) {
+        const actor = actorFromAuth(user, role, shift);
+        if (actor) {
+          await safeLogAudit({
+            clinicId: patient.clinicId || clinicId,
+            actor,
+            action: "order.sampleCollected",
+            targetCollection: "orders",
+            targetId: target.id,
+            targetLabel: auditTargetLabel(patient.name, patient.labId),
+            detail: { source: SAMPLE_COLLECTED_SOURCE.patientCheckbox },
+          });
+        }
+      }
     } catch (err) {
       console.error(err);
       alert("Could not update sample collection status. Please try again.");
@@ -213,9 +247,9 @@ function PatientsContent() {
     }
   }
 
-  function openDelete(id: string, name: string) {
+  function openDelete(id: string, name: string, labId: string, patientClinicId: string) {
     if (!canDelete) return;
-    setPendingDelete({ id, name });
+    setPendingDelete({ id, name, labId, clinicId: patientClinicId });
     setDeletionReason("");
     setDeleteError("");
   }
@@ -241,11 +275,12 @@ function PatientsContent() {
       await softDeletePatient({
         patientId: pendingDelete.id,
         reason,
-        actor: { uid: user.uid, email: user.email, role },
+        actor: { uid: user.uid, email: user.email, role, shift },
         role,
         clinicId,
+        targetLabel: auditTargetLabel(pendingDelete.name, pendingDelete.labId),
+        patientClinicId: pendingDelete.clinicId,
       });
-      setPatients((prev) => prev.filter((p) => p.id !== pendingDelete.id));
       setPendingDelete(null);
       setDeletionReason("");
     } catch (err) {
@@ -331,7 +366,17 @@ function PatientsContent() {
                         {p.clinicId || "—"}
                       </td>
                       <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">{p.labId}</td>
-                      <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">{p.name}</td>
+                      <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">
+                        <span className="inline-flex items-center gap-2">
+                          {p.name}
+                          <NotYetSynced
+                            show={
+                              p.notYetSynced ||
+                              (ordersByPatient[p.id] || []).some((o) => o.notYetSynced)
+                            }
+                          />
+                        </span>
+                      </td>
                       <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.preferredName}</td>
                       <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.sex}</td>
                       <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.dob}</td>
@@ -348,7 +393,7 @@ function PatientsContent() {
                         )}
                         {canDelete && (
                           <button
-                            onClick={() => openDelete(p.id, p.name)}
+                            onClick={() => openDelete(p.id, p.name, p.labId, p.clinicId)}
                             disabled={deletingId === p.id}
                             className="text-red-600 hover:text-red-800 disabled:opacity-50"
                           >
@@ -375,6 +420,11 @@ function PatientsContent() {
                           />
                           <span className="text-gray-700">Sample collected</span>
                         </label>
+                        {sampleState.multiSpecimenExplanation && (
+                          <p className="text-xs text-gray-500 max-w-[14rem] mt-1 ml-3">
+                            Mixed specimens — collect each on the order. The checkbox would be a lie.
+                          </p>
+                        )}
                       </td>
                     </tr>
                   );

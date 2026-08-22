@@ -18,10 +18,6 @@ function StaffRedirect() {
       router.replace(queryClinicId ? `/owner/clinics/${queryClinicId}/staff` : "/owner");
       return;
     }
-    if (role === "clinic_admin") {
-      router.replace(clinicId ? `/owner/clinics/${clinicId}/staff` : "/patients");
-      return;
-    }
     router.replace(landingPathForRole(role, clinicId));
   }, [role, clinicId, queryClinicId, router]);
 

@@ -1,11 +1,37 @@
 "use client";
 
+import { useEffect, useRef } from "react";
+import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/AuthContext";
 import ProtectedRoute from "../lib/ProtectedRoute";
+import { forceTokenRefresh, syncCustomClaims } from "../lib/authApi";
+import { landingPathForRole } from "../lib/permissions";
 
 function PendingContent() {
-  const { status, logout } = useAuth();
+  const { user, role, status, clinicId, logout } = useAuth();
+  const router = useRouter();
+  const refreshing = useRef(false);
   const rejected = status === "rejected";
+
+  useEffect(() => {
+    if (status !== "approved" || !user || refreshing.current) return;
+    refreshing.current = true;
+    let cancelled = false;
+    (async () => {
+      try {
+        await syncCustomClaims();
+        await forceTokenRefresh();
+      } catch (err) {
+        console.error(err);
+      }
+      if (!cancelled) {
+        router.replace(landingPathForRole(role, clinicId));
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [status, user, role, clinicId, router]);
 
   return (
     <main className="min-h-screen bg-white flex items-center justify-center px-6">

@@ -4,16 +4,27 @@ import { useEffect, useState } from "react";
 import { useAuth } from "../lib/AuthContext";
 import { db } from "../lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
-import { TEST_CATALOG, LabTest, TestParameter } from "../lib/testCatalog";
+import {
+  LabTest,
+  parseSpecimenType,
+  resolveSpecimenType,
+  SPECIMEN_TYPE_LABELS,
+  SPECIMEN_TYPES,
+  TEST_CATALOG,
+  TestParameter,
+  type SpecimenType,
+} from "../lib/testCatalog";
 import AppNav from "../lib/AppNav";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import ActingClinicPrompt from "../lib/ActingClinicPrompt";
+import CatalogReviewBanner from "../lib/CatalogReviewBanner";
 import { getClinicDocs, isOwner } from "../lib/clinicScope";
 import { canEditTestCatalogue } from "../lib/permissions";
+import { isTestReviewed, seedClinicCatalog } from "../lib/catalogSeed";
+import { actorFromAuth, logAudit, safeLogAudit, type AuditActor } from "../lib/audit";
 
 interface CatalogRow extends LabTest {
   firestoreId: string;
-  clinicId?: string | null;
 }
 
 export default function Settings() {
@@ -25,11 +36,12 @@ export default function Settings() {
 }
 
 function SettingsContent() {
-  const { role, clinicId, writeClinicId, loading } = useAuth();
+  const { user, role, clinicId, writeClinicId, shift, loading } = useAuth();
   const [tests, setTests] = useState<CatalogRow[]>([]);
   const [loadingTests, setLoadingTests] = useState(true);
   const [editingCode, setEditingCode] = useState<string | null>(null);
   const [status, setStatus] = useState("");
+  const [seeding, setSeeding] = useState(false);
   const allowed = canEditTestCatalogue(role);
 
   // --- Add New Test state ---
@@ -37,6 +49,7 @@ function SettingsContent() {
   const [newTestName, setNewTestName] = useState("");
   const [newTestCategory, setNewTestCategory] = useState("");
   const [newTestPrice, setNewTestPrice] = useState("");
+  const [newTestSpecimenType, setNewTestSpecimenType] = useState<SpecimenType | "">("");
   const [newTestParams, setNewTestParams] = useState<TestParameter[]>([
     { name: "", unit: "", referenceRange: "" },
   ]);
@@ -44,23 +57,19 @@ function SettingsContent() {
 
   useEffect(() => {
     if (!allowed) return;
+    let cancelled = false;
     async function loadCatalog() {
       try {
-        const catalogDocs = await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" });
-
-        const existingCodes = catalogDocs.map((d) => (d.data().code as string) || d.id);
-        const missingTests = TEST_CATALOG.filter((t) => !existingCodes.includes(t.code));
-        if (clinicId) {
-          for (const test of missingTests) {
-            await setDoc(doc(db, "testCatalog", `${clinicId}_${test.code}`), { ...test, clinicId });
-          }
+        const seedClinic = writeClinicId || clinicId;
+        if (!seedClinic) {
+          if (!cancelled) setTests([]);
+          return;
         }
-        const finalDocs =
-          missingTests.length > 0 && clinicId
-            ? await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" })
-            : catalogDocs;
+        const catalogDocs = await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" });
+        const scoped = catalogDocs.filter((d) => (d.data().clinicId as string) === seedClinic);
+        if (cancelled) return;
         setTests(
-          finalDocs.map((d) => {
+          scoped.map((d) => {
             const data = d.data() as LabTest;
             return { ...data, firestoreId: d.id };
           })
@@ -68,11 +77,14 @@ function SettingsContent() {
       } catch (err) {
         console.error(err);
       } finally {
-        setLoadingTests(false);
+        if (!cancelled) setLoadingTests(false);
       }
     }
     loadCatalog();
-  }, [role, clinicId, allowed]);
+    return () => {
+      cancelled = true;
+    };
+  }, [role, clinicId, writeClinicId, allowed]);
 
   async function updateParameter(
     testCode: string,
@@ -96,24 +108,143 @@ function SettingsContent() {
     setTests(updated);
   }
 
+  async function logReviewed(test: CatalogRow, actor: AuditActor) {
+    try {
+      await logAudit({
+        clinicId: test.clinicId || writeClinicId || clinicId || null,
+        actor,
+        action: "catalogue.reviewed",
+        targetCollection: "testCatalog",
+        targetId: test.firestoreId,
+        targetLabel: test.name,
+        detail: { code: test.code },
+      });
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  async function persistReviewed(testCodes: string[]) {
+    const actor = actorFromAuth(user, role, shift);
+    if (!actor) throw new Error("Not signed in");
+    const reviewedAt = new Date().toISOString();
+    for (const code of testCodes) {
+      const test = tests.find((t) => t.code === code);
+      if (!test) continue;
+      await setDoc(
+        doc(db, "testCatalog", test.firestoreId),
+        {
+          code: test.code,
+          name: test.name,
+          category: test.category,
+          specimenType: resolveSpecimenType(test.specimenType, test.code),
+          parameters: test.parameters,
+          price: test.price || 0,
+          clinicId: test.clinicId || writeClinicId || clinicId || null,
+          reviewed: true,
+          reviewedAt,
+          reviewedBy: actor.email,
+        },
+        { merge: true }
+      );
+      await logReviewed(test, actor);
+    }
+    setTests((prev) =>
+      prev.map((t) =>
+        testCodes.includes(t.code)
+          ? {
+              ...t,
+              reviewed: true,
+              reviewedAt,
+              reviewedBy: actor.email,
+              specimenType: resolveSpecimenType(t.specimenType, t.code),
+            }
+          : t
+      )
+    );
+  }
+
+  async function saveSpecimenType(testCode: string, specimenType: SpecimenType) {
+    const test = tests.find((t) => t.code === testCode);
+    if (!test) return;
+    setTests((prev) =>
+      prev.map((t) => (t.code === testCode ? { ...t, specimenType } : t))
+    );
+    try {
+      await setDoc(
+        doc(db, "testCatalog", test.firestoreId),
+        { specimenType },
+        { merge: true }
+      );
+      const actor = actorFromAuth(user, role, shift);
+      if (actor) {
+        await safeLogAudit({
+          clinicId: test.clinicId || writeClinicId || clinicId || null,
+          actor,
+          action: "catalogue.update",
+          targetCollection: "testCatalog",
+          targetId: test.firestoreId,
+          targetLabel: test.name,
+          detail: { fields: ["specimenType"], code: test.code },
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus("Failed to save specimen type.");
+    }
+  }
+
   async function saveTest(testCode: string) {
     const test = tests.find((t) => t.code === testCode);
     if (!test) return;
     setStatus("Saving...");
     try {
-      await setDoc(doc(db, "testCatalog", test.firestoreId), {
-        code: test.code,
-        name: test.name,
-        category: test.category,
-        parameters: test.parameters,
-        price: test.price || 0,
-        clinicId: test.clinicId || writeClinicId || clinicId || null,
-      });
+      await persistReviewed([testCode]);
       setStatus("Saved.");
       setEditingCode(null);
     } catch (err) {
       console.error(err);
       setStatus("Failed to save.");
+    }
+  }
+
+  async function confirmRanges(testCodes: string[]) {
+    setStatus("Confirming ranges...");
+    try {
+      await persistReviewed(testCodes);
+      setStatus("Reference ranges confirmed for this clinic.");
+    } catch (err) {
+      console.error(err);
+      setStatus("Failed to confirm ranges.");
+    }
+  }
+
+  async function seedThisClinic() {
+    const seedClinic = writeClinicId || clinicId;
+    const actor = actorFromAuth(user, role, shift);
+    if (!seedClinic || !actor || role !== "owner") return;
+    setSeeding(true);
+    setStatus("Seeding default catalogue...");
+    try {
+      const n = await seedClinicCatalog(seedClinic, { actor, onlyIfEmpty: true });
+      const catalogDocs = await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" });
+      const scoped = catalogDocs.filter((d) => (d.data().clinicId as string) === seedClinic);
+      setTests(
+        scoped.map((d) => {
+          const data = d.data() as LabTest;
+          return { ...data, firestoreId: d.id };
+        })
+      );
+      setStatus(
+        n === 0
+          ? "This clinic already has a catalogue."
+          : `Seeded ${n} default tests. Confirm reference ranges for this laboratory.`
+      );
+    } catch (err) {
+      console.error(err);
+      setStatus("Failed to seed the catalogue.");
+    } finally {
+      setSeeding(false);
     }
   }
 
@@ -162,6 +293,11 @@ function SettingsContent() {
       setAddStatus("Test name is required.");
       return;
     }
+    const specimenType = parseSpecimenType(newTestSpecimenType);
+    if (!specimenType) {
+      setAddStatus("Specimen type is required.");
+      return;
+    }
     const validParams = newTestParams.filter((p) => p.name.trim() !== "");
     if (validParams.length === 0) {
       setAddStatus("Add at least one parameter with a name.");
@@ -183,6 +319,7 @@ function SettingsContent() {
       code,
       name: newTestName.trim(),
       category: newTestCategory.trim() || "Other",
+      specimenType,
       parameters: validParams,
       price: parseFloat(newTestPrice) || 0,
       clinicId: writeClinicId,
@@ -194,14 +331,31 @@ function SettingsContent() {
         code: newTest.code,
         name: newTest.name,
         category: newTest.category,
+        specimenType: newTest.specimenType,
         parameters: newTest.parameters,
         price: newTest.price,
         clinicId: writeClinicId,
+        reviewed: true,
+        reviewedAt: new Date().toISOString(),
+        reviewedBy: user?.email ?? null,
       });
-      setTests((prev) => [...prev, newTest].sort((a, b) => a.name.localeCompare(b.name)));
+      const actor = actorFromAuth(user, role, shift);
+      if (actor) {
+        await safeLogAudit({
+          clinicId: writeClinicId,
+          actor,
+          action: "catalogue.update",
+          targetCollection: "testCatalog",
+          targetId: newTest.firestoreId,
+          targetLabel: newTest.name,
+          detail: { fields: ["code", "name", "parameters", "price", "specimenType"], code: newTest.code },
+        });
+      }
+      setTests((prev) => [...prev, { ...newTest, reviewed: true }].sort((a, b) => a.name.localeCompare(b.name)));
       setNewTestName("");
       setNewTestCategory("");
       setNewTestPrice("");
+      setNewTestSpecimenType("");
       setNewTestParams([{ name: "", unit: "", referenceRange: "" }]);
       setShowAddForm(false);
       setAddStatus("New test added successfully.");
@@ -222,13 +376,53 @@ function SettingsContent() {
   }
   if (!allowed) return null;
 
+  const unreviewed = tests.filter((t) => !isTestReviewed(t));
+
+  const scopeId = writeClinicId || clinicId;
+  const needsClinic = isOwner(role) && !writeClinicId;
+
   return (
     <main className="min-h-screen bg-white">
       <AppNav />
+      <CatalogReviewBanner />
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">Clinic Settings</h1>
         <p className="text-gray-600 mb-6">Edit test units, reference ranges, and pricing.</p>
-        {isOwner(role) && !writeClinicId && <ActingClinicPrompt />}
+        {needsClinic && <ActingClinicPrompt />}
+        {!needsClinic && tests.length === 0 && (
+          <div className="border-2 border-red-300 bg-red-50 rounded-lg p-4 mb-6">
+            <p className="font-semibold text-red-950">This clinic has no test catalogue.</p>
+            <p className="text-sm text-red-900 mt-1">
+              Product default ranges are not used. Seed the default catalogue or add tests below
+              before ordering or entering results.
+            </p>
+            {role === "owner" && scopeId ? (
+              <button
+                type="button"
+                onClick={seedThisClinic}
+                disabled={seeding}
+                className="mt-3 bg-gray-900 text-white text-sm rounded-lg px-3 py-1.5 disabled:opacity-50"
+              >
+                {seeding ? "Seeding..." : `Seed ${TEST_CATALOG.length} default tests`}
+              </button>
+            ) : (
+              <p className="text-sm text-red-900 mt-2">
+                Ask the platform owner to seed empty clinic catalogues from the Owner page.
+              </p>
+            )}
+          </div>
+        )}
+        {unreviewed.length > 0 && (
+          <div className="mb-6">
+            <button
+              type="button"
+              onClick={() => confirmRanges(unreviewed.map((t) => t.code))}
+              className="bg-gray-900 text-white text-sm rounded-lg px-3 py-1.5"
+            >
+              Confirm all as correct
+            </button>
+          </div>
+        )}
 
         {/* --- Add New Test section --- */}
         <div className="mb-8">
@@ -271,6 +465,26 @@ function SettingsContent() {
                   onChange={(e) => setNewTestPrice(e.target.value)}
                   className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Specimen type <span className="font-normal text-red-600">(required)</span>
+                </label>
+                <select
+                  value={newTestSpecimenType}
+                  onChange={(e) =>
+                    setNewTestSpecimenType((parseSpecimenType(e.target.value) || "") as SpecimenType | "")
+                  }
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                >
+                  <option value="">Select specimen type</option>
+                  {SPECIMEN_TYPES.map((type) => (
+                    <option key={type} value={type}>
+                      {SPECIMEN_TYPE_LABELS[type]}
+                    </option>
+                  ))}
+                </select>
               </div>
 
               <div>
@@ -337,6 +551,28 @@ function SettingsContent() {
                 <div>
                   <h2 className="font-medium text-gray-900">{test.name}</h2>
                   <p className="text-xs text-gray-500">{test.category}</p>
+                  <label className="mt-2 flex items-center gap-2 text-xs text-gray-600">
+                    Specimen
+                    <select
+                      value={parseSpecimenType(test.specimenType) || resolveSpecimenType(test.specimenType, test.code)}
+                      onChange={(e) => {
+                        const next = parseSpecimenType(e.target.value);
+                        if (next) void saveSpecimenType(test.code, next);
+                      }}
+                      className="border border-gray-300 rounded px-2 py-1 text-xs text-gray-900"
+                    >
+                      {SPECIMEN_TYPES.map((type) => (
+                        <option key={type} value={type}>
+                          {SPECIMEN_TYPE_LABELS[type]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {!isTestReviewed(test) && (
+                    <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+                      Not reviewed
+                    </span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-gray-600">Price (D):</label>
@@ -346,6 +582,15 @@ function SettingsContent() {
                     onChange={(e) => updatePrice(test.code, e.target.value)}
                     className="w-24 border border-gray-300 rounded px-2 py-1 text-sm"
                   />
+                  {!isTestReviewed(test) && (
+                    <button
+                      type="button"
+                      onClick={() => confirmRanges([test.code])}
+                      className="text-sm text-gray-900 underline"
+                    >
+                      Confirm ranges
+                    </button>
+                  )}
                   <button
                     onClick={() => setEditingCode(editingCode === test.code ? null : test.code)}
                     className="text-sm text-gray-900 underline"

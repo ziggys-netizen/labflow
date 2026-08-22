@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { db } from "../lib/firebase";
-import { collection, addDoc, where, getDocs } from "firebase/firestore";
+import { collection, where, getDocs } from "firebase/firestore";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import ActingClinicPrompt from "../lib/ActingClinicPrompt";
@@ -10,6 +10,8 @@ import { useAuth } from "../lib/AuthContext";
 import { clinicCollectionQuery, isOwner, ownerActingCreateFields } from "../lib/clinicScope";
 import { canRegisterPatient, canViewPatients } from "../lib/permissions";
 import { isPatientDeleted } from "../lib/patientSoftDelete";
+import { trackedAddDoc, writeActorFromUser } from "../lib/trackedWrites";
+import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../lib/audit";
 
 const COUNTRY_CODES = [
   { code: "+93", label: "🇦🇫 Afghanistan (+93)" },
@@ -197,7 +199,7 @@ const PHONE_DIGITS_REGEX = /^[0-9]{6,10}$/;
 const NATIONAL_ID_REGEX = /^[a-zA-Z0-9\-]{4,30}$/;
 
 export default function Register() {
-  const { role, clinicId, writeClinicId } = useAuth();
+  const { user, role, clinicId, writeClinicId, username, shift } = useAuth();
   const allowed = canRegisterPatient(role);
   const internReceipt = allowed && !canViewPatients(role);
   const [name, setName] = useState("");
@@ -321,23 +323,46 @@ export default function Register() {
     const cleanClinician = normalizeName(referringClinician);
 
     try {
-      await addDoc(collection(db, "patients"), {
-        labId,
-        name: cleanName,
-        preferredName: cleanPreferredName,
-        sex,
-        dob,
-        phone: fullPhone,
-        address: address.trim(),
-        nationalId: nationalId.trim() || null,
-        nextOfKin: nextOfKin.trim() || null,
-        referringClinician: cleanClinician,
-        reasonForVisit: reasonForVisit.trim() || null,
-        consentGiven: true,
-        createdAt: new Date().toISOString(),
-        clinicId: writeClinicId,
-        ...ownerActingCreateFields(role),
-      });
+      const docRef = await trackedAddDoc(
+        collection(db, "patients"),
+        {
+          labId,
+          name: cleanName,
+          preferredName: cleanPreferredName,
+          sex,
+          dob,
+          phone: fullPhone,
+          address: address.trim(),
+          nationalId: nationalId.trim() || null,
+          nextOfKin: nextOfKin.trim() || null,
+          referringClinician: cleanClinician,
+          reasonForVisit: reasonForVisit.trim() || null,
+          consentGiven: true,
+          createdAt: new Date().toISOString(),
+          clinicId: writeClinicId,
+          ...ownerActingCreateFields(role),
+        },
+        {
+          ...writeActorFromUser(user, username),
+          summary: `Registered patient ${cleanName}`,
+          clinicId: writeClinicId,
+          patientName: cleanName,
+          patientLabId: labId,
+          expected: { labId, name: cleanName },
+        }
+      );
+      const actor = actorFromAuth(user, role, shift);
+      if (actor) {
+        await safeLogAudit({
+          clinicId: writeClinicId,
+          actor,
+          action: "patient.register",
+          targetCollection: "patients",
+          targetId: docRef.id,
+          targetLabel: auditTargetLabel(cleanName, labId),
+          detail: { fields: ["labId", "name"] },
+        });
+      }
       setStatus("Patient registered successfully.");
       setLastLabId(labId);
       setName("");

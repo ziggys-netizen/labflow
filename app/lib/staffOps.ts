@@ -18,6 +18,7 @@ import {
   roleLabel,
   roleRequiresShift,
 } from "./permissions";
+import { syncCustomClaims } from "./authApi";
 
 const NO_CLINIC = "__none__";
 
@@ -109,6 +110,7 @@ export async function writeStaffMembership(options: {
     updates.approvedAt = stamp.approvedAt;
   }
   await updateDoc(doc(db, "users", row.uid), updates);
+  await syncCustomClaims(row.uid);
   notifyStaffChanged();
 }
 
@@ -130,6 +132,7 @@ export async function removeStaffAssignment(options: {
     updates.status = fallback?.status ?? "pending";
   }
   await updateDoc(doc(db, "users", row.uid), updates);
+  await syncCustomClaims(row.uid);
   notifyStaffChanged();
 }
 

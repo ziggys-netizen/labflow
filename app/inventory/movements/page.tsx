@@ -1,12 +1,15 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { collection, doc, writeBatch } from "firebase/firestore";
 import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
+import NotYetSynced from "../../lib/NotYetSynced";
 import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
-import { getClinicDocs, isOwner, ownerActingCreateFields } from "../../lib/clinicScope";
+import { isOwner, ownerActingCreateFields } from "../../lib/clinicScope";
+import { useClinicCollection } from "../../lib/clinicListen";
+import { trackedBatchCommit, writeActorFromUser } from "../../lib/trackedWrites";
 import { actorLabel, makeActorStamp } from "../../lib/identity";
 import { canRecordStockMovement, canViewInventory } from "../../lib/permissions";
 import { fromDateTimeLocal, toDateTimeLocal } from "../../lib/datetime";
@@ -17,8 +20,6 @@ import {
   ACCEPTANCE_LABELS,
   DISPOSAL_REASONS,
   InventoryBatch,
-  InventoryItem,
-  InventoryMovement,
   LAB_DEPARTMENTS,
   MOVEMENT_TYPES,
   MovementType,
@@ -64,12 +65,7 @@ function MovementsContent() {
   const allowed = canViewInventory(role);
   const canRecord = canRecordStockMovement(role);
 
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [batches, setBatches] = useState<InventoryBatch[]>([]);
-  const [movements, setMovements] = useState<InventoryMovement[]>([]);
-  const [loading, setLoading] = useState(true);
   const [status, setStatus] = useState("");
-  const [reloadToken, setReloadToken] = useState(0);
   const [saving, setSaving] = useState(false);
 
   const [mode, setMode] = useState<"receive" | "issue">("receive");
@@ -102,37 +98,20 @@ function MovementsContent() {
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
 
-  useEffect(() => {
-    if (!allowed) return;
-    let cancelled = false;
-
-    async function load() {
-      try {
-        const [itemDocs, batchDocs, movementDocs] = await Promise.all([
-          getClinicDocs("inventoryItems", role, clinicId, { sortBy: "name" }),
-          getClinicDocs("inventoryBatches", role, clinicId),
-          getClinicDocs("inventoryMovements", role, clinicId, {
-            sortBy: "occurredAt",
-            direction: "desc",
-          }),
-        ]);
-        if (cancelled) return;
-        setItems(itemDocs.map(mapItem));
-        setBatches(batchDocs.map(mapBatch));
-        setMovements(movementDocs.map(mapMovement));
-      } catch (err) {
-        console.error(err);
-        if (!cancelled) setStatus("Could not load the stock ledger.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, [allowed, role, clinicId, reloadToken]);
+  const itemsQuery = useClinicCollection("inventoryItems", role, clinicId, {
+    sortBy: "name",
+    enabled: allowed,
+  });
+  const batchesQuery = useClinicCollection("inventoryBatches", role, clinicId, { enabled: allowed });
+  const movementsQuery = useClinicCollection("inventoryMovements", role, clinicId, {
+    sortBy: "occurredAt",
+    direction: "desc",
+    enabled: allowed,
+  });
+  const items = itemsQuery.docs.map(mapItem);
+  const batches = batchesQuery.docs.map(mapBatch);
+  const movements = movementsQuery.docs.map(mapMovement);
+  const loading = itemsQuery.loading || batchesQuery.loading || movementsQuery.loading;
 
   const balances = useMemo(() => computeBalances(movements), [movements]);
   const activeItems = useMemo(() => items.filter((i) => i.active), [items]);
@@ -223,6 +202,16 @@ function MovementsContent() {
     setStatus("");
     try {
       const write = writeBatch(db);
+      const actor = writeActorFromUser(user, username);
+      const parts: Array<{
+        collection: string;
+        documentId: string;
+        summary: string;
+        actorUid: string;
+        actorLabel: string;
+        clinicId?: string | null;
+        expected?: Record<string, unknown> | null;
+      }> = [];
       let targetBatch: InventoryBatch | undefined;
       let targetBatchId: string;
 
@@ -249,6 +238,13 @@ function MovementsContent() {
             },
             { merge: true }
           );
+          parts.push({
+            ...actor,
+            collection: "inventoryBatches",
+            documentId: existing.id,
+            summary: `Updated lot ${lotNumber.trim()} of ${selectedItem.name}`,
+            clinicId: targetClinicId,
+          });
         } else {
           const ref = doc(collection(db, "inventoryBatches"));
           targetBatchId = ref.id;
@@ -265,6 +261,14 @@ function MovementsContent() {
             createdAt: new Date().toISOString(),
             createdBy: makeActorStamp(user, username),
             ...ownerActingCreateFields(role),
+          });
+          parts.push({
+            ...actor,
+            collection: "inventoryBatches",
+            documentId: ref.id,
+            summary: `Created lot ${lotNumber.trim()} of ${selectedItem.name}`,
+            clinicId: targetClinicId,
+            expected: { lotNumber: lotNumber.trim() },
           });
         }
       } else {
@@ -288,6 +292,13 @@ function MovementsContent() {
             { location: destination.trim() },
             { merge: true }
           );
+          parts.push({
+            ...actor,
+            collection: "inventoryBatches",
+            documentId: targetBatchId,
+            summary: `Updated location for lot ${selectedLot.batch.lotNumber}`,
+            clinicId: targetClinicId,
+          });
         }
       }
 
@@ -320,15 +331,22 @@ function MovementsContent() {
         note: note.trim() || null,
         ...ownerActingCreateFields(role),
       });
+      parts.push({
+        ...actor,
+        collection: "inventoryMovements",
+        documentId: movementRef.id,
+        summary: `${movementLabel(type)} ${qty} ${selectedItem.packingUnit} of ${selectedItem.name}`,
+        clinicId: targetClinicId,
+        expected: { type, quantity: qty },
+      });
 
-      await write.commit();
+      await trackedBatchCommit(write, parts);
       setStatus(
         mode === "receive"
           ? `Recorded ${qty} ${selectedItem.packingUnit} of ${selectedItem.name} into lot ${lotNumber.trim()}.`
           : `Recorded ${movementLabel(type).toLowerCase()}: ${qty} ${selectedItem.packingUnit} of ${selectedItem.name}.`
       );
       resetForm();
-      setReloadToken((n) => n + 1);
     } catch (err) {
       console.error(err);
       setStatus("Failed to record the movement.");
@@ -723,7 +741,9 @@ function MovementsContent() {
                     return (
                       <tr key={m.id} className="border-b border-gray-100 last:border-0">
                         <Td>{movementLabel(m.type)}</Td>
-                        <Td>{m.itemName}</Td>
+                        <Td>
+                          {m.itemName} <NotYetSynced show={m.notYetSynced} />
+                        </Td>
                         <Td>{m.lotNumber || "—"}</Td>
                         <Td>
                           {sign}

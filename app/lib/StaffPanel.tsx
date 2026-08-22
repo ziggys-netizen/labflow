@@ -37,6 +37,8 @@ import {
   staffAssignmentGuard,
   writeStaffMembership,
 } from "./staffOps";
+import { actorFromAuth, safeLogAudit } from "./audit";
+import PreApprovalsPanel from "./PreApprovalsPanel";
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -184,7 +186,7 @@ export default function StaffPanel({
   pendingOnly?: boolean;
   embedded?: boolean;
 }) {
-  const { user, role, clinicId, username: myUsername } = useAuth();
+  const { user, role, clinicId, username: myUsername, shift } = useAuth();
   const canAccess = canManageStaff(role);
   const owner = isOwner(role);
 
@@ -318,6 +320,22 @@ export default function StaffPanel({
         makeActive: true,
         stamp: makeApproverStamp(user, myUsername),
       });
+      const actor = actorFromAuth(user, role, shift);
+      if (actor) {
+        await safeLogAudit({
+          clinicId: targetClinicId,
+          actor,
+          action: decision === "approved" ? "staff.approve" : "staff.reject",
+          targetCollection: "users",
+          targetId: row.uid,
+          targetLabel: row.username || row.name || row.email || row.uid,
+          detail: {
+            role: nextRole,
+            shift: roleRequiresShift(nextRole) && isShift(nextShift) ? nextShift : null,
+            status: decision,
+          },
+        });
+      }
       setStatusMsg(
         decision === "approved"
           ? `Approved as ${roleDisplay(nextRole, nextShift)} at ${clinicNames[targetClinicId] || targetClinicId}.`
@@ -357,6 +375,23 @@ export default function StaffPanel({
         makeActive: row.activeClinicId === membership.clinicId,
         stamp: makeApproverStamp(user, myUsername),
       });
+      const actor = actorFromAuth(user, role, shift);
+      if (actor) {
+        await safeLogAudit({
+          clinicId: membership.clinicId,
+          actor,
+          action: "staff.roleChange",
+          targetCollection: "users",
+          targetId: row.uid,
+          targetLabel: row.username || row.name || row.email || row.uid,
+          detail: {
+            fields: ["role", "shift"],
+            fromRole: membership.role,
+            toRole: nextRole,
+            shift: roleRequiresShift(nextRole) && isShift(nextShift) ? nextShift : null,
+          },
+        });
+      }
       setStatusMsg("Role updated.");
       setReloadToken((n) => n + 1);
     } catch (err) {
@@ -634,6 +669,9 @@ export default function StaffPanel({
               pendingList
             )}
           </section>
+          {(scopeClinicId || clinicId) && (
+            <PreApprovalsPanel clinicId={scopeClinicId || clinicId || ""} />
+          )}
           {approvedList}
         </>
       )}
@@ -667,6 +705,10 @@ export default function StaffPanel({
             )}
             <Link href={`/owner/clinics/${scopeClinicId}`} className="underline text-gray-900">
               Clinic profile
+            </Link>
+            {" · "}
+            <Link href={`/owner/clinics/${scopeClinicId}/audit`} className="underline text-gray-900">
+              Audit log
             </Link>
           </p>
         )}

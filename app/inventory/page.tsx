@@ -3,8 +3,10 @@
 import { useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
+import NotYetSynced from "../lib/NotYetSynced";
 import { useAuth } from "../lib/AuthContext";
-import { getClinicDocs, isOwner, loadClinicNames } from "../lib/clinicScope";
+import { isOwner, loadClinicNames } from "../lib/clinicScope";
+import { useClinicCollection } from "../lib/clinicListen";
 import { actorLabel } from "../lib/identity";
 import {
   canManageInventoryItems,
@@ -20,10 +22,8 @@ import {
   INVENTORY_CATEGORIES,
   InventoryBatch,
   InventoryItem,
-  InventoryMovement,
   LAB_DEPARTMENTS,
   SPECIMEN_STATUS_LABELS,
-  SpecimenMovement,
   balanceFor,
   batchState,
   computeBalances,
@@ -88,13 +88,7 @@ function InventoryContent() {
   const owner = isOwner(role);
   const allowed = canViewInventory(role);
 
-  const [items, setItems] = useState<InventoryItem[]>([]);
-  const [batches, setBatches] = useState<InventoryBatch[]>([]);
-  const [movements, setMovements] = useState<InventoryMovement[]>([]);
-  const [specimens, setSpecimens] = useState<SpecimenMovement[]>([]);
   const [clinicNames, setClinicNames] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState("");
 
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
@@ -105,50 +99,46 @@ function InventoryContent() {
   const [fromDate, setFromDate] = useState("");
   const [toDate, setToDate] = useState("");
 
+  const itemsQuery = useClinicCollection("inventoryItems", role, clinicId, {
+    sortBy: "name",
+    enabled: allowed,
+  });
+  const batchesQuery = useClinicCollection("inventoryBatches", role, clinicId, { enabled: allowed });
+  const movementsQuery = useClinicCollection("inventoryMovements", role, clinicId, {
+    sortBy: "occurredAt",
+    direction: "desc",
+    enabled: allowed,
+  });
+  const specimensQuery = useClinicCollection("specimenMovements", role, clinicId, {
+    sortBy: "occurredAt",
+    direction: "desc",
+    enabled: allowed,
+  });
+
+  const items = itemsQuery.docs.map(mapItem);
+  const batches = batchesQuery.docs.map(mapBatch);
+  const movements = movementsQuery.docs.map(mapMovement);
+  const specimens = specimensQuery.docs.map(mapSpecimen);
+  const loading =
+    itemsQuery.loading || batchesQuery.loading || movementsQuery.loading || specimensQuery.loading;
+  const error =
+    itemsQuery.error || batchesQuery.error || movementsQuery.error || specimensQuery.error
+      ? `Could not load the store records. ${itemsQuery.error || batchesQuery.error || movementsQuery.error || specimensQuery.error}`
+      : "";
+
   useEffect(() => {
-    if (!allowed) return;
+    if (!allowed || !owner) return;
     let cancelled = false;
-
-    async function load() {
-      try {
-        const [itemDocs, batchDocs, movementDocs, specimenDocs] = await Promise.all([
-          getClinicDocs("inventoryItems", role, clinicId, { sortBy: "name" }),
-          getClinicDocs("inventoryBatches", role, clinicId),
-          getClinicDocs("inventoryMovements", role, clinicId, {
-            sortBy: "occurredAt",
-            direction: "desc",
-          }),
-          getClinicDocs("specimenMovements", role, clinicId, {
-            sortBy: "occurredAt",
-            direction: "desc",
-          }),
-        ]);
-
-        const mappedItems = itemDocs.map(mapItem);
-        const names = owner
-          ? await loadClinicNames(role, mappedItems.map((i) => i.clinicId))
-          : {};
-
-        if (cancelled) return;
-        setItems(mappedItems);
-        setBatches(batchDocs.map(mapBatch));
-        setMovements(movementDocs.map(mapMovement));
-        setSpecimens(specimenDocs.map(mapSpecimen));
-        setClinicNames(names);
-      } catch (err) {
-        console.error(err);
-        const detail = err instanceof Error ? ` ${err.message}` : "";
-        if (!cancelled) setError(`Could not load the store records.${detail}`);
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-
-    load();
+    const clinicIds = itemsQuery.docs.map((d) => (d.data().clinicId as string | null) ?? null);
+    loadClinicNames(role, clinicIds)
+      .then((names) => {
+        if (!cancelled) setClinicNames(names);
+      })
+      .catch((err) => console.error(err));
     return () => {
       cancelled = true;
     };
-  }, [allowed, owner, role, clinicId]);
+  }, [allowed, owner, role, itemsQuery.docs]);
 
   const balances = useMemo(() => computeBalances(movements), [movements]);
   const itemsById = useMemo(() => new Map(items.map((i) => [i.id, i])), [items]);
@@ -593,7 +583,9 @@ function InventoryContent() {
                         const when = formatDateTime(m.occurredAt);
                         return (
                           <tr key={m.id} className="border-b border-gray-100 last:border-0">
-                            <Td>{m.itemName}</Td>
+                            <Td>
+                              {m.itemName} <NotYetSynced show={m.notYetSynced} />
+                            </Td>
                             <Td>{m.supplier || "—"}</Td>
                             <Td>{m.lotNumber || "—"}</Td>
                             <Td>{m.packingUnit}</Td>
@@ -647,6 +639,7 @@ function InventoryContent() {
                               {m.type === "transfer" && (
                                 <span className="text-xs text-gray-400"> · transfer</span>
                               )}
+                              <NotYetSynced show={m.notYetSynced} />
                             </Td>
                             <Td>{m.lotNumber || "—"}</Td>
                             <Td>
@@ -702,7 +695,10 @@ function InventoryContent() {
                     <tbody>
                       {visibleLots.map((row) => (
                         <tr key={row.batch.id} className="border-b border-gray-100 last:border-0">
-                          <Td>{row.item?.name ?? row.batch.itemName}</Td>
+                          <Td>
+                            {row.item?.name ?? row.batch.itemName}{" "}
+                            <NotYetSynced show={row.batch.notYetSynced || row.item?.notYetSynced} />
+                          </Td>
                           <Td>{row.item?.category ?? "—"}</Td>
                           <Td>{row.batch.lotNumber || "—"}</Td>
                           <Td>
@@ -786,7 +782,9 @@ function InventoryContent() {
                         return (
                           <tr key={s.id} className="border-b border-gray-100 last:border-0">
                             <Td>{s.direction === "received" ? "Received" : "Sent"}</Td>
-                            <Td>{s.specimenType}</Td>
+                            <Td>
+                              {s.specimenType} <NotYetSynced show={s.notYetSynced} />
+                            </Td>
                             <Td>
                               {s.quantity} {s.container || "container(s)"}
                             </Td>

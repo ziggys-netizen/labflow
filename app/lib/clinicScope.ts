@@ -72,6 +72,23 @@ export function clinicCollectionQuery(
  * Pass the membership clinic (`useAuth().clinicId`), never writeClinicId /
  * actingClinicId. Owner list queries stay unfiltered.
  */
+export function sortQueryDocs(
+  docs: QueryDocumentSnapshot[],
+  sortBy?: string,
+  direction: "asc" | "desc" = "asc"
+): QueryDocumentSnapshot[] {
+  if (!sortBy) return [...docs];
+  const factor = direction === "desc" ? -1 : 1;
+  return [...docs].sort((a, b) => {
+    const av = a.get(sortBy);
+    const bv = b.get(sortBy);
+    if (av === bv) return 0;
+    if (av === undefined || av === null) return 1;
+    if (bv === undefined || bv === null) return -1;
+    return (av < bv ? -1 : 1) * factor;
+  });
+}
+
 export async function getClinicDocs(
   collectionName: string,
   role: string | null,
@@ -84,18 +101,7 @@ export async function getClinicDocs(
 ): Promise<QueryDocumentSnapshot[]> {
   const { filters = [], sortBy, direction = "asc" } = options;
   const snapshot = await getDocs(clinicCollectionQuery(collectionName, role, clinicId, filters));
-  const docs = [...snapshot.docs];
-  if (!sortBy) return docs;
-
-  const factor = direction === "desc" ? -1 : 1;
-  return docs.sort((a, b) => {
-    const av = a.get(sortBy);
-    const bv = b.get(sortBy);
-    if (av === bv) return 0;
-    if (av === undefined || av === null) return 1;
-    if (bv === undefined || bv === null) return -1;
-    return (av < bv ? -1 : 1) * factor;
-  });
+  return sortQueryDocs(snapshot.docs, sortBy, direction);
 }
 
 /**

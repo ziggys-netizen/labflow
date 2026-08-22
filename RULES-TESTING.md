@@ -12,15 +12,25 @@ firebase deploy --only firestore:rules --dry-run --project labflow-6cb9e
 
 ---
 
-## Join-code decision (no Cloud Functions)
+## Join-code decision (ADR-001 Option B — accepted)
+
+**Accepted 21 August 2026.** [ADR-001](docs/ADR-001-trusted-server.md) Option B: Next.js Route Handlers on Vercel + OIDC/WIF. Custom claims `{ clinicId, role, shift }`. **Q8 is Route Handlers, not Cloud Functions.**
+
+Join lookup is `POST /api/join/redeem`; confirm is `POST /api/join/confirm`. The client does not query `clinics` by `joinCode` and does not write `users.clinicId` for join.
+
+Rules helpers `hasClaim` / `myClinicId` / `myRole` are claims-first with `get()` fallback (ADR §8.1). These rules are **not deployed**. Intern patient **read** stays Deny at rules level (`canViewPatients` excludes intern) — option (a) was not previously recorded here as Allow.
+
+---
+
+## Join-code decision (historical, P4 — superseded)
 
 Firestore rules cannot see query constraints, so they cannot express “allow this read only when the client queried `joinCode == …`”.
 
-**Decision:** `allow read` on `clinics/{id}` for **any signed-in user**. Treat `joinCode` as the secret. Do **not** introduce Cloud Functions for lookup.
+**Decision (historical, P4 rules era):** `allow read` on `clinics/{id}` for **any signed-in user**. Treat `joinCode` as the secret. Do **not** introduce Cloud Functions for lookup.
 
-**Leak:** any signed-in account, including a brand-new `pending` user with no clinic, can `getDocs(collection(db, "clinics"))` and read clinic **names, addresses, TIN, join codes, and other profile fields** for every clinic. Isolation of clinic *existence* is not enforced at the database. Clinical collections (`patients`, `orders`, …) stay clinic-scoped.
+**Leak (closed in working-tree rules, not yet deployed):** any signed-in account, including a brand-new `pending` user with no clinic, could `getDocs(collection(db, "clinics"))`. Isolation of clinic *existence* is now owner-or-member only. Clinical collections stay clinic-scoped.
 
-`canViewJoinCode` (owner / clinic_admin only) is therefore UI-only until join moves to a callable that returns a clinic id without listing clinics.
+`canViewJoinCode` (owner / clinic_admin only) remains UI-only for displaying the code to admins. Lookup is the join API.
 
 ---
 
@@ -28,7 +38,7 @@ Firestore rules cannot see query constraints, so they cannot express “allow th
 
 1. **Location:** document path, e.g. `/patients/p1`.
 2. **Authenticated:** on. Set `request.auth.uid` to a real user id.
-3. **Provider / email:** unused by these rules (authorisation is the `users/{uid}` doc).
+3. **Provider / email:** unused by these rules (authorisation is custom claims when present, otherwise the `users/{uid}` doc).
 4. **Document data:** the existing document for get/update/delete; for create, the payload being written.
 5. For **update**, set both the stored document and the after-write payload.
 
@@ -96,7 +106,7 @@ Control: lab_manager at clinicB. Expect **Allow**.
 | 8 | intern, clinicA | create | `/patients/new2` | `clinicId: "clinicA"` | Allow (create only) |
 | 9 | intern, clinicA | create | `/orders/new1` | Any order | Deny |
 | 10 | pending, no clinic | get | `/patients/pA` | | Deny |
-| 11 | pending, no clinic | get | `/clinics/clinicA` | Join-code leak: names/addresses visible | **Allow** |
+| 11 | pending, no clinic | get | `/clinics/clinicA` | Join API only; no list-all | **Deny** |
 | 12 | any role | delete | `/patients/pA` | Including owner / clinic_admin / lab_manager | **Deny** (P5 soft-delete) |
 | 13 | clinic A technician | get | `/orders/orderB` | Order `clinicId: "clinicB"` | Deny |
 | 14 | clinic_admin | update | `/users/{other}` | `role: "owner"` or `clinicRoles.{id}.role: "owner"` | Deny |
@@ -126,7 +136,14 @@ Control: lab_manager at clinicB. Expect **Allow**.
 | Own UID | get | `/users/{uid}` | Any signed-in user, including pending | Allow |
 | Own UID, first login | create | `/users/{uid}` | `role`/`status` `pending`, `clinicId` null, empty `clinicRoles` | Allow |
 | Own UID | update | `/users/{uid}` | Only `username`, `usernameUpdatedAt` | Allow |
-| Pending, no clinic | update | `/users/{uid}` | Only `clinicId: "clinicA"` (join) | Allow |
+| Pending, no clinic | update | `/users/{uid}` | Only `clinicId: "clinicA"` (join) — client join write removed | **Deny** |
+| Approved staff, two clinics | update | `/users/{uid}` | Legacy mirror of an **existing approved** `clinicRoles` entry (`role`, `clinicId`, `status`, `activeClinicId`) | Allow |
+| Owner or clinic_admin | update | `/users/{staff}` | Assign `clinic_admin` / `technician` / etc. Never `owner` | Allow |
+| Owner | get | `/users/{anyone}` | Unfiltered staff list | Allow |
+| clinic_admin clinicA | get | `/users/{staff}` | Target `clinicId` or `clinicIds` includes clinicA | Allow |
+| Owner | get | `/clinics/clinicA` | Directory | Allow |
+| Approved technician clinicA | get | `/clinics/clinicA` | Member of clinic | Allow |
+| Approved technician clinicA | get | `/clinics/clinicB` | Other clinic | Deny |
 | Approved staff, two clinics | update | `/users/{uid}` | Legacy mirror of an **existing approved** `clinicRoles` entry (`role`, `clinicId`, `status`, `activeClinicId`) | Allow |
 | Owner or clinic_admin | update | `/users/{staff}` | Assign `clinic_admin` / `technician` / etc. Never `owner` | Allow |
 | Owner | get | `/users/{anyone}` | Unfiltered staff list | Allow |
@@ -140,19 +157,45 @@ Control: lab_manager at clinicB. Expect **Allow**.
 
 ---
 
+## Q7 audit log (`auditLogs/{id}`) — create-only
+
+Do not deploy these rules from this checklist. Collection is append-only: **no update and no delete**, including owner. Read is owner, or clinic_admin (`canManageStaff`) for documents whose `clinicId` matches their clinic. Admin SDK writes (join failed attempt, pre-approvals, report export) bypass rules.
+
+Playground cases:
+
+| # | Actor | Op | Path | Payload / note | Expect |
+|---|---|---|---|---|---|
+| A1 | technician, clinicA | create | `/auditLogs/new1` | `actorUid` = caller, `clinicId: "clinicA"`, `action: "patient.register"`, `at` ISO | **Allow** |
+| A2 | technician, clinicA | create | `/auditLogs/new2` | Same, but `clinicId: "clinicB"` | **Deny** |
+| A3 | technician, clinicA | create | `/auditLogs/new3` | `actorUid` is another user | **Deny** |
+| A4 | clinic_admin, clinicA | get | `/auditLogs/x` | Doc `clinicId: "clinicA"` | **Allow** |
+| A5 | clinic_admin, clinicA | get | `/auditLogs/y` | Doc `clinicId: "clinicB"` | **Deny** |
+| A6 | technician, clinicA | get / list | `/auditLogs/x` | Even own clinic | **Deny** (cannot read) |
+| A7 | owner | get | `/auditLogs/x` | Any clinic, including `clinicId` null | **Allow** |
+| A8 | owner | update | `/auditLogs/x` | Any field | **Deny** |
+| A9 | owner | delete | `/auditLogs/x` | | **Deny** |
+| A10 | clinic_admin, clinicA | update / delete | `/auditLogs/x` | Own clinic row | **Deny** |
+| A11 | unauthenticated | create | `/auditLogs/new4` | Any payload | **Deny** |
+
+Control: owner create with `actorUid` = owner uid and a non-empty `clinicId`. Expect **Allow**.
+
+The viewer queries `where clinicId == <url clinicId> orderBy at desc`. clinic_admin must not list another clinic; rules fail the query if it could return other clinics' documents.
+
+---
+
 ## Rules that cannot be enforced without an app change
 
 These are listed here instead of changing application code.
 
-1. **Owner `actingClinicId` is session-only.** It is never written to `users/{uid}`. Rules cannot see it. Owner creates are allowed with **any non-empty** `clinicId` (`isOwner()` without `sameClinic()`). A stolen owner session can write into a clinic the UI did not select.
+1. **Owner `actingClinicId` is session-only.** It is never written to `users/{uid}`. Rules cannot see it. Owner creates are allowed with **any non-empty** `clinicId` (`isOwner()` without `sameClinic()`). A stolen owner session can write into a clinic the UI did not select. [ADR-001](docs/ADR-001-trusted-server.md) §6.3 recommends closing this as working as intended — do not put acting-clinic in a custom claim.
 
-2. **Join-code queries are indistinguishable from a full clinic list.** See the join-code decision above. Pending users can read every clinic document.
+2. **Join-code queries are indistinguishable from a full clinic list.** Closed in working-tree rules by tightening `clinics` reads (owner or member). Lookup is `POST /api/join/redeem`. Not deployed.
 
-3. **`canViewJoinCode` / clinic directory isolation.** Not enforceable while join runs as a client query on `clinics`.
+3. **`canViewJoinCode` / clinic directory isolation.** Join no longer runs as a client query on `clinics`. Admins still read their own clinic document to display the code.
 
-4. **Self-write of `clinicId` (join).** Spec wanted own-doc writes limited to `username`, `usernameUpdatedAt`, `activeClinicId`. `/join` currently writes `clinicId` only. Rules allow that **once**, on a `pending`/`pending` account with a null `clinicId`. Removing the exception breaks join unless join is moved off the client.
+4. **Self-write of `clinicId` (join).** Removed. Join writes `users.clinicId` from `POST /api/join/confirm` via the Admin SDK.
 
-5. **Self-write of `role` / `clinicId` / `status` (clinic switch).** `setActiveClinic` writes the legacy mirror (`legacyMirror`). Rules allow that only when the new triple matches an **existing approved** `clinicRoles.{clinicId}` and the role is not `owner`. A strict “never write role/clinicId/status” rule would break multi-clinic switching. `myClinicId()` is still `userDoc().clinicId` (the active membership), not `clinicRoles`.
+5. **Self-write of `role` / `clinicId` / `status` (clinic switch).** `setActiveClinic` writes the legacy mirror (`legacyMirror`). Rules allow that only when the new triple matches an **existing approved** `clinicRoles.{clinicId}` and the role is not `owner`. A strict “never write role/clinicId/status” rule would break multi-clinic switching. `myClinicId()` is claims-first (`request.auth.token.clinicId`) with `get()` fallback to the user document.
 
 6. **Intern duplicate check.** Interns may create patients and must not read the patients collection. `/register` queries patients by DOB/phone before `addDoc`. That list read will **Deny**; intern registration will fail at the duplicate check until the page stops reading patients for interns.
 

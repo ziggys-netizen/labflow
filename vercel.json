@@ -1,0 +1,11 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "regions": ["fra1"],
+  "buildCommand": "vitest run && next build",
+  "crons": [
+    {
+      "path": "/api/cron/pre-approvals/lapse",
+      "schedule": "0 0 * * *"
+    }
+  ]
+}

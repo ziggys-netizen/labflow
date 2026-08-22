@@ -10,7 +10,18 @@ import PrintIcon from "../../../lib/PrintIcon";
 import { clinicCollectionQuery, isOwner } from "../../../lib/clinicScope";
 import { canViewPatients } from "../../../lib/permissions";
 import { isPatientDeleted } from "../../../lib/patientSoftDelete";
-import { TEST_CATALOG, LabTest } from "../../../lib/testCatalog";
+import { LabTest, SPECIMEN_TYPE_LABELS } from "../../../lib/testCatalog";
+import { isTestReviewed, UNREVIEWED_RANGE_CAVEAT } from "../../../lib/catalogSeed";
+import { resultFlag } from "../../../lib/resultFlag";
+import ResultFlagMark from "../../../lib/ResultFlagMark";
+import { interpretCollection, orderCollectionFromData, orderStatusLabel, type OrderTestRef, type SampleCollections } from "../../../lib/sampleCollection";
+import {
+  changedResultValues,
+  isReleasedResultStatus,
+  latestAmendmentAt,
+  originalReleasedAt,
+  originalResultVersion,
+} from "../../../lib/resultAmendment";
 
 interface PatientRecord {
   clinicId?: string;
@@ -38,13 +49,17 @@ interface ClinicRecord {
 
 interface OrderRecord {
   id: string;
-  tests: { code: string; name: string }[];
+  tests: OrderTestRef[];
   status: string;
   createdAt: string;
   sampleCollectedAt?: string | null;
+  sampleCollections?: SampleCollections | null;
   results?: Record<string, Record<string, string>>;
   reviewedBy?: string | null;
+  reviewedByUid?: string | null;
   reviewedAt?: string | null;
+  resultVersions?: unknown;
+  lastAmendedAt?: string | null;
 }
 
 const PRINT_CSS = `
@@ -90,9 +105,10 @@ function PatientPrintContent() {
   const [patient, setPatient] = useState<PatientRecord | null>(null);
   const [clinic, setClinic] = useState<ClinicRecord | null>(null);
   const [orders, setOrders] = useState<OrderRecord[]>([]);
-  const [catalog, setCatalog] = useState<LabTest[]>(TEST_CATALOG);
+  const [catalog, setCatalog] = useState<LabTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [printBlocked, setPrintBlocked] = useState("");
   const printed = useRef(false);
 
   useEffect(() => {
@@ -128,23 +144,40 @@ function PatientPrintContent() {
           orderSnap.docs
             .map((d) => {
               const o = d.data();
+              const parsed = orderCollectionFromData(d.id, o);
               return {
-                id: d.id,
-                tests: o.tests || [],
-                status: o.status || "pending",
+                id: parsed.id,
+                tests: parsed.tests,
+                status: parsed.status,
                 createdAt: o.createdAt,
-                sampleCollectedAt: o.sampleCollectedAt || null,
+                sampleCollectedAt: parsed.sampleCollectedAt,
+                sampleCollections: parsed.sampleCollections,
                 results: o.results || {},
                 reviewedBy: o.reviewedBy || null,
+                reviewedByUid: o.reviewedByUid || null,
                 reviewedAt: o.reviewedAt || null,
+                resultVersions: o.resultVersions,
+                lastAmendedAt: o.lastAmendedAt || null,
               };
             })
             .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
         );
 
-        if (!catalogSnap.empty) {
-          setCatalog(catalogSnap.docs.map((d) => d.data() as LabTest));
+        const unsyncedReleased = orderSnap.docs.filter(
+          (d) => isReleasedResultStatus(String(d.data().status || "")) && d.metadata.hasPendingWrites
+        );
+        if (unsyncedReleased.length > 0) {
+          setPrintBlocked(
+            "This report includes results that have not been confirmed by the server. Printing is blocked until they sync — a printed result that is not in the laboratory record must not leave the building."
+          );
         }
+
+        const catalogRows = catalogSnap.docs.map((d) => d.data() as LabTest);
+        setCatalog(
+          data.clinicId
+            ? catalogRows.filter((t) => !t.clinicId || t.clinicId === data.clinicId)
+            : catalogRows
+        );
       } catch (err) {
         console.error(err);
         setNotFound(true);
@@ -156,12 +189,12 @@ function PatientPrintContent() {
   }, [patientId, role, clinicId]);
 
   useEffect(() => {
-    if (loading || !patient || printed.current) return;
+    if (loading || !patient || printed.current || printBlocked) return;
     printed.current = true;
     // Wait for layout so the dialog previews the finished sheet.
     const timer = setTimeout(() => window.print(), 300);
     return () => clearTimeout(timer);
-  }, [loading, patient]);
+  }, [loading, patient, printBlocked]);
 
   if (loading) {
     return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading record...</main>;
@@ -171,6 +204,18 @@ function PatientPrintContent() {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center gap-3 text-gray-600">
         <p>Patient record not found.</p>
+        <a href="/patients" className="text-gray-900 underline">
+          Back to patients
+        </a>
+      </main>
+    );
+  }
+
+  if (printBlocked) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-3 px-6 text-center">
+        <p className="text-gray-900 font-medium">This report cannot be printed yet.</p>
+        <p className="text-sm text-gray-600 max-w-md">{printBlocked}</p>
         <a href="/patients" className="text-gray-900 underline">
           Back to patients
         </a>
@@ -234,21 +279,44 @@ function PatientPrintContent() {
 
           <div className="space-y-4">
             {orders.map((order) => {
-              const released = order.status === "approved";
+              const released = isReleasedResultStatus(order.status);
+              const amended = order.status === "amended";
+              const collection = interpretCollection(order, catalog);
+              const original = originalResultVersion(order);
+              const changes = amended ? changedResultValues(original?.values, order.results) : [];
               return (
                 <div key={order.id} className="avoid-break border border-gray-300 rounded p-3">
+                  {amended && (
+                    <p className="text-sm font-semibold tracking-wide text-amber-950 mb-2">
+                      AMENDED REPORT
+                    </p>
+                  )}
                   <div className="flex items-baseline justify-between mb-2">
                     <p className="text-sm font-medium text-gray-900">
                       {order.tests.map((t) => t.name).join(", ") || "No tests"}
                     </p>
                     <p className="text-[10px] uppercase tracking-wide text-gray-500">
-                      {order.sampleCollectedAt ? order.status.replace("_", " ") : "Awaiting sample"}
+                      {orderStatusLabel(order, catalog)}
                     </p>
                   </div>
                   <p className="text-xs text-gray-500 mb-2">
-                    Ordered {formatDateTime(order.createdAt)} · Sample{" "}
-                    {formatDateTime(order.sampleCollectedAt)}
-                    {released ? ` · Approved ${formatDateTime(order.reviewedAt)}` : ""}
+                    Ordered {formatDateTime(order.createdAt)} ·{" "}
+                    {collection.legacySingleCollection
+                      ? `Sample ${formatDateTime(collection.latestCollectedAt)} (legacy)`
+                      : collection.byType
+                          .map(
+                            (specimen) =>
+                              `${SPECIMEN_TYPE_LABELS[specimen.type]} ${
+                                specimen.collectedAt
+                                  ? formatDateTime(specimen.collectedAt)
+                                  : "not collected"
+                              }`
+                          )
+                          .join(" · ") || `Sample ${formatDateTime(order.sampleCollectedAt)}`}
+                    {released && !amended ? ` · Approved ${formatDateTime(order.reviewedAt)}` : ""}
+                    {amended
+                      ? ` · Original release ${formatDateTime(originalReleasedAt(order))} · Amended ${formatDateTime(latestAmendmentAt(order))}`
+                      : ""}
                   </p>
 
                   {released ? (
@@ -276,24 +344,71 @@ function PatientPrintContent() {
                               </tr>,
                             ];
                           }
-                          return rows.map((p, i) => (
+                          return rows.map((p, i) => {
+                            const value = values[p.name] || "";
+                            const flag = resultFlag(value, p.referenceRange, patient.sex);
+                            return (
                             <tr key={`${t.code}-${i}`} className="border-b border-gray-100">
                               <td className="py-1 pr-3 text-gray-900">
                                 {i === 0 ? `${t.name} — ` : ""}
                                 {p.name}
                               </td>
-                              <td className="py-1 pr-3 text-gray-900">{values[p.name] || "—"}</td>
+                              <td className="py-1 pr-3 text-gray-900">
+                                {value || "—"}
+                                {flag ? (
+                                  <span className="ml-1">
+                                    <ResultFlagMark flag={flag} />
+                                  </span>
+                                ) : null}
+                              </td>
                               <td className="py-1 pr-3 text-gray-600">{p.unit}</td>
-                              <td className="py-1 text-gray-600">{p.referenceRange}</td>
+                              <td className="py-1 text-gray-600">
+                                {p.referenceRange}
+                                {!isTestReviewed(definition) && (
+                                  <span className="block text-amber-800">{UNREVIEWED_RANGE_CAVEAT}</span>
+                                )}
+                              </td>
                             </tr>
-                          ));
+                            );
+                          });
                         })}
                       </tbody>
                     </table>
                   ) : (
                     <p className="text-xs text-gray-600">
-                      Results not released. Only approved results are printed.
+                      Results not released. Only approved or amended results are printed.
                     </p>
+                  )}
+
+                  {released && amended && changes.length > 0 && (
+                    <div className="mt-3 border-t border-amber-200 pt-2">
+                      <p className="text-[10px] uppercase tracking-wide text-amber-900 font-medium mb-1">
+                        Values changed
+                      </p>
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-amber-200">
+                            <th className="py-1 pr-3 font-medium text-gray-700">Test / parameter</th>
+                            <th className="py-1 pr-3 font-medium text-gray-700">Original</th>
+                            <th className="py-1 font-medium text-gray-700">Amended</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {changes.map((change) => {
+                            const test = order.tests.find((t) => t.code === change.testCode);
+                            return (
+                              <tr key={`${change.testCode}-${change.parameter}`} className="border-b border-gray-100">
+                                <td className="py-1 pr-3 text-gray-900">
+                                  {test?.name || change.testCode} — {change.parameter}
+                                </td>
+                                <td className="py-1 pr-3 text-gray-600">{change.previous || "—"}</td>
+                                <td className="py-1 text-gray-900">{change.current || "—"}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
                   )}
 
                   {released && order.reviewedBy && (

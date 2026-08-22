@@ -5,6 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useAuth } from "./AuthContext";
 import {
+  canApproveResults,
   canDeletePatient,
   canEditTestCatalogue,
   canEnterResults,
@@ -16,7 +17,10 @@ import {
   canViewPatients,
 } from "./permissions";
 import { loadClinicNames } from "./clinicScope";
+import { useClinicCollection } from "./clinicListen";
 import { loadPendingApprovalCount, subscribeStaffChanged } from "./staffOps";
+import { SyncStatus } from "./ConnectionContext";
+import { countResultsEntered } from "./reviewQueue";
 
 export default function AppNav() {
   const {
@@ -26,6 +30,7 @@ export default function AppNav() {
     clinicId,
     actingClinicId,
     actingClinicName,
+    writeClinicId,
     memberships,
     setActiveClinic,
     setActingClinic,
@@ -61,10 +66,7 @@ export default function AppNav() {
   }, [showOwnerPicker, showStaffSwitcher, role, memberships]);
 
   useEffect(() => {
-    if (!owner) {
-      setPendingCount(0);
-      return;
-    }
+    if (!owner) return;
     let cancelled = false;
     async function refresh() {
       try {
@@ -81,6 +83,20 @@ export default function AppNav() {
       unsub();
     };
   }, [owner]);
+
+  const pendingBadge = owner ? pendingCount : 0;
+  const canReview = canApproveResults(role);
+  const reviewOrders = useClinicCollection("orders", role, clinicId, { enabled: canReview });
+  const reviewBadge = countResultsEntered(
+    reviewOrders.docs.map((docSnap) => {
+      const data = docSnap.data();
+      return {
+        status: typeof data.status === "string" ? data.status : null,
+        clinicId: typeof data.clinicId === "string" ? data.clinicId : null,
+      };
+    }),
+    writeClinicId
+  );
 
   const ownerClinicOptions = useMemo(
     () =>
@@ -138,6 +154,19 @@ export default function AppNav() {
                     Store
                   </Link>
                 )}
+                {canReview && (
+                  <Link
+                    href="/review"
+                    className="text-sm font-medium text-gray-700 hover:text-gray-900 inline-flex items-center gap-1.5"
+                  >
+                    Review
+                    {reviewBadge > 0 && (
+                      <span className="min-w-5 h-5 px-1 rounded-full bg-gray-900 text-white text-[11px] font-medium inline-flex items-center justify-center">
+                        {reviewBadge > 99 ? "99+" : reviewBadge}
+                      </span>
+                    )}
+                  </Link>
+                )}
                 {canViewDashboard(role) && (
                   <Link href="/dashboard" className="text-sm font-medium text-gray-700 hover:text-gray-900">
                     Dashboard
@@ -159,9 +188,9 @@ export default function AppNav() {
                     className="text-sm font-medium text-gray-700 hover:text-gray-900 inline-flex items-center gap-1.5"
                   >
                     Owner
-                    {pendingCount > 0 && (
+                    {pendingBadge > 0 && (
                       <span className="min-w-5 h-5 px-1 rounded-full bg-gray-900 text-white text-[11px] font-medium inline-flex items-center justify-center">
-                        {pendingCount > 99 ? "99+" : pendingCount}
+                        {pendingBadge > 99 ? "99+" : pendingBadge}
                       </span>
                     )}
                   </Link>
@@ -232,6 +261,7 @@ export default function AppNav() {
           </p>
         </div>
       )}
+      <SyncStatus />
     </nav>
   );
 }

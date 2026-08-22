@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
 import { auth, googleProvider, db } from "./firebase";
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from "firebase/firestore";
+import { reportFirestoreMetadata } from "./firestoreConnectivity";
 import {
   ClinicMembership,
   EMPTY_IDENTITY,
@@ -12,6 +13,12 @@ import {
   resolveIdentity,
 } from "./membership";
 import { writeClinicId as resolveWriteClinicId } from "./clinicScope";
+import { logPermissionsMatrix } from "./permissions";
+import { forceTokenRefresh, syncCustomClaims } from "./authApi";
+
+if (process.env.NODE_ENV === "development") {
+  logPermissionsMatrix();
+}
 
 const ACTING_CLINIC_KEY = "labflow.actingClinicId";
 
@@ -109,7 +116,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [identity, setIdentity] = useState<ResolvedIdentity>(EMPTY_IDENTITY);
   const [actingClinicId, setActingClinicIdState] = useState<string | null>(null);
-  const [actingClinicName, setActingClinicName] = useState<string | null>(null);
+  const [actingClinicNames, setActingClinicNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -119,7 +126,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const clearActingClinic = useCallback(() => {
     actingHydratedRef.current = false;
     setActingClinicIdState(null);
-    setActingClinicName(null);
     persistActingClinic(null);
   }, []);
 
@@ -157,7 +163,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         }
         unsubDocRef.current = onSnapshot(
           userDocRef,
+          { includeMetadataChanges: true },
           (snap) => {
+            reportFirestoreMetadata(snap.metadata);
             const next = resolveIdentity(snap.data());
             setIdentity(next);
             if (next.role === "owner") {
@@ -188,11 +196,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [clearActingClinic]);
 
   useEffect(() => {
-    if (identity.role !== "owner" || !actingClinicId) {
-      setActingClinicName(null);
-      return;
-    }
-    setActingClinicName(actingClinicId);
+    if (identity.role !== "owner" || !actingClinicId) return;
     let cancelled = false;
     getDoc(doc(db, "clinics", actingClinicId))
       .then((snap) => {
@@ -201,16 +205,22 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           snap.exists() && typeof snap.data().name === "string" && snap.data().name.trim()
             ? snap.data().name.trim()
             : actingClinicId;
-        setActingClinicName(name);
+        setActingClinicNames((prev) =>
+          prev[actingClinicId] === name ? prev : { ...prev, [actingClinicId]: name }
+        );
       })
       .catch((err) => {
         console.error(err);
-        if (!cancelled) setActingClinicName(actingClinicId);
       });
     return () => {
       cancelled = true;
     };
   }, [identity.role, actingClinicId]);
+
+  const actingClinicName =
+    identity.role === "owner" && actingClinicId
+      ? (actingClinicNames[actingClinicId] ?? actingClinicId)
+      : null;
 
   /**
    * Switches which clinic the session is scoped to.
@@ -229,6 +239,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const membership = identity.memberships.find((m) => m.clinicId === nextClinicId);
     if (!membership) throw new Error("You are not assigned to that clinic.");
     await updateDoc(doc(db, "users", currentUser.uid), legacyMirror(membership));
+    await syncCustomClaims();
+    await forceTokenRefresh();
   }, [identity.role, identity.memberships]);
 
   /**
@@ -278,7 +290,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         role: identity.role,
         clinicId: identity.clinicId,
         actingClinicId: exposedActingClinicId,
-        actingClinicName: identity.role === "owner" ? actingClinicName : null,
+        actingClinicName,
         writeClinicId: resolveWriteClinicId(identity.role, identity.clinicId, actingClinicId),
         shift: identity.shift,
         status: identity.status,

@@ -8,6 +8,7 @@ import { useAuth } from "../../lib/AuthContext";
 import { getClinicDocs } from "../../lib/clinicScope";
 import { canDeletePatient } from "../../lib/permissions";
 import { isPatientDeleted, restorePatient } from "../../lib/patientSoftDelete";
+import { auditTargetLabel } from "../../lib/audit";
 
 interface DeletedPatient {
   id: string;
@@ -27,7 +28,7 @@ function formatWhen(iso: string) {
 }
 
 function DeletedPatientsContent() {
-  const { user, role, clinicId } = useAuth();
+  const { user, role, clinicId, shift } = useAuth();
   const [patients, setPatients] = useState<DeletedPatient[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -88,9 +89,11 @@ function DeletedPatientsContent() {
     try {
       await restorePatient({
         patientId: patient.id,
-        actor: { uid: user.uid, email: user.email, role },
+        actor: { uid: user.uid, email: user.email, role, shift },
         role,
         clinicId,
+        targetLabel: auditTargetLabel(patient.name, patient.labId),
+        patientClinicId: patient.clinicId,
       });
       setPatients((prev) => prev.filter((p) => p.id !== patient.id));
     } catch (err) {
