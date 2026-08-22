@@ -2,8 +2,8 @@
 
 **Date:** 22 August 2026 (prompt dated 21 August 2026)  
 **Branch:** `wip/inventory-and-migration` (tracks `origin/wip/inventory-and-migration`)  
-**HEAD commit:** `fbd7375` — *Implement P1-P9: roles, capability gates, owner acting clinic, Firestore rules, soft delete, print Lab ID, clinic staff, migration, review research*  
-**Working tree:** uncommitted. This session did **not** commit and did **not** push. A commit is required before preview.  
+**HEAD (app on preview):** `414c903` — *Q1, Q5-Q7, R1-R4, S1-S7: server tier, custom claims, offline, catalogue seeding, specimen types, amendment, export*  
+**Working tree:** Q3P notes below; app WIP is on `origin/wip/inventory-and-migration`.  
 **Local app:** Next.js 16.3.0. Browser tests were **not** run (as instructed).  
 **Firestore rules:** not deployed. **main:** not merged.
 
@@ -15,13 +15,9 @@ Status values: **pass** / **fail** / **not tested**.
 
 **Phase 0: none.** `npx tsc --noEmit`, `npm run lint`, `npm test`, and `npm run build` all exit 0 after the lint fixes below. S4 flip-check failed then passed after revert. `GET /api/health` exists.
 
-**Phase 1 cannot start until the founder:**
+**Phase 1 (preview URL) is unblocked.** See **Q3P** below. OIDC / Resend / cron are still missing, so `/api/*` is expected to fail.
 
-1. Commits this working tree (health route + prior WIP + lint fixes). This session did not commit.
-2. Configures Vercel **Production and Preview** env (OIDC / Admin credentials, `RESEND_*`, `CRON_SECRET`, `NEXT_PUBLIC_FIREBASE_*`) per the Phase 1 list at the bottom of this file.
-3. Pushes `wip/inventory-and-migration` for a preview deploy. This session did not push.
-
-**Phases 1–5 were not reached and were not tested.** Do not treat anything below as a preview, OIDC, or production result.
+**Phases 2–5 were not reached and were not tested.** Do not treat anything below as an OIDC or production-rules result.
 
 Preview will read **production Firestore**. No destructive testing.
 
@@ -146,13 +142,13 @@ Local without GCP is expected to be 503. That is not a Phase 0 blocker.
 
 | Phase | Status |
 |---|---|
-| 1 Preview / OIDC / env | **not tested** (not reached) |
+| 1 Preview / OIDC / env | **partial** — preview Ready; OIDC/Resend/cron still missing (see Q3P) |
 | 2 | **not tested** (not reached) |
 | 3 | **not tested** (not reached) |
 | 4 | **not tested** (not reached) |
 | 5 | **not tested** (not reached) |
 
-No preview URL, no OIDC probe, no Firestore rules deploy, no merge to main.
+Preview URL exists (Q3P). No OIDC probe, no Firestore rules deploy, no merge to main.
 
 Prior signed-in browser matrix (A–G in the previous revision of this file) remains **not tested**. It is not part of Phase 0.
 
@@ -169,20 +165,61 @@ Prior signed-in browser matrix (A–G in the previous revision of this file) rem
 
 ---
 
+## Q3P — Preview deployment (22 August 2026)
+
+**Stable preview (use this):** https://labflow-git-wip-inventory-and-migration-buck-holdings.vercel.app  
+**This deploy’s unique URL:** https://labflow-7wj0agf5a-buck-holdings.vercel.app  
+**Inspect:** https://vercel.com/buck-holdings/labflow/DcYnGSCoFVRdiZ4oCkqVDs1zeKgY  
+**SHA:** `414c9034c504012eccb1956d7376b3f4647a84b1`  
+**Outcome:** Ready in ~44s. First Git preview (`dpl_79LAogQsK2Q1odUD5MWtbDmFVL8X`) failed with `auth/invalid-api-key` because Preview had no `NEXT_PUBLIC_FIREBASE_*`. After copying those six from `.env.local` to Preview and redeploying, the build passed.
+
+Local reconfirm (Q3P precondition): `npx tsc --noEmit` exit 0; `npm run build` exit 0 (107 tests, compiled, 26/26 static pages). Vercel build: 107 tests, compiled, TypeScript clean, 26/26 pages. Warnings only: npm deprecations (`tsconfck`, `node-domexception`, `uuid@9`, `glob@10`), `allow-scripts` pending for `@firebase/util`, `protobufjs`, `unrs-resolver`, and vite-tsconfig-paths natively supported.
+
+Vercel Deployment Protection may show a Vercel login wall to visitors who are not on the `buck-holdings` team. That is not LabFlow auth. Open the URL while signed into Vercel, then use Google popup on LabFlow.
+
+### `app/lib/firebase.ts` env checklist
+
+| Variable | Preview | Production | Notes |
+|---|---|---|---|
+| `NEXT_PUBLIC_FIREBASE_API_KEY` | **set** this session | already set (left as-is) | public by design |
+| `NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN` | **set** this session | already set (left as-is) | |
+| `NEXT_PUBLIC_FIREBASE_PROJECT_ID` | **set** this session | already set (left as-is) | |
+| `NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET` | **set** this session | already set (left as-is) | |
+| `NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID` | **set** this session | already set (left as-is) | |
+| `NEXT_PUBLIC_FIREBASE_APP_ID` | **set** this session | already set (left as-is) | |
+
+Optional client var (not in `firebase.ts`): `NEXT_PUBLIC_SUPPORT_EMAIL` — missing locally and on Preview (migration page mailto only).
+
+### Founder still must tick
+
+1. **Firebase authorised domain** (CLI could not write Auth settings). Add exact host: `labflow-git-wip-inventory-and-migration-buck-holdings.vercel.app`  
+   Firebase Console → Authentication → Settings → Authorised domains. Do **not** use `signInWithRedirect`.
+2. **OIDC / Admin** (do not invent). Still missing on Preview: `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT`, and either Vercel OIDC or `FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY` / `FIREBASE_SERVICE_ACCOUNT_JSON`.
+3. **`RESEND_API_KEY`**, **`RESEND_FROM`** — not in `.env.local`; not set on Preview.
+4. **`CRON_SECRET`** — not in `.env.local`; not set on Preview.
+
+### Expected failures on this preview
+
+Preview writes **production Firestore** (`labflow-6cb9e`). Rules are still open. Do not enter real patient names. Do not run migration or bulk import.
+
+| Feature | Expected |
+|---|---|
+| `/api/health` | 503 / `{ ok: false }` until Admin/OIDC works |
+| `/api/join/*`, claims sync, staff pre-approvals | 500 without OIDC |
+| Excel export / email | fail without `RESEND_*` |
+| Cron lapse job | reject without `CRON_SECRET` |
+| Google popup | fail until the authorised domain above is added |
+
+---
+
 ## What the founder must do for Phase 1
 
-Phase 0 is green. This session did **not** push. Preview reads **production Firestore** — do not run destructive tests there.
+Phase 0 is green. Preview is up (Q3P). Preview reads **production Firestore** — do not run destructive tests there.
 
-1. **Commit** the working tree on `wip/inventory-and-migration` (health route will not be on preview until it is committed). Then **push** that existing WIP branch (it already tracks `origin/wip/inventory-and-migration`).
-2. **OIDC, Production and Preview**, following `docs/OIDC-SETUP.md`:
-   - Enable IAM Credentials and Security Token Service APIs on GCP project `labflow-6cb9e`.
-   - Workload Identity Pool + OIDC provider `https://oidc.vercel.com/[team]`.
-   - Dedicated service account (Firebase Auth Admin + Firestore). Bind to `project:labflow:environment:production` (and Preview equivalently). Enable Vercel OIDC Federation. Redeploy after binding.
-   - Vercel env: `GOOGLE_CLOUD_PROJECT` / `GCLOUD_PROJECT`, and `FIREBASE_PROJECT_ID` if it differs from the public client id.
-   - Fallback if OIDC is not live yet (Production **and** Preview, never git, never `NEXT_PUBLIC_*`): `FIREBASE_CLIENT_EMAIL` + `FIREBASE_PRIVATE_KEY`, or `FIREBASE_SERVICE_ACCOUNT_JSON`.
-3. **`RESEND_API_KEY`** and **`RESEND_FROM`** (server only; verified sending domain) in Production and Preview.
-4. **`CRON_SECRET`** in Production and Preview (cron on `/api/cron/pre-approvals/lapse`).
-5. **`NEXT_PUBLIC_FIREBASE_*`** in Production and Preview: `API_KEY`, `AUTH_DOMAIN`, `PROJECT_ID`, `STORAGE_BUCKET`, `MESSAGING_SENDER_ID`, `APP_ID`.
-6. After env is set, **push** (or redeploy) so preview picks up `/api/health`. Confirm `GET /api/health` returns `{ ok: true }` on preview once Admin can initialise. Local 503 without credentials is expected.
+1. Add the authorised domain above, then sign in with an account that already has a clinic.
+2. **OIDC, Production and Preview**, following `docs/OIDC-SETUP.md` (not done; do not invent credentials).
+3. **`RESEND_API_KEY`** and **`RESEND_FROM`** (server only) in Production and Preview.
+4. **`CRON_SECRET`** in Production and Preview.
+5. Confirm `GET /api/health` returns `{ ok: true }` only after Admin can initialise.
 
 Do not deploy Firestore rules in this phase unless a later phase explicitly says so. Do not merge to main.
