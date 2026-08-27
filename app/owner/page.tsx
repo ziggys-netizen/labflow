@@ -29,6 +29,13 @@ import {
 import { loadStaffRows, staffCountsByClinic, subscribeStaffChanged } from "../lib/staffOps";
 import { syncCustomClaims } from "../lib/authApi";
 import { CLINIC_TIER_LABELS, CLINIC_TIERS, parseClinicTier, type ClinicTier } from "../lib/resultModel";
+import {
+  clinicRetentionValidationError,
+  clinicRetentionWriteFields,
+  clinicSetupComplete,
+  RETENTION_NOT_SET_LABEL,
+} from "../lib/clinicRetention";
+import RetentionPolicyFields from "../lib/RetentionPolicyFields";
 
 function OwnerContent() {
   const { user, role, username, shift } = useAuth();
@@ -49,6 +56,8 @@ function OwnerContent() {
   const [responsiblePerson, setResponsiblePerson] = useState("");
   const [tier, setTier] = useState<ClinicTier | "">("");
   const [region, setRegion] = useState("");
+  const [retentionPeriod, setRetentionPeriod] = useState("");
+  const [retentionBasis, setRetentionBasis] = useState("");
   const [creating, setCreating] = useState(false);
 
   const [adminEmail, setAdminEmail] = useState("");
@@ -101,11 +110,17 @@ function OwnerContent() {
       setStatus("Choose the clinic tier. It decides which tests are seeded.");
       return;
     }
+    const retentionError = clinicRetentionValidationError(retentionPeriod, retentionBasis);
+    if (retentionError) {
+      setStatus(retentionError);
+      return;
+    }
     setCreating(true);
     setCreatedClinicId("");
     setStatus("Creating clinic...");
     try {
       const joinCode = await uniqueJoinCode();
+      const retention = clinicRetentionWriteFields(retentionPeriod, retentionBasis);
       const docRef = await addDoc(collection(db, "clinics"), {
         name: name.trim(),
         address: address.trim(),
@@ -120,6 +135,7 @@ function OwnerContent() {
         active: true,
         brandColor: null,
         idleLockMinutes: 5,
+        ...retention,
       });
       const createdActor = actorFromAuth(user, role, shift);
       if (createdActor) {
@@ -131,7 +147,18 @@ function OwnerContent() {
           targetId: docRef.id,
           targetLabel: name.trim(),
           detail: {
-            fields: ["name", "address", "tin", "businessRegNumber", "responsiblePerson", "tier", "region", "joinCode"],
+            fields: [
+              "name",
+              "address",
+              "tin",
+              "businessRegNumber",
+              "responsiblePerson",
+              "tier",
+              "region",
+              "joinCode",
+              "retentionPeriod",
+              "retentionBasis",
+            ],
             tier: clinicTier,
           },
         });
@@ -158,6 +185,8 @@ function OwnerContent() {
       setResponsiblePerson("");
       setTier("");
       setRegion("");
+      setRetentionPeriod("");
+      setRetentionBasis("");
       setCreatedClinicId(docRef.id);
       await loadClinics();
     } catch (err) {
@@ -347,6 +376,11 @@ function OwnerContent() {
                           Inactive
                         </span>
                       )}
+                      {!clinicSetupComplete(c) && (
+                        <span className="ml-2 text-xs font-normal text-amber-800">
+                          Retention {RETENTION_NOT_SET_LABEL.toLowerCase()}
+                        </span>
+                      )}
                     </p>
                   </div>
                   <p className="text-sm text-gray-500 whitespace-nowrap">
@@ -421,6 +455,13 @@ function OwnerContent() {
                 </option>
               ))}
             </select>
+            <RetentionPolicyFields
+              period={retentionPeriod}
+              basis={retentionBasis}
+              onPeriodChange={setRetentionPeriod}
+              onBasisChange={setRetentionBasis}
+              disabled={creating}
+            />
             <button
               type="submit"
               disabled={creating}

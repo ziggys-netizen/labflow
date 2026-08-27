@@ -15,6 +15,7 @@ import {
   canRecordSampleCollection,
   canRegisterPatient,
   internAllowedPath,
+  accountsAllowedPath,
   landingPathForRole,
   type Role,
 } from "./permissions";
@@ -36,6 +37,7 @@ const CHECKS = {
   canRecordCriticalNotification: permissions.canRecordCriticalNotification,
   canEditTestCatalogue: permissions.canEditTestCatalogue,
   canViewDashboard: permissions.canViewDashboard,
+  canViewTestValueRollup: permissions.canViewTestValueRollup,
   canExportData: permissions.canExportData,
   canManageStaff: permissions.canManageStaff,
   canViewJoinCode: permissions.canViewJoinCode,
@@ -74,6 +76,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordCriticalNotification: true,
     canEditTestCatalogue: true,
     canViewDashboard: true,
+    canViewTestValueRollup: true,
     canExportData: true,
     canManageStaff: true,
     canViewJoinCode: true,
@@ -104,6 +107,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
     canViewDashboard: true,
+    canViewTestValueRollup: true,
     canExportData: true,
     canManageStaff: true,
     canViewJoinCode: true,
@@ -134,6 +138,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordCriticalNotification: true,
     canEditTestCatalogue: true,
     canViewDashboard: true,
+    canViewTestValueRollup: false,
     canExportData: true,
     canManageStaff: false,
     canViewJoinCode: false,
@@ -164,6 +169,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordCriticalNotification: true,
     canEditTestCatalogue: true,
     canViewDashboard: true,
+    canViewTestValueRollup: false,
     canExportData: false,
     canManageStaff: false,
     canViewJoinCode: false,
@@ -194,6 +200,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordCriticalNotification: true,
     canEditTestCatalogue: false,
     canViewDashboard: false,
+    canViewTestValueRollup: false,
     canExportData: false,
     canManageStaff: false,
     canViewJoinCode: false,
@@ -224,6 +231,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
     canViewDashboard: false,
+    canViewTestValueRollup: false,
     canExportData: false,
     canManageStaff: false,
     canViewJoinCode: false,
@@ -254,6 +262,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
     canViewDashboard: false,
+    canViewTestValueRollup: false,
     canExportData: false,
     canManageStaff: false,
     canViewJoinCode: false,
@@ -284,6 +293,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
     canViewDashboard: false,
+    canViewTestValueRollup: false,
     canExportData: false,
     canManageStaff: false,
     canViewJoinCode: false,
@@ -296,6 +306,37 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordStockMovement: true,
     canManageInventoryItems: true,
     canRecordSpecimenMovement: true,
+  },
+  accounts: {
+    canRegisterPatient: false,
+    canViewPatients: false,
+    canViewOwnRegisteredPatients: false,
+    canOrderTests: false,
+    canRecordSampleCollection: false,
+    canEnterResults: false,
+    canApproveResults: false,
+    canAmendResult: false,
+    canSendBackForCorrection: false,
+    canRejectSample: false,
+    canCancelOrder: false,
+    canModifyOthersUnreleasedResult: false,
+    canCorrectPatientRecord: false,
+    canRecordCriticalNotification: false,
+    canEditTestCatalogue: false,
+    canViewDashboard: false,
+    canViewTestValueRollup: true,
+    canExportData: false,
+    canManageStaff: false,
+    canViewJoinCode: false,
+    canEditClinicProfile: false,
+    canImportData: false,
+    canImportStaffPreApprovals: false,
+    canDeletePatient: false,
+    canExecuteErasure: false,
+    canViewInventory: false,
+    canRecordStockMovement: false,
+    canManageInventoryItems: false,
+    canRecordSpecimenMovement: false,
   },
   pending: {
     canRegisterPatient: false,
@@ -314,6 +355,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
     canViewDashboard: false,
+    canViewTestValueRollup: false,
     canExportData: false,
     canManageStaff: false,
     canViewJoinCode: false,
@@ -447,6 +489,17 @@ describe("product rules", () => {
   it("ASSIGNABLE_ROLES never contains owner", () => {
     expect(ASSIGNABLE_ROLES).not.toContain("owner");
   });
+
+  it("accounts sees the rollup only — never patients, orders, or results", () => {
+    for (const [name, check] of Object.entries(CHECKS)) {
+      expect(check("accounts"), name).toBe(name === "canViewTestValueRollup");
+    }
+    expect(permissions.canViewPatients("accounts")).toBe(false);
+    expect(permissions.canOrderTests("accounts")).toBe(false);
+    expect(permissions.canEnterResults("accounts")).toBe(false);
+    expect(permissions.canApproveResults("accounts")).toBe(false);
+    expect(permissions.canViewInventory("accounts")).toBe(false);
+  });
 });
 
 describe("landingPathForRole", () => {
@@ -460,6 +513,7 @@ describe("landingPathForRole", () => {
     expect(landingPathForRole("technician_assistant")).toBe("/patients");
     expect(landingPathForRole("intern")).toBe("/register");
     expect(landingPathForRole("storekeeper")).toBe("/inventory");
+    expect(landingPathForRole("accounts")).toBe("/accounts");
     expect(landingPathForRole("pending")).toBe("/patients");
     expect(landingPathForRole(null)).toBe("/patients");
   });
@@ -472,5 +526,13 @@ describe("landingPathForRole", () => {
     expect(internAllowedPath("/orders")).toBe(false);
     expect(internAllowedPath("/review")).toBe(false);
     expect(internAllowedPath("/owner/clinics/c1/audit")).toBe(false);
+  });
+
+  it("accounts may open the rollup and profile only", () => {
+    expect(accountsAllowedPath("/accounts")).toBe(true);
+    expect(accountsAllowedPath("/profile")).toBe(true);
+    expect(accountsAllowedPath("/patients")).toBe(false);
+    expect(accountsAllowedPath("/orders")).toBe(false);
+    expect(accountsAllowedPath("/dashboard")).toBe(false);
   });
 });

@@ -16,6 +16,7 @@ import {
   canViewInventory,
   canViewOwnRegisteredPatients,
   canViewPatients,
+  canViewTestValueRollup,
 } from "./permissions";
 import { loadClinicNames } from "./clinicScope";
 import { useClinicCollection } from "./clinicListen";
@@ -23,6 +24,7 @@ import { loadPendingApprovalCount, subscribeStaffChanged } from "./staffOps";
 import { SyncStatus } from "./ConnectionContext";
 import { countResultsEntered } from "./reviewQueue";
 import { useStaffSession } from "./pinSession";
+import RetentionBanner from "./RetentionBanner";
 
 export default function AppNav() {
   const {
@@ -46,11 +48,12 @@ export default function AppNav() {
 
   const owner = role === "owner";
   const internOnly = canRegisterPatient(role) && !canViewPatients(role);
+  const accountsOnly = canViewTestValueRollup(role) && !canViewPatients(role) && !canViewInventory(role);
   const multiClinic = memberships.length > 1;
   const showOwnerPicker = owner;
   const hideSwitcherOnClinicWorkspace = !owner && pathname.startsWith("/owner/clinics/");
   const showStaffSwitcher = !owner && multiClinic && !hideSwitcherOnClinicWorkspace;
-  const staffHref = clinicId ? `/owner/clinics/${clinicId}/staff` : "/patients";
+  const staffHref = "/staff";
 
   useEffect(() => {
     if (!showOwnerPicker && !showStaffSwitcher) return;
@@ -120,7 +123,7 @@ export default function AppNav() {
     }
   }
 
-  const homeHref = internOnly ? "/register" : "/";
+  const homeHref = internOnly ? "/register" : accountsOnly ? "/accounts" : "/";
   const bannerName = actingClinicName || actingClinicId;
 
   return (
@@ -180,6 +183,11 @@ export default function AppNav() {
                 {canViewDashboard(role) && (
                   <Link href="/dashboard" className="text-sm font-medium text-gray-700 hover:text-gray-900">
                     Dashboard
+                  </Link>
+                )}
+                {canViewTestValueRollup(role) && (
+                  <Link href="/accounts" className="text-sm font-medium text-gray-700 hover:text-gray-900">
+                    Test value
                   </Link>
                 )}
                 {canEditTestCatalogue(role) && (
@@ -281,6 +289,7 @@ export default function AppNav() {
         </div>
       )}
       <SyncStatus />
+      <RetentionBanner />
     </nav>
   );
 }

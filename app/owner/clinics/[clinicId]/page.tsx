@@ -23,6 +23,15 @@ import {
 } from "../../../lib/clinics";
 import { CLINIC_TIER_LABELS, CLINIC_TIERS, parseClinicTier, type ClinicTier } from "../../../lib/resultModel";
 import { actorFromAuth, safeLogAudit } from "../../../lib/audit";
+import {
+  clinicRetentionIsRecorded,
+  clinicRetentionValidationError,
+  retentionDisplay,
+  RETENTION_BASIS_LABEL,
+  RETENTION_PERIOD_LABEL,
+  RETENTION_SETUP_INCOMPLETE,
+} from "../../../lib/clinicRetention";
+import RetentionPolicyFields from "../../../lib/RetentionPolicyFields";
 
 function ClinicProfileContent() {
   const params = useParams();
@@ -108,6 +117,8 @@ function ClinicProfileEditor({
   const [rosterGraceMinutes, setRosterGraceMinutes] = useState("30");
   const [breakGlassMinutes, setBreakGlassMinutes] = useState("120");
   const [active, setActive] = useState(true);
+  const [retentionPeriod, setRetentionPeriod] = useState("");
+  const [retentionBasis, setRetentionBasis] = useState("");
 
   useEffect(() => {
     if (!clinicId) return;
@@ -131,6 +142,8 @@ function ClinicProfileEditor({
           setRosterGraceMinutes(String(record.rosterGraceMinutes || 30));
           setBreakGlassMinutes(String(record.breakGlassMinutes || 120));
           setActive(record.active);
+          setRetentionPeriod(record.retentionPeriod);
+          setRetentionBasis(record.retentionBasis);
         }
       })
       .catch((err) => {
@@ -163,6 +176,8 @@ function ClinicProfileEditor({
       setRosterGraceMinutes(String(record.rosterGraceMinutes || 30));
       setBreakGlassMinutes(String(record.breakGlassMinutes || 120));
       setActive(record.active);
+      setRetentionPeriod(record.retentionPeriod);
+      setRetentionBasis(record.retentionBasis);
     }
     return record;
   }
@@ -172,6 +187,11 @@ function ClinicProfileEditor({
     if (!user || !canEdit) return;
     if (!name.trim()) {
       setStatus("Clinic name is required.");
+      return;
+    }
+    const retentionError = clinicRetentionValidationError(retentionPeriod, retentionBasis);
+    if (retentionError) {
+      setStatus(retentionError);
       return;
     }
     setSaving(true);
@@ -193,6 +213,8 @@ function ClinicProfileEditor({
         rosteringEnabled,
         rosterGraceMinutes: Number(rosterGraceMinutes) || 30,
         breakGlassMinutes: Number(breakGlassMinutes) || 120,
+        retentionPeriod,
+        retentionBasis,
         actor: { uid: user.uid, email: user.email },
       });
       const actor = actorFromAuth(user, role, shift);
@@ -220,6 +242,8 @@ function ClinicProfileEditor({
               "rosteringEnabled",
               "rosterGraceMinutes",
               "breakGlassMinutes",
+              "retentionPeriod",
+              "retentionBasis",
             ],
           },
         });
@@ -320,6 +344,31 @@ function ClinicProfileEditor({
         <section className="border border-gray-200 rounded-lg p-4 mb-6">
           <h2 className="font-medium text-gray-900 mb-3">Profile</h2>
           <form onSubmit={handleSave} className="space-y-3">
+            <div
+              className={
+                clinicRetentionIsRecorded({ retentionPeriod, retentionBasis })
+                  ? "border border-gray-200 rounded-lg p-4 space-y-3"
+                  : "border border-amber-200 bg-amber-50 rounded-lg p-4 space-y-3"
+              }
+            >
+              <h3 className="font-medium text-gray-900">Record retention (required)</h3>
+              {!clinicRetentionIsRecorded({ retentionPeriod, retentionBasis }) && (
+                <>
+                  <p className="text-sm font-medium text-amber-950">{RETENTION_SETUP_INCOMPLETE}</p>
+                  <p className="text-sm text-gray-700">
+                    {RETENTION_PERIOD_LABEL}: {retentionDisplay(clinic.retentionPeriod)}.{" "}
+                    {RETENTION_BASIS_LABEL}: {retentionDisplay(clinic.retentionBasis)}.
+                  </p>
+                </>
+              )}
+              <RetentionPolicyFields
+                period={retentionPeriod}
+                basis={retentionBasis}
+                onPeriodChange={setRetentionPeriod}
+                onBasisChange={setRetentionBasis}
+                disabled={!canEdit}
+              />
+            </div>
             <label className="block">
               <span className="text-sm text-gray-600">Name</span>
               <input

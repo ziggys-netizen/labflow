@@ -7,6 +7,9 @@
  * `technician_assistant` is not a technician: register patients, view patients,
  * record sample collection, record specimen movement, view inventory. They do
  * not order tests, enter results, approve, or manage catalogue/staff/stock.
+ *
+ * `accounts` reads daily test-value rollups only. Never patients, orders, or
+ * results — totals must not become a clinical access path.
  */
 
 export const ROLES = [
@@ -18,6 +21,7 @@ export const ROLES = [
   "technician_assistant",
   "intern",
   "storekeeper",
+  "accounts",
   "pending",
 ] as const;
 
@@ -32,6 +36,7 @@ export const ASSIGNABLE_ROLES = [
   "technician_assistant",
   "intern",
   "storekeeper",
+  "accounts",
 ] as const;
 
 export type AssignableRole = (typeof ASSIGNABLE_ROLES)[number];
@@ -61,6 +66,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   technician_assistant: "Technician Assistant",
   intern: "Intern",
   storekeeper: "Storekeeper",
+  accounts: "Accounts officer",
   pending: "Pending",
 };
 
@@ -153,6 +159,14 @@ export function canEditTestCatalogue(role: string | null | undefined) {
 
 export function canViewDashboard(role: string | null | undefined) {
   return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
+}
+
+/**
+ * Day’s test counts and catalogue value. Aggregate only — no patient drill-down.
+ * Lab roles that release still write the rollup; they use the clinical dashboard.
+ */
+export function canViewTestValueRollup(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin", "accounts");
 }
 
 /** lab_supervisor matches lab_manager except this flag. */
@@ -304,6 +318,8 @@ export function landingPathForRole(
       return "/register";
     case "storekeeper":
       return "/inventory";
+    case "accounts":
+      return "/accounts";
     default:
       return "/patients";
   }
@@ -318,6 +334,11 @@ export function internAllowedPath(pathname: string): boolean {
   return pathname.startsWith("/patients/") && pathname.endsWith("/print");
 }
 
+/** Accounts officers: rollup page and identity only. No clinical lists. */
+export function accountsAllowedPath(pathname: string): boolean {
+  return pathname === "/accounts" || pathname === "/profile";
+}
+
 /** Capability redirect for roles that must not fall through ProtectedRoute. */
 export function capabilityRedirect(
   role: string | null | undefined,
@@ -325,6 +346,9 @@ export function capabilityRedirect(
 ): string | null {
   if (role === "intern" && !internAllowedPath(pathname)) {
     return "/register";
+  }
+  if (role === "accounts" && !accountsAllowedPath(pathname)) {
+    return "/accounts";
   }
   return null;
 }
@@ -346,6 +370,7 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
   canRecordCriticalNotification,
   canEditTestCatalogue,
   canViewDashboard,
+  canViewTestValueRollup,
   canExportData,
   canManageStaff,
   canViewJoinCode,

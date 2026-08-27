@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import Link from "next/link";
 import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
-import { doc, getDocs } from "firebase/firestore";
+import { doc, getDocs, increment, writeBatch } from "firebase/firestore";
 import { LabTest, SPECIMEN_TYPE_LABELS, resolveSpecimenType, type SpecimenType } from "../../lib/testCatalog";
 import { isTestReviewed, UNREVIEWED_RANGE_CAVEAT } from "../../lib/catalogSeed";
 import ProtectedRoute from "../../lib/ProtectedRoute";
@@ -15,11 +15,12 @@ import PrintIcon from "../../lib/PrintIcon";
 import { clinicCollectionQuery, isOwner, ownerActingReviewFields } from "../../lib/clinicScope";
 import { subscribeDocument } from "../../lib/clinicListen";
 import { useConnection } from "../../lib/ConnectionContext";
-import { trackedSetDoc, writeActorFromUser } from "../../lib/trackedWrites";
+import { trackedBatchCommit, trackedSetDoc, writeActorFromUser } from "../../lib/trackedWrites";
 import {
   canApproveResults,
   canCancelOrder,
   canEnterResults,
+  canOrderTests,
   canRecordCriticalNotification,
   canRecordSampleCollection,
   canRejectSample,
@@ -61,7 +62,7 @@ import {
   formatJustification,
   justificationReady,
 } from "../../lib/reasonCodes";
-import { canCancelStatus, canEnterResultsForStatus, canRejectStatus, orderDisplayLabel } from "../../lib/orderLifecycle";
+import { canCancelStatus, canEnterResultsForStatus, canRejectStatus, canReleaseStatus, orderDisplayLabel } from "../../lib/orderLifecycle";
 import { nceFromRejection } from "../../lib/nonconformingEvents";
 import { criticalNotificationReady, parseCriticalNotification } from "../../lib/criticalResults";
 import { orderHasCriticalResults } from "../../lib/resultFlag";
@@ -81,6 +82,13 @@ import {
 } from "../../lib/sampleCollection";
 import { toDateTimeLocal, fromDateTimeLocal } from "../../lib/datetime";
 import { clearResultDraft, loadResultDraft, saveResultDraft } from "../../lib/rosterDrafts";
+import {
+  DAILY_TEST_VALUE_ROLLUPS,
+  catalogPriceIndex,
+  releasedOrderContribution,
+  rollupDocumentId,
+  rollupMergeFields,
+} from "../../lib/dailyTestValueRollup";
 
 interface OrderTest {
   code: string;
@@ -126,6 +134,9 @@ interface OrderData {
   criticalNotification?: unknown;
   needsFinalReprint?: boolean;
   provisionalPrintedAt?: string | null;
+  recollectionOfOrderId?: string | null;
+  episodeAlreadyCharged?: boolean;
+  valueRollupAppliedAt?: string | null;
 }
 
 function OrderDetailContent() {
@@ -167,6 +178,7 @@ function OrderDetailContent() {
   } | null>(null);
   const resultsDirty = useRef(false);
   const amendDirty = useRef(false);
+  const releasing = useRef(false);
   const loading = loadedOrderId !== orderId;
 
   useEffect(() => {
@@ -399,14 +411,29 @@ function OrderDetailContent() {
   }
 
   async function commitRelease(ownResults: boolean) {
+    if (!order || releasing.current) return;
+    if (!canReleaseStatus(order.status)) return;
+    releasing.current = true;
     setStatus("Approving...");
-    const releasedAt = new Date().toISOString();
+    const releasedAtDate = new Date();
+    const releasedAt = releasedAtDate.toISOString();
     const releasedValues = cloneResultValues(order?.results || results);
     const v1 = firstReleaseVersion({
       values: releasedValues,
       releasedBy: writer.email,
       releasedByUid: writer.uid,
       releasedAt,
+    });
+    const clinic = order.clinicId || clinicId || "";
+    const contribution = releasedOrderContribution({
+      clinicId: clinic,
+      releasedAt: releasedAtDate,
+      fromStatus: order.status,
+      tests: order.tests,
+      recollectionOfOrderId: order.recollectionOfOrderId,
+      episodeAlreadyCharged: order.episodeAlreadyCharged,
+      valueRollupAppliedAt: order.valueRollupAppliedAt,
+      prices: catalogPriceIndex(catalog),
     });
     const updates = {
       status: "approved",
@@ -423,28 +450,67 @@ function OrderDetailContent() {
       selfReleased: ownResults,
       selfReleaseReasonCode: ownResults ? selfReleaseCode : null,
       needsFinalReprint: !isOnline,
+      ...(contribution ? { valueRollupAppliedAt: releasedAt } : {}),
       ...ownerActingReviewFields(writer.role || role),
     };
-    await trackedSetDoc(
-      doc(db, "orders", orderId),
-      updates,
-      { merge: true },
-      orderWriteMeta(`Released results for ${order?.patientLabId ?? "order"}`, {
+    const actorMeta = writeActorFromUser(
+      { uid: writer.uid || user?.uid || "", email: writer.email },
+      writer.username
+    );
+    try {
+      if (contribution) {
+        const batch = writeBatch(db);
+        const orderRef = doc(db, "orders", orderId);
+        const rollupRef = doc(
+          db,
+          DAILY_TEST_VALUE_ROLLUPS,
+          rollupDocumentId(contribution.clinicId, contribution.date)
+        );
+        batch.set(orderRef, updates, { merge: true });
+        batch.set(rollupRef, rollupMergeFields(contribution, releasedAt, increment), { merge: true });
+        await trackedBatchCommit(batch, [
+          {
+            ...orderWriteMeta(`Released results for ${order.patientLabId ?? "order"}`, {
+              status: "approved",
+            }),
+            collection: "orders",
+            documentId: orderId,
+          },
+          {
+            ...actorMeta,
+            operation: "update",
+            collection: DAILY_TEST_VALUE_ROLLUPS,
+            documentId: rollupRef.id,
+            summary: "Daily test value rollup",
+            clinicId: contribution.clinicId,
+            expected: null,
+          },
+        ]);
+      } else {
+        await trackedSetDoc(
+          doc(db, "orders", orderId),
+          updates,
+          { merge: true },
+          orderWriteMeta(`Released results for ${order.patientLabId ?? "order"}`, {
+            status: "approved",
+          })
+        );
+      }
+      setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
+      auditOrder("order.approved", {
         status: "approved",
-      })
-    );
-    setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
-    auditOrder("order.approved", {
-      status: "approved",
-      selfReleased: ownResults,
-      selfReleaseReasonCode: ownResults ? selfReleaseCode : null,
-    });
-    setStatus(
-      isOnline
-        ? "Results approved and released."
-        : "Results released on this device. Print will be marked provisional until sync."
-    );
-    setTimeout(() => setStatus(""), 4000);
+        selfReleased: ownResults,
+        selfReleaseReasonCode: ownResults ? selfReleaseCode : null,
+      });
+      setStatus(
+        isOnline
+          ? "Results approved and released."
+          : "Results released on this device. Print will be marked provisional until sync."
+      );
+      setTimeout(() => setStatus(""), 4000);
+    } finally {
+      releasing.current = false;
+    }
   }
 
   async function sendBackForCorrection() {
@@ -1274,6 +1340,22 @@ function OrderDetailContent() {
             >
               Reject sample
             </button>
+          </div>
+        )}
+
+        {order.status === "rejected" && order.patientId && canOrderTests(actingRole) && (
+          <div className="border border-gray-200 rounded-lg p-4 mt-6">
+            <h2 className="text-sm font-medium text-gray-900 mb-2">Recollection</h2>
+            <p className="text-sm text-gray-600 mb-3">
+              Create a linked order for a new sample. A rejected sample is not counted. The
+              recollection is the delivered test and is charged once for this episode.
+            </p>
+            <Link
+              href={`/orders/new/${order.patientId}?recollectFrom=${orderId}`}
+              className="text-sm text-gray-900 underline font-medium"
+            >
+              Create a recollection order
+            </Link>
           </div>
         )}
 

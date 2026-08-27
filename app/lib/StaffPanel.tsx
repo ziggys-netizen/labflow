@@ -20,7 +20,6 @@ import {
 } from "./permissions";
 import {
   UsernameTakenError,
-  actorLabel,
   buildIdentityDirectory,
   claimUsername,
   validateUsername,
@@ -28,7 +27,6 @@ import {
 import {
   PendingEntry,
   StaffRow,
-  groupStaffByRole,
   loadStaffRows,
   makeApproverStamp,
   membershipsInScope,
@@ -41,6 +39,17 @@ import { actorFromAuth, safeLogAudit } from "./audit";
 import PreApprovalsPanel from "./PreApprovalsPanel";
 import { useStaffSession } from "./pinSession";
 import { SensitivePinPrompt } from "./PinGate";
+import { fetchPreApprovals, revokePreApprovalRecord } from "./staffApi";
+import type { PreApproval } from "./preApprovals";
+import {
+  STAFF_DIRECTORY_STATE_LABELS,
+  buildStaffDirectory,
+  staffDirectoryActorLabel,
+  staffDirectoryFilename,
+  staffDirectoryToCsv,
+  type StaffDirectoryRow,
+  type StaffDirectoryState,
+} from "./staffDirectory";
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -50,7 +59,21 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-function Identity({ row }: { row: StaffRow }) {
+function Identity({
+  row,
+  email,
+}: {
+  row?: StaffRow;
+  email?: string | null;
+}) {
+  if (!row) {
+    return (
+      <div>
+        <p className="font-medium text-gray-900">{email || "Pre-approval"}</p>
+        <p className="text-xs text-gray-400">No account yet</p>
+      </div>
+    );
+  }
   return (
     <div>
       <p className="font-medium text-gray-900">
@@ -195,9 +218,11 @@ export default function StaffPanel({
   const owner = isOwner(role);
 
   const [rows, setRows] = useState<StaffRow[]>([]);
+  const [preApprovals, setPreApprovals] = useState<PreApproval[]>([]);
   const [clinicNames, setClinicNames] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [statusMsg, setStatusMsg] = useState("");
+  const [preApprovalError, setPreApprovalError] = useState("");
   const [reloadToken, setReloadToken] = useState(0);
 
   const [roleDraft, setRoleDraft] = useState<Record<string, string>>({});
@@ -205,6 +230,9 @@ export default function StaffPanel({
   const [clinicDraft, setClinicDraft] = useState<Record<string, string>>({});
   const [usernameDraft, setUsernameDraft] = useState<Record<string, string>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
+  const [stateFilter, setStateFilter] = useState<"all" | StaffDirectoryState>("all");
+
+  const preApprovalClinicId = scopeClinicId || (!owner ? clinicId : null);
 
   useEffect(() => {
     if (!canAccess) return;
@@ -213,8 +241,20 @@ export default function StaffPanel({
     async function load() {
       try {
         const result = await loadStaffRows({ role, clinicId });
+        let nextPre: PreApproval[] = [];
+        let nextPreError = "";
+        if (preApprovalClinicId) {
+          try {
+            nextPre = await fetchPreApprovals(preApprovalClinicId);
+          } catch (err) {
+            console.error(err);
+            nextPreError = err instanceof Error ? err.message : "Could not load pre-approvals.";
+          }
+        }
         if (cancelled) return;
+        setPreApprovalError(nextPreError);
         setRows(result.rows);
+        setPreApprovals(nextPre);
         setClinicNames(result.clinicNames);
         const nextRoleDraft: Record<string, string> = {};
         const nextShiftDraft: Record<string, string> = {};
@@ -251,12 +291,14 @@ export default function StaffPanel({
     return () => {
       cancelled = true;
     };
-  }, [canAccess, owner, role, clinicId, scopeClinicId, reloadToken]);
+  }, [canAccess, owner, role, clinicId, scopeClinicId, preApprovalClinicId, reloadToken]);
 
   const directory = useMemo(
     () => buildIdentityDirectory(rows.map((r) => ({ uid: r.uid, email: r.email, username: r.username }))),
     [rows]
   );
+
+  const staffByUid = useMemo(() => new Map(rows.map((r) => [r.uid, r])), [rows]);
 
   const assignableClinics = useMemo(() => {
     if (scopeClinicId) {
@@ -281,16 +323,25 @@ export default function StaffPanel({
     [rows, owner, scopedMemberships, scopeClinicId]
   );
 
-  const roleGroups = useMemo(() => {
-    const members: { row: StaffRow; membership: ClinicMembership }[] = [];
-    for (const row of rows) {
-      for (const membership of scopedMemberships.get(row.uid) ?? []) {
-        if (membership.status === "pending") continue;
-        members.push({ row, membership });
-      }
-    }
-    return groupStaffByRole(members);
-  }, [rows, scopedMemberships]);
+  const staffDirectory = useMemo(
+    () =>
+      buildStaffDirectory({
+        staffRows: rows,
+        preApprovals,
+        scopedMemberships,
+        owner,
+        scopeClinicId,
+      }),
+    [rows, preApprovals, scopedMemberships, owner, scopeClinicId]
+  );
+
+  const visibleDirectory = useMemo(
+    () =>
+      stateFilter === "all"
+        ? staffDirectory
+        : staffDirectory.filter((row) => row.state === stateFilter),
+    [staffDirectory, stateFilter]
+  );
 
   function guard(row: StaffRow, targetClinicId: string): string | null {
     return staffAssignmentGuard(row, targetClinicId, { owner, actorClinicId: clinicId });
@@ -454,6 +505,31 @@ export default function StaffPanel({
     }
   }
 
+  async function handleRevokePreApproval(entry: StaffDirectoryRow) {
+    if (!entry.preApprovalId || !entry.clinicId) return;
+    if (!window.confirm("Revoke this pre-approval?")) return;
+    setStatusMsg("Revoking...");
+    try {
+      await revokePreApprovalRecord({ clinicId: entry.clinicId, id: entry.preApprovalId });
+      setStatusMsg("Pre-approval revoked.");
+      setReloadToken((n) => n + 1);
+    } catch (err) {
+      console.error(err);
+      setStatusMsg(err instanceof Error ? err.message : "Failed to revoke pre-approval.");
+    }
+  }
+
+  function downloadStaffList() {
+    const csv = staffDirectoryToCsv(staffDirectory, clinicNames, directory);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = staffDirectoryFilename(scopeClinicId || clinicId || "staff");
+    link.click();
+    URL.revokeObjectURL(url);
+  }
+
   async function confirmPinReset() {
     if (!pinResetUid) return;
     const err = await resetStaffPin(pinResetUid);
@@ -486,6 +562,11 @@ export default function StaffPanel({
       clinics: assignableClinics,
       locked: Boolean(scopeClinicId),
     };
+  }
+
+  function membershipFor(entry: StaffDirectoryRow): ClinicMembership | null {
+    if (!entry.uid || !entry.clinicId) return null;
+    return staffByUid.get(entry.uid)?.memberships.find((m) => m.clinicId === entry.clinicId) ?? null;
   }
 
   const pendingList = (
@@ -543,104 +624,175 @@ export default function StaffPanel({
     </div>
   );
 
-  const approvedList = (
-    <>
-      {roleGroups.length === 0 && (
-        <p className="text-gray-600">No approved staff records yet.</p>
+  function accountActions(entry: StaffDirectoryRow) {
+    const row = entry.uid ? staffByUid.get(entry.uid) : undefined;
+    if (!row) return null;
+    const membership = membershipFor(entry);
+    const draftId = membership ? `${row.uid}:${membership.clinicId}` : row.uid;
+
+    if (entry.state === "pending" || entry.state === "rejected") {
+      return (
+        <div className="flex flex-wrap items-center gap-2">
+          <ClinicSelect {...clinicProps(row.uid, entry.clinicId)} />
+          <RoleAndShift {...roleProps(row.uid, entry.role || "technician")} />
+          <button
+            onClick={() => handleDecision(row, "approved")}
+            disabled={
+              roleRequiresShift(roleDraft[row.uid] ?? "technician") &&
+              !isShift(shiftDraft[row.uid])
+            }
+            className="text-sm bg-gray-900 text-white rounded px-3 py-1.5 disabled:opacity-50"
+          >
+            Approve
+          </button>
+          {entry.state === "pending" && (
+            <button
+              onClick={() => handleDecision(row, "rejected")}
+              className="text-sm text-red-600 underline"
+            >
+              Reject
+            </button>
+          )}
+        </div>
+      );
+    }
+
+    if (!membership) return null;
+
+    return (
+      <div>
+        <div className="flex flex-wrap items-center gap-2">
+          <RoleAndShift {...roleProps(draftId, membership.role)} />
+          <button
+            onClick={() => handleRoleChange(row, membership)}
+            disabled={
+              roleRequiresShift(roleDraft[draftId] ?? membership.role) &&
+              !isShift(shiftDraft[draftId] ?? membership.shift)
+            }
+            className="text-sm text-gray-900 underline disabled:opacity-50"
+          >
+            Save
+          </button>
+          <button
+            onClick={() => handleRemoveAssignment(row, membership)}
+            className="text-sm text-red-600 underline"
+          >
+            Revoke
+          </button>
+          <button
+            type="button"
+            onClick={() => setPinResetUid(row.uid)}
+            className="text-sm text-gray-900 underline"
+          >
+            Reset PIN
+          </button>
+          <button
+            onClick={() =>
+              setExpanded((prev) => ({ ...prev, [draftId]: !prev[draftId] }))
+            }
+            className="text-sm text-gray-600 underline"
+          >
+            {expanded[draftId] ? "Close" : "More"}
+          </button>
+        </div>
+        {expanded[draftId] && <UsernamePanel {...usernameProps(row)} />}
+      </div>
+    );
+  }
+
+  const directoryTable = (
+    <section>
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+        <h2 className="text-sm font-medium text-gray-900">
+          Staff directory ({staffDirectory.length})
+        </h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <label className="text-sm text-gray-600">
+            State{" "}
+            <select
+              value={stateFilter}
+              onChange={(e) =>
+                setStateFilter(e.target.value as "all" | StaffDirectoryState)
+              }
+              className="border border-gray-300 rounded px-2 py-1 text-sm"
+            >
+              <option value="all">All</option>
+              <option value="pre-approved">Pre-approved</option>
+              <option value="pending">Pending</option>
+              <option value="approved">Approved</option>
+              <option value="rejected">Rejected</option>
+            </select>
+          </label>
+          <button type="button" onClick={downloadStaffList} className="text-sm text-gray-900 underline">
+            Download list
+          </button>
+        </div>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        The download includes name, username, role, and state. It never includes email addresses.
+      </p>
+      {visibleDirectory.length === 0 ? (
+        <p className="text-sm text-gray-600">No staff records in this view.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm text-left">
+            <thead>
+              <tr className="text-xs uppercase tracking-wide text-gray-500">
+                <th className="py-2 pr-3 font-medium">Person</th>
+                <th className="py-2 pr-3 font-medium">Role</th>
+                <th className="py-2 pr-3 font-medium">State</th>
+                <th className="py-2 pr-3 font-medium">Shift</th>
+                <th className="py-2 pr-3 font-medium">Clinic</th>
+                <th className="py-2 pr-3 font-medium">Detail</th>
+                <th className="py-2 font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {visibleDirectory.map((entry) => {
+                const staffRow = entry.uid ? staffByUid.get(entry.uid) : undefined;
+                return (
+                  <tr key={entry.key} className="border-t border-gray-100 align-top">
+                    <td className="py-3 pr-3">
+                      <Identity row={staffRow} email={entry.email} />
+                    </td>
+                    <td className="py-3 pr-3 text-gray-900">{roleLabel(entry.role)}</td>
+                    <td className="py-3 pr-3">
+                      <StatusBadge status={STAFF_DIRECTORY_STATE_LABELS[entry.state]} />
+                    </td>
+                    <td className="py-3 pr-3 text-gray-900">
+                      {roleRequiresShift(entry.role) ? shiftLabel(entry.shift) || "—" : "—"}
+                    </td>
+                    <td className="py-3 pr-3 text-gray-600">
+                      {entry.clinicId ? clinicNames[entry.clinicId] || entry.clinicId : "—"}
+                    </td>
+                    <td className="py-3 pr-3 text-gray-600">
+                      {entry.state === "pre-approved" && entry.expiresAt
+                        ? `Expires ${new Date(entry.expiresAt).toLocaleDateString()}`
+                        : staffDirectoryActorLabel(entry, directory)
+                          ? `By ${staffDirectoryActorLabel(entry, directory)}`
+                          : "—"}
+                    </td>
+                    <td className="py-3">
+                      {entry.kind === "pre-approval" ? (
+                        <button
+                          type="button"
+                          onClick={() => void handleRevokePreApproval(entry)}
+                          className="text-sm text-red-600 underline"
+                        >
+                          Revoke
+                        </button>
+                      ) : (
+                        accountActions(entry)
+                      )}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
       )}
-      {roleGroups.map((group) => (
-        <section key={group.role} className="mb-8">
-          <h2 className="font-medium text-gray-900 border-b border-gray-200 pb-2 mb-3">
-            {group.label}
-            <span className="ml-2 text-sm font-normal text-gray-500">{group.members.length}</span>
-          </h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm text-left">
-              <thead>
-                <tr className="text-xs uppercase tracking-wide text-gray-500">
-                  <th className="py-2 pr-3 font-medium">Name</th>
-                  <th className="py-2 pr-3 font-medium">Username</th>
-                  <th className="py-2 pr-3 font-medium">Email</th>
-                  <th className="py-2 pr-3 font-medium">Role</th>
-                  <th className="py-2 pr-3 font-medium">Shift</th>
-                  <th className="py-2 pr-3 font-medium">Approved by</th>
-                  <th className="py-2 pr-3 font-medium">Approved at</th>
-                  <th className="py-2 font-medium">Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {group.members.map(({ row, membership }) => {
-                  const key = `${row.uid}:${membership.clinicId}`;
-                  return (
-                    <tr key={key} className="border-t border-gray-100 align-top">
-                      <td className="py-3 pr-3 text-gray-900">{row.name || "—"}</td>
-                      <td className="py-3 pr-3 font-mono text-gray-900">{row.username || "—"}</td>
-                      <td className="py-3 pr-3 text-gray-600">{row.email || "—"}</td>
-                      <td className="py-3 pr-3 text-gray-900">{roleLabel(membership.role)}</td>
-                      <td className="py-3 pr-3 text-gray-900">
-                        {roleRequiresShift(membership.role)
-                          ? shiftLabel(membership.shift) || "—"
-                          : "—"}
-                      </td>
-                      <td className="py-3 pr-3 text-gray-600">
-                        {actorLabel(
-                          membership.approvedByUsername ||
-                            membership.approvedByUid ||
-                            membership.approvedByEmail,
-                          directory
-                        )}
-                      </td>
-                      <td className="py-3 pr-3 text-gray-600 whitespace-nowrap">
-                        {membership.approvedAt
-                          ? new Date(membership.approvedAt).toLocaleDateString()
-                          : "—"}
-                      </td>
-                      <td className="py-3">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <RoleAndShift {...roleProps(key, membership.role)} />
-                          <button
-                            onClick={() => handleRoleChange(row, membership)}
-                            disabled={
-                              roleRequiresShift(roleDraft[key] ?? membership.role) &&
-                              !isShift(shiftDraft[key] ?? membership.shift)
-                            }
-                            className="text-sm text-gray-900 underline disabled:opacity-50"
-                          >
-                            Save
-                          </button>
-                          <button
-                            onClick={() => handleRemoveAssignment(row, membership)}
-                            className="text-sm text-red-600 underline"
-                          >
-                            Revoke
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setPinResetUid(row.uid)}
-                            className="text-sm text-gray-900 underline"
-                          >
-                            Reset PIN
-                          </button>
-                          <button
-                            onClick={() =>
-                              setExpanded((prev) => ({ ...prev, [key]: !prev[key] }))
-                            }
-                            className="text-sm text-gray-600 underline"
-                          >
-                            {expanded[key] ? "Close" : "More"}
-                          </button>
-                        </div>
-                        {expanded[key] && <UsernamePanel {...usernameProps(row)} />}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        </section>
-      ))}
-    </>
+    </section>
   );
 
   if (!canAccess) {
@@ -673,7 +825,16 @@ export default function StaffPanel({
 
   const body = (
     <>
-      {statusMsg && <p className="text-sm text-gray-600 mb-4">{statusMsg}</p>}
+      {preApprovalError && (
+        <p role="alert" className="text-sm text-red-700 mb-4">
+          {preApprovalError}
+        </p>
+      )}
+      {statusMsg && (
+        <p role="status" className="text-sm text-gray-600 mb-4">
+          {statusMsg}
+        </p>
+      )}
       {pinResetUid && (
         <SensitivePinPrompt
           action="staff"
@@ -684,20 +845,13 @@ export default function StaffPanel({
       {loading && <p className="text-gray-600">Loading...</p>}
       {!loading && (
         <>
-          <section className="mb-10">
-            <h2 className="text-sm font-medium text-gray-900 mb-3">
-              Pending approvals ({pending.length})
-            </h2>
-            {pending.length === 0 ? (
-              <p className="text-sm text-gray-600">Nothing waiting for approval.</p>
-            ) : (
-              pendingList
-            )}
-          </section>
-          {(scopeClinicId || clinicId) && (
-            <PreApprovalsPanel clinicId={scopeClinicId || clinicId || ""} />
+          {preApprovalClinicId && (
+            <PreApprovalsPanel
+              clinicId={preApprovalClinicId}
+              onChanged={() => setReloadToken((n) => n + 1)}
+            />
           )}
-          {approvedList}
+          {directoryTable}
         </>
       )}
     </>
@@ -715,8 +869,9 @@ export default function StaffPanel({
           {scopedName ? `Staff — ${scopedName}` : "Manage Staff"}
         </h1>
         <p className="text-gray-600 mb-4">
-          A role is held at a clinic, not across the platform. Approving a staff member sets their
-          role for one clinic only. The owner role cannot be assigned here.
+          One list of every account and pre-approval for this clinic: pre-approved, pending,
+          approved, or rejected. A role is held at a clinic, not across the platform. The owner
+          role cannot be assigned here.
         </p>
         {scopeClinicId && (
           <p className="text-sm text-gray-500 mb-4">

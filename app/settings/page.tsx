@@ -31,6 +31,20 @@ import {
 } from "../lib/resultModel";
 import { testsForTier } from "../lib/testCatalog";
 import type { ClinicTier } from "../lib/resultModel";
+import SopReferenceFields from "../lib/SopReferenceFields";
+import {
+  catalogTestIsGrandfathered,
+  catalogTestSaveError,
+  emptySopDraft,
+  parseSopDraft,
+  parseSopReference,
+  sopDraftIsComplete,
+  sopDraftIsEmpty,
+  toSopReference,
+  type SopDraft,
+  type SopFileRef,
+} from "../lib/sopReference";
+import { openClinicSopFile, uploadClinicSopFile } from "../lib/sopStorage";
 
 interface CatalogRow extends LabTest {
   firestoreId: string;
@@ -64,6 +78,11 @@ function SettingsContent() {
   ]);
   const [clinicTier, setClinicTier] = useState<ClinicTier | null>(null);
   const [addStatus, setAddStatus] = useState("");
+  const [newSop, setNewSop] = useState<SopDraft>(emptySopDraft);
+  const [newSopFile, setNewSopFile] = useState<File | null>(null);
+  const [sopEditingCode, setSopEditingCode] = useState<string | null>(null);
+  const [sopDrafts, setSopDrafts] = useState<Record<string, SopDraft>>({});
+  const [sopFiles, setSopFiles] = useState<Record<string, File | null>>({});
 
   useEffect(() => {
     if (!allowed) return;
@@ -228,6 +247,15 @@ function SettingsContent() {
   async function saveTest(testCode: string) {
     const test = tests.find((t) => t.code === testCode);
     if (!test) return;
+    const sopError = catalogTestSaveError(
+      { ...test, sop: sopDrafts[test.code] ?? parseSopDraft(test.sop) },
+      { creating: false }
+    );
+    if (sopError) {
+      setStatus(sopError);
+      setSopEditingCode(test.code);
+      return;
+    }
     setStatus("Saving...");
     try {
       await persistReviewed([testCode]);
@@ -236,6 +264,66 @@ function SettingsContent() {
     } catch (err) {
       console.error(err);
       setStatus("Failed to save.");
+    }
+  }
+
+  function sopDraftFor(test: CatalogRow): SopDraft {
+    return sopDrafts[test.code] ?? parseSopDraft(test.sop);
+  }
+
+  async function persistSop(test: CatalogRow, draft: SopDraft, file: File | null) {
+    const clinic = test.clinicId || writeClinicId || clinicId;
+    if (!clinic) throw new Error("No clinic");
+    if (sopDraftIsEmpty(draft) && catalogTestIsGrandfathered(test)) {
+      await setDoc(doc(db, "testCatalog", test.firestoreId), { sop: null }, { merge: true });
+      return { ...test, sop: null };
+    }
+    const existing = parseSopReference(test.sop);
+    const uploaded = file
+      ? await uploadClinicSopFile({
+          clinicId: clinic,
+          testCode: test.code,
+          file,
+          previousPath: existing?.file?.storagePath ?? null,
+        })
+      : existing?.file ?? null;
+    const sop = toSopReference(draft, uploaded);
+    await setDoc(doc(db, "testCatalog", test.firestoreId), { sop }, { merge: true });
+    return { ...test, sop };
+  }
+
+  async function saveSop(testCode: string) {
+    const test = tests.find((t) => t.code === testCode);
+    if (!test) return;
+    const draft = sopDraftFor(test);
+    const file = sopFiles[test.code] ?? null;
+    const sopError = catalogTestSaveError({ ...test, sop: draft }, { creating: false, hasFile: Boolean(file) });
+    if (sopError) {
+      setStatus(sopError);
+      return;
+    }
+    setStatus("Saving SOP...");
+    try {
+      const updated = await persistSop(test, draft, file);
+      const actor = actorFromAuth(user, role, shift);
+      if (actor) {
+        await safeLogAudit({
+          clinicId: test.clinicId || writeClinicId || clinicId || null,
+          actor,
+          action: "catalogue.update",
+          targetCollection: "testCatalog",
+          targetId: test.firestoreId,
+          targetLabel: test.name,
+          detail: { fields: ["sop"], code: test.code },
+        });
+      }
+      setTests((prev) => prev.map((row) => (row.code === testCode ? { ...row, ...updated } : row)));
+      setSopFiles((prev) => ({ ...prev, [testCode]: null }));
+      setSopEditingCode(null);
+      setStatus("SOP reference saved.");
+    } catch (err) {
+      console.error(err);
+      setStatus(err instanceof Error ? err.message : "Failed to save SOP.");
     }
   }
 
@@ -351,6 +439,12 @@ function SettingsContent() {
       return;
     }
 
+    const sopError = catalogTestSaveError({ sop: newSop }, { creating: true });
+    if (sopError) {
+      setAddStatus(sopError);
+      return;
+    }
+
     if (!writeClinicId) {
       setAddStatus(
         isOwner(role)
@@ -360,7 +454,23 @@ function SettingsContent() {
       return;
     }
 
+    setAddStatus("Saving...");
     const code = generateTestCode(newTestName);
+    let sopFile: SopFileRef | null = null;
+    try {
+      if (newSopFile) {
+        sopFile = await uploadClinicSopFile({
+          clinicId: writeClinicId,
+          testCode: code,
+          file: newSopFile,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setAddStatus(err instanceof Error ? err.message : "Failed to upload SOP file.");
+      return;
+    }
+    const sop = toSopReference(newSop, sopFile);
     const newTest: CatalogRow = {
       firestoreId: `${writeClinicId}_${code}`,
       code,
@@ -370,9 +480,10 @@ function SettingsContent() {
       parameters: validParams.map((p) => normalizeParameter(p)),
       price: parseFloat(newTestPrice) || 0,
       clinicId: writeClinicId,
+      sop,
+      sopRequired: true,
     };
 
-    setAddStatus("Saving...");
     try {
       await setDoc(doc(db, "testCatalog", newTest.firestoreId), {
         code: newTest.code,
@@ -385,6 +496,8 @@ function SettingsContent() {
         reviewed: true,
         reviewedAt: new Date().toISOString(),
         reviewedBy: user?.email ?? null,
+        sop,
+        sopRequired: true,
       });
       const actor = actorFromAuth(user, role, shift);
       if (actor) {
@@ -395,7 +508,10 @@ function SettingsContent() {
           targetCollection: "testCatalog",
           targetId: newTest.firestoreId,
           targetLabel: newTest.name,
-          detail: { fields: ["code", "name", "parameters", "price", "specimenType"], code: newTest.code },
+          detail: {
+            fields: ["code", "name", "parameters", "price", "specimenType", "sop"],
+            code: newTest.code,
+          },
         });
       }
       setTests((prev) => [...prev, { ...newTest, reviewed: true }].sort((a, b) => a.name.localeCompare(b.name)));
@@ -404,6 +520,8 @@ function SettingsContent() {
       setNewTestPrice("");
       setNewTestSpecimenType("");
       setNewTestParams([{ name: "", unit: "", referenceRange: "", resultType: "numeric" }]);
+      setNewSop(emptySopDraft());
+      setNewSopFile(null);
       setShowAddForm(false);
       setAddStatus("New test added successfully.");
       setTimeout(() => setAddStatus(""), 3000);
@@ -434,7 +552,9 @@ function SettingsContent() {
       <CatalogReviewBanner />
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">Clinic Settings</h1>
-        <p className="text-gray-600 mb-6">Edit test units, reference ranges, and pricing.</p>
+        <p className="text-gray-600 mb-6">
+          Edit test units, reference ranges, pricing, and SOP references.
+        </p>
         {needsClinic && <ActingClinicPrompt />}
         {!needsClinic && tests.length === 0 && (
           <div className="border-2 border-red-300 bg-red-50 rounded-lg p-4 mb-6">
@@ -536,6 +656,14 @@ function SettingsContent() {
                 </select>
               </div>
 
+              <SopReferenceFields
+                value={newSop}
+                onChange={setNewSop}
+                required
+                existingFileName={newSopFile?.name ?? null}
+                onFileChange={setNewSopFile}
+              />
+
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Parameters</label>
                 <div className="space-y-2">
@@ -633,6 +761,30 @@ function SettingsContent() {
                       Not reviewed
                     </span>
                   )}
+                  {(() => {
+                    const draft = sopDraftFor(test);
+                    const complete = sopDraftIsComplete(draft);
+                    const required = !catalogTestIsGrandfathered(test);
+                    if (required && !complete) {
+                      return (
+                        <span className="mt-1 ml-2 inline-block rounded-full bg-red-100 px-2 py-0.5 text-xs font-medium text-red-900">
+                          SOP required
+                        </span>
+                      );
+                    }
+                    if (complete) {
+                      return (
+                        <p className="mt-1 text-xs text-gray-600">
+                          SOP {draft.documentId} · v{draft.version} · review {draft.reviewDate}
+                        </p>
+                      );
+                    }
+                    return (
+                      <p className="mt-1 text-xs text-gray-400">
+                        No SOP on file (existing test — still orderable)
+                      </p>
+                    );
+                  })()}
                 </div>
                 <div className="flex items-center gap-2">
                   <label className="text-sm text-gray-600">Price (D):</label>
@@ -657,8 +809,54 @@ function SettingsContent() {
                   >
                     {editingCode === test.code ? "Close" : "Edit parameters"}
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setSopEditingCode(sopEditingCode === test.code ? null : test.code)}
+                    className="text-sm text-gray-900 underline"
+                  >
+                    {sopEditingCode === test.code ? "Close SOP" : "SOP reference"}
+                  </button>
                 </div>
               </div>
+
+              {sopEditingCode === test.code && (
+                <div className="space-y-3 mt-3 border-t border-gray-100 pt-3">
+                  <SopReferenceFields
+                    value={sopDraftFor(test)}
+                    onChange={(next) =>
+                      setSopDrafts((prev) => ({ ...prev, [test.code]: next }))
+                    }
+                    required={!catalogTestIsGrandfathered(test)}
+                    existingFileName={
+                      sopFiles[test.code]?.name ?? parseSopReference(test.sop)?.file?.fileName ?? null
+                    }
+                    onFileChange={(file) =>
+                      setSopFiles((prev) => ({ ...prev, [test.code]: file }))
+                    }
+                  />
+                  {parseSopReference(test.sop)?.file ? (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        void openClinicSopFile(parseSopReference(test.sop)?.file).catch((err) => {
+                          console.error(err);
+                          setStatus(err instanceof Error ? err.message : "Could not open SOP file.");
+                        });
+                      }}
+                      className="text-sm text-gray-900 underline"
+                    >
+                      Open stored file
+                    </button>
+                  ) : null}
+                  <button
+                    type="button"
+                    onClick={() => void saveSop(test.code)}
+                    className="bg-gray-900 text-white text-sm rounded px-3 py-1.5"
+                  >
+                    Save SOP reference
+                  </button>
+                </div>
+              )}
 
               {editingCode === test.code && (
                 <div className="space-y-2 mt-3 border-t border-gray-100 pt-3">

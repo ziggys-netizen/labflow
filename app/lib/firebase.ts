@@ -8,6 +8,7 @@ import {
   type Firestore,
 } from "firebase/firestore";
 import { getAuth, GoogleAuthProvider } from "firebase/auth";
+import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
   apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
@@ -72,6 +73,7 @@ function createFirestore(firebaseApp: FirebaseApp): Firestore {
 
 export const db = createFirestore(app);
 export const auth = getAuth(app);
+export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
 export function getPersistenceState(): PersistenceState {

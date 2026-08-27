@@ -308,6 +308,40 @@ describe("protectedRouteDestination", () => {
     ).toBe("/register");
   });
 
+  it("approved accounts officer off the rollup path → /accounts", () => {
+    expect(
+      protectedRouteDestination(
+        {
+          hasGoogleUser: true,
+          role: "accounts",
+          status: "approved",
+          clinicId: "c1",
+          writeClinicId: "c1",
+          hasPin: true,
+          pinUnlocked: true,
+          rosterAllowed: true,
+        },
+        "/orders"
+      )
+    ).toBe("/accounts");
+    expect(
+      protectedRouteDestination(
+        {
+          hasGoogleUser: true,
+          role: "accounts",
+          status: "approved",
+          clinicId: "c1",
+          writeClinicId: "c1",
+          hasPin: true,
+          pinUnlocked: true,
+          rosterAllowed: true,
+        },
+        "/patients",
+        canViewPatients
+      )
+    ).toBe("/accounts");
+  });
+
   it("approved member on patients with a page capability they lack → role landing", () => {
     expect(
       protectedRouteDestination(

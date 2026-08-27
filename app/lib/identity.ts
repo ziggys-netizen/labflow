@@ -42,6 +42,7 @@ const RESERVED_USERNAMES = new Set([
   "staff",
   "storekeeper",
   "stockkeeper",
+  "accounts",
   "superuser",
   "support",
   "system",

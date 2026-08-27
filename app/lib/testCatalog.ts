@@ -16,6 +16,7 @@ import {
   type ClinicTier,
   type TestParameter,
 } from "./resultModel";
+import type { SopReference } from "./sopReference";
 
 export type { TestParameter, ClinicTier } from "./resultModel";
 export { CLINIC_TIERS, CLINIC_TIER_LABELS, isClinicTier, parseClinicTier } from "./resultModel";
@@ -76,6 +77,12 @@ export interface LabTest {
   tiers?: ClinicTier[];
   /** Named in the National Health Laboratory Services Policy 2021–2025. */
   onNationalMenu?: boolean;
+  /**
+   * SOP identifiers for this test. Required on rows with `sopRequired: true`.
+   * Seeded/imported/existing rows omit both fields and stay orderable.
+   */
+  sop?: SopReference | null;
+  sopRequired?: boolean;
 }
 
 const PRIMARY: ClinicTier[] = ["primary", "secondary", "tertiary"];

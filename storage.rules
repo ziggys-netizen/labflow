@@ -1,0 +1,81 @@
+rules_version = '2';
+
+// Clinic SOP files. LabFlow stores them; they remain the clinic's files.
+// Path: clinics/{clinicId}/sops/{testCode}/{fileName}
+// Identity matches firestore.rules users/{uid} (approved + clinic, or owner).
+// Write is catalogue editors only (owner, lab_manager, lab_supervisor).
+// preApprovals are unrelated and unchanged.
+
+service firebase.storage {
+  match /b/{bucket}/o {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function callerUserPath() {
+      return /databases/(default)/documents/users/$(request.auth.uid);
+    }
+
+    function userExists() {
+      return signedIn() && firestore.exists(callerUserPath());
+    }
+
+    function userDoc() {
+      return firestore.get(callerUserPath()).data;
+    }
+
+    function isApproved() {
+      return userExists() && userDoc().get("status", "") == "approved";
+    }
+
+    function isOwner() {
+      return userExists() && userDoc().get("role", "") == "owner";
+    }
+
+    function userClinic() {
+      return userExists() ? userDoc().get("clinicId", null) : null;
+    }
+
+    function inClinic(clinicId) {
+      return isOwner()
+             || (isApproved()
+                 && userClinic() != null
+                 && userClinic() == clinicId);
+    }
+
+    function canEditCatalogue() {
+      return isOwner()
+             || (isApproved()
+                 && (userDoc().get("role", "") == "lab_manager"
+                     || userDoc().get("role", "") == "lab_supervisor"));
+    }
+
+    function allowedSopType() {
+      return request.resource.contentType == "application/pdf"
+             || request.resource.contentType == "application/msword"
+             || request.resource.contentType
+                == "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+    }
+
+    function sopSizeOk() {
+      return request.resource.size > 0
+             && request.resource.size < 10 * 1024 * 1024;
+    }
+
+    match /clinics/{clinicId}/sops/{testCode}/{fileName} {
+      allow read: if inClinic(clinicId);
+
+      allow create, update: if inClinic(clinicId)
+                            && canEditCatalogue()
+                            && allowedSopType()
+                            && sopSizeOk();
+
+      allow delete: if inClinic(clinicId) && canEditCatalogue();
+    }
+
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}

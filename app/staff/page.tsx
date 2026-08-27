@@ -5,25 +5,28 @@ import { useRouter, useSearchParams } from "next/navigation";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import { useAuth } from "../lib/AuthContext";
 import { isOwner } from "../lib/clinicScope";
-import { canManageStaff, landingPathForRole } from "../lib/permissions";
+import { canManageStaff } from "../lib/permissions";
+import StaffPanel from "../lib/StaffPanel";
 
-function StaffRedirect() {
-  const { role, clinicId } = useAuth();
+function StaffHome() {
+  const { role } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
   const queryClinicId = searchParams.get("clinicId");
+  const owner = isOwner(role);
 
   useEffect(() => {
-    if (isOwner(role)) {
-      router.replace(queryClinicId ? `/owner/clinics/${queryClinicId}/staff` : "/owner");
-      return;
-    }
-    router.replace(landingPathForRole(role, clinicId));
-  }, [role, clinicId, queryClinicId, router]);
+    if (!owner) return;
+    router.replace(queryClinicId ? `/owner/clinics/${queryClinicId}/staff` : "/owner");
+  }, [owner, queryClinicId, router]);
 
-  return (
-    <main className="min-h-screen flex items-center justify-center text-gray-600">Redirecting...</main>
-  );
+  if (owner) {
+    return (
+      <main className="min-h-screen flex items-center justify-center text-gray-600">Redirecting...</main>
+    );
+  }
+
+  return <StaffPanel />;
 }
 
 export default function Staff() {
@@ -34,7 +37,7 @@ export default function Staff() {
           <main className="min-h-screen flex items-center justify-center text-gray-600">Loading...</main>
         }
       >
-        <StaffRedirect />
+        <StaffHome />
       </Suspense>
     </ProtectedRoute>
   );

@@ -16,6 +16,7 @@ export function isTestReviewed(test: { reviewed?: boolean } | undefined | null):
 /** Shown next to H/L flags when the clinic has not confirmed seed/import ranges. Does not block release. */
 export const UNREVIEWED_RANGE_CAVEAT = "Range not confirmed by this laboratory.";
 
+/** Intentionally omits `sopRequired` so seeded tests stay grandfathered and orderable. */
 export function catalogSeedPayload(clinicId: string, test: LabTest, seededAt: string) {
   return {
     code: test.code,

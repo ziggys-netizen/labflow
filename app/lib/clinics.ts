@@ -11,6 +11,10 @@ import { db } from "./firebase";
 import { isPatientDeleted } from "./patientSoftDelete";
 import { parseClinicTier, type ClinicTier } from "./resultModel";
 import { DEFAULT_BREAK_GLASS_MINUTES, DEFAULT_GRACE_MINUTES } from "./roster";
+import {
+  clinicRetentionWriteFields,
+  parseRetentionFromData,
+} from "./clinicRetention";
 
 /** Seven health regions used by the Ministry of Health. */
 export const GAMBIA_HEALTH_REGIONS = [
@@ -43,9 +47,14 @@ export interface ClinicRecord {
   rosteringEnabled: boolean;
   rosterGraceMinutes: number;
   breakGlassMinutes: number;
+  /** Clinic-written period. Empty means not set — never a product default. */
+  retentionPeriod: string;
+  /** Clinic-written basis. Empty means not set. Purge enforcement is later. */
+  retentionBasis: string;
 }
 
 export function clinicFromData(id: string, data: Record<string, unknown>): ClinicRecord {
+  const retention = parseRetentionFromData(data);
   return {
     id,
     name: typeof data.name === "string" ? data.name : "",
@@ -70,6 +79,8 @@ export function clinicFromData(id: string, data: Record<string, unknown>): Clini
       typeof data.breakGlassMinutes === "number" && data.breakGlassMinutes > 0
         ? Math.min(480, Math.round(data.breakGlassMinutes))
         : DEFAULT_BREAK_GLASS_MINUTES,
+    retentionPeriod: retention.retentionPeriod,
+    retentionBasis: retention.retentionBasis,
   };
 }
 
@@ -127,12 +138,15 @@ export async function saveClinicProfile(params: {
   rosteringEnabled: boolean;
   rosterGraceMinutes: number;
   breakGlassMinutes: number;
+  retentionPeriod: string;
+  retentionBasis: string;
   actor: { uid: string; email: string | null };
 }) {
   const idle =
     typeof params.idleLockMinutes === "number" && params.idleLockMinutes > 0
       ? Math.min(60, Math.round(params.idleLockMinutes))
       : 5;
+  const retention = clinicRetentionWriteFields(params.retentionPeriod, params.retentionBasis);
   await updateDoc(doc(db, "clinics", params.clinicId), {
     name: params.name.trim(),
     address: params.address.trim(),
@@ -154,6 +168,7 @@ export async function saveClinicProfile(params: {
       typeof params.breakGlassMinutes === "number" && params.breakGlassMinutes > 0
         ? Math.min(480, Math.round(params.breakGlassMinutes))
         : DEFAULT_BREAK_GLASS_MINUTES,
+    ...retention,
     ...auditFields(params.actor),
   });
 }

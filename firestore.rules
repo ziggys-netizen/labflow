@@ -57,6 +57,12 @@ service cloud.firestore {
              && userDoc().get("role", "") == "clinic_admin";
     }
 
+    // Accounts officers may not read or write clinical records. They read
+    // dailyTestValueRollups only. Totals must not become a patient access path.
+    function isAccountsOfficer() {
+      return isApproved() && userDoc().get("role", "") == "accounts";
+    }
+
     function isSelf(uid) {
       return signedIn() && request.auth.uid == uid;
     }
@@ -179,12 +185,36 @@ service cloud.firestore {
     // Known disclosure pending R4: any signed-in user may get and list clinics,
     // including joinCode queries, because rules cannot see query filters.
     // Unauthenticated is still denied.
+    //
+    // Retention: new clinics must record period + basis (clinic-written; no
+    // product default). Existing docs without those keys stay readable.
+    // Updates may omit the keys until the clinic sets them; once set they
+    // cannot be cleared. Empty strings are not a recorded choice.
+    // Deletion/purge after the period is not enforced here.
+
+    function validClinicRetention(data) {
+      return data.keys().hasAll(["retentionPeriod", "retentionBasis"])
+             && data.retentionPeriod is string
+             && data.retentionPeriod.size() > 0
+             && data.retentionBasis is string
+             && data.retentionBasis.size() > 0;
+    }
+
+    function clinicRetentionWriteOk() {
+      return validClinicRetention(request.resource.data)
+             || (
+               !validClinicRetention(resource.data)
+               && !request.resource.data.keys().hasAny(["retentionPeriod"])
+               && !request.resource.data.keys().hasAny(["retentionBasis"])
+             );
+    }
 
     match /clinics/{clinicId} {
       allow get, list: if signedIn();
-      allow create: if isOwner();
-      allow update: if isOwner()
-                    || (isClinicAdmin() && userClinic() == clinicId);
+      allow create: if isOwner() && validClinicRetention(request.resource.data);
+      allow update: if (isOwner()
+                    || (isClinicAdmin() && userClinic() == clinicId))
+                    && clinicRetentionWriteOk();
       allow delete: if isOwner();
     }
 
@@ -209,67 +239,148 @@ service cloud.firestore {
              && clinicScopedGet(resource.data);
     }
 
+    // Clinical lists (patients, orders, results, catalogue, store). Accounts
+    // are excluded: they must not get() or list() orders or patients.
+    function patientDataGet() {
+      return clinicScopedGet(resource.data) && !isAccountsOfficer();
+    }
+
+    function patientDataCreate() {
+      return clinicalCreate() && !isAccountsOfficer();
+    }
+
+    function patientDataUpdate() {
+      return clinicalUpdate() && !isAccountsOfficer();
+    }
+
     match /patients/{id} {
-      allow get: if clinicalGet();
-      allow list: if clinicalList();
-      allow create: if clinicalCreate();
-      allow update: if clinicalUpdate();
+      allow get: if patientDataGet();
+      allow list: if patientDataGet();
+      allow create: if patientDataCreate();
+      allow update: if patientDataUpdate();
       allow delete: if false;
     }
 
     match /orders/{id} {
-      allow get: if clinicalGet();
-      allow list: if clinicalList();
-      allow create: if clinicalCreate();
-      allow update: if clinicalUpdate();
+      allow get: if patientDataGet();
+      allow list: if patientDataGet();
+      allow create: if patientDataCreate();
+      allow update: if patientDataUpdate();
       allow delete: if false;
     }
 
     match /testCatalog/{id} {
-      allow get: if clinicalGet();
-      allow list: if clinicalList();
-      allow create: if clinicalCreate();
-      allow update: if clinicalUpdate();
+      allow get: if patientDataGet();
+      allow list: if patientDataGet();
+      allow create: if patientDataCreate();
+      allow update: if patientDataUpdate();
       allow delete: if false;
     }
 
     match /inventoryItems/{id} {
-      allow get: if clinicalGet();
-      allow list: if clinicalList();
-      allow create: if clinicalCreate();
-      allow update: if clinicalUpdate();
+      allow get: if patientDataGet();
+      allow list: if patientDataGet();
+      allow create: if patientDataCreate();
+      allow update: if patientDataUpdate();
       allow delete: if false;
     }
 
     match /inventoryBatches/{id} {
-      allow get: if clinicalGet();
-      allow list: if clinicalList();
-      allow create: if clinicalCreate();
-      allow update: if clinicalUpdate();
+      allow get: if patientDataGet();
+      allow list: if patientDataGet();
+      allow create: if patientDataCreate();
+      allow update: if patientDataUpdate();
       allow delete: if false;
     }
 
     match /inventoryMovements/{id} {
-      allow get: if clinicalGet();
-      allow list: if clinicalList();
-      allow create: if clinicalCreate();
-      allow update: if clinicalUpdate();
+      allow get: if patientDataGet();
+      allow list: if patientDataGet();
+      allow create: if patientDataCreate();
+      allow update: if patientDataUpdate();
       allow delete: if false;
     }
 
     match /specimenMovements/{id} {
-      allow get: if clinicalGet();
-      allow list: if clinicalList();
-      allow create: if clinicalCreate();
-      allow update: if clinicalUpdate();
+      allow get: if patientDataGet();
+      allow list: if patientDataGet();
+      allow create: if patientDataCreate();
+      allow update: if patientDataUpdate();
       allow delete: if false;
     }
 
     match /nonconformingEvents/{id} {
-      allow get: if clinicalGet();
-      allow list: if clinicalList();
-      allow create: if clinicalCreate();
-      allow update: if clinicalUpdate();
+      allow get: if patientDataGet();
+      allow list: if patientDataGet();
+      allow create: if patientDataCreate();
+      allow update: if patientDataUpdate();
+      allow delete: if false;
+    }
+
+    // ---------- daily test-value rollups ----------
+    // Aggregate only. Written at result release by lab_manager / lab_supervisor
+    // / owner. Accounts officers may get/list this collection and nothing
+    // clinical — no drill-down from totals into patients or orders.
+    //
+    // Assumed document:
+    //   dailyTestValueRollups/{clinicId}_{yyyy-mm-dd}
+    //   clinicId: string
+    //   date: yyyy-mm-dd
+    //   testCount: number >= 0
+    //   valueOfTestsOrdered: number >= 0  (catalogue price; not revenue)
+    //   byTest: map of { code, name, count, value }
+    //   updatedAt: string
+    // No patientId, patientLabId, patientName, orderId, or results.
+
+    function isNonNegativeNumber(value) {
+      return (value is int || value is float) && value >= 0;
+    }
+
+    function isValidDailyTestValueRollup(data) {
+      return hasClinicId(data)
+             && data.keys().hasOnly(["clinicId", "date", "testCount", "valueOfTestsOrdered", "byTest", "updatedAt"])
+             && data.clinicId.size() <= 128
+             && data.date is string
+             && data.date.matches("^[0-9]{4}-[0-9]{2}-[0-9]{2}$")
+             && data.updatedAt is string
+             && data.updatedAt.size() > 0
+             && data.updatedAt.size() <= 40
+             && isNonNegativeNumber(data.testCount)
+             && isNonNegativeNumber(data.valueOfTestsOrdered)
+             && data.byTest is map
+             && data.byTest.size() <= 200;
+    }
+
+    function rollupIdMatches(id, data) {
+      return id == data.clinicId + "_" + data.date;
+    }
+
+    function canWriteDailyRollup() {
+      return isOwner()
+             || (isApproved() && userDoc().get("role", "") in ["lab_manager", "lab_supervisor"]);
+    }
+
+    function canReadDailyRollup() {
+      return isOwner()
+             || (isApproved() && userDoc().get("role", "") in ["accounts", "clinic_admin"]);
+    }
+
+    match /dailyTestValueRollups/{rollupId} {
+      allow get, list: if canReadDailyRollup() && clinicScopedGet(resource.data);
+
+      allow create: if canWriteDailyRollup()
+                    && isValidDailyTestValueRollup(request.resource.data)
+                    && rollupIdMatches(rollupId, request.resource.data)
+                    && clinicScopedWrite();
+
+      allow update: if canWriteDailyRollup()
+                    && isValidDailyTestValueRollup(request.resource.data)
+                    && rollupIdMatches(rollupId, request.resource.data)
+                    && clinicIdUnchanged()
+                    && request.resource.data.date == resource.data.date
+                    && clinicScopedGet(resource.data)
+                    && clinicScopedWrite();
+
       allow delete: if false;
     }
 

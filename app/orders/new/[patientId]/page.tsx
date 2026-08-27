@@ -1,11 +1,12 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, Suspense } from "react";
 import Link from "next/link";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { db } from "../../../lib/firebase";
 import { doc, getDoc, collection, where, getDocs } from "firebase/firestore";
 import { LabTest, SPECIMEN_TYPE_LABELS, resolveSpecimenType } from "../../../lib/testCatalog";
+import { catalogTestMayBeOrdered, orderSopBlockMessage } from "../../../lib/sopReference";
 import ProtectedRoute from "../../../lib/ProtectedRoute";
 import AppNav from "../../../lib/AppNav";
 import { useAuth } from "../../../lib/AuthContext";
@@ -13,6 +14,7 @@ import { clinicCollectionQuery, isOwner, ownerActingCreateFields } from "../../.
 import ActingClinicPrompt from "../../../lib/ActingClinicPrompt";
 import { canOrderTests } from "../../../lib/permissions";
 import { isOrderForDeletedPatient, isPatientDeleted } from "../../../lib/patientSoftDelete";
+import { isReleasedResultStatus } from "../../../lib/resultAmendment";
 import { trackedAddDoc, writeActorFromUser } from "../../../lib/trackedWrites";
 import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../../../lib/audit";
 import { orderTestsPayload, requiredSpecimenTypes } from "../../../lib/sampleCollection";
@@ -28,7 +30,9 @@ function NewOrderContent() {
   const params = useParams();
   const router = useRouter();
   const { user, role, clinicId, writeClinicId, username, shift } = useAuth();
+  const searchParams = useSearchParams();
   const patientId = params.patientId as string;
+  const recollectFrom = searchParams.get("recollectFrom")?.trim() || "";
   const allowed = canOrderTests(role);
 
   const [patientName, setPatientName] = useState("");
@@ -45,6 +49,7 @@ function NewOrderContent() {
   const [searchTerm, setSearchTerm] = useState("");
   const [selectedTests, setSelectedTests] = useState<LabTest[]>([]);
   const [status, setStatus] = useState("");
+  const [episodeAlreadyCharged, setEpisodeAlreadyCharged] = useState(false);
 
   useEffect(() => {
     async function loadPatient() {
@@ -121,6 +126,25 @@ function NewOrderContent() {
     loadCatalog();
   }, [role, clinicId, writeClinicId]);
 
+  useEffect(() => {
+    if (!recollectFrom) {
+      setEpisodeAlreadyCharged(false);
+      return;
+    }
+    let cancelled = false;
+    getDoc(doc(db, "orders", recollectFrom))
+      .then((snap) => {
+        if (cancelled || !snap.exists()) return;
+        const data = snap.data();
+        if (data.patientId && data.patientId !== patientId) return;
+        setEpisodeAlreadyCharged(isReleasedResultStatus(data.status));
+      })
+      .catch((err) => console.error(err));
+    return () => {
+      cancelled = true;
+    };
+  }, [recollectFrom, patientId]);
+
   const filteredTests = catalog.filter(
     (t) =>
       t.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -128,6 +152,11 @@ function NewOrderContent() {
   );
 
   function addTest(test: LabTest) {
+    const check = catalogTestMayBeOrdered(test);
+    if (!check.ok) {
+      setStatus(check.reason);
+      return;
+    }
     if (!selectedTests.find((t) => t.code === test.code)) {
       setSelectedTests([...selectedTests, test]);
     }
@@ -146,6 +175,11 @@ function NewOrderContent() {
     }
     if (selectedTests.length === 0) {
       setStatus("Select at least one test.");
+      return;
+    }
+    const sopBlock = orderSopBlockMessage(selectedTests);
+    if (sopBlock) {
+      setStatus(sopBlock);
       return;
     }
     if (!writeClinicId) {
@@ -167,6 +201,9 @@ function NewOrderContent() {
           status: "pending",
           createdAt: new Date().toISOString(),
           clinicId: writeClinicId,
+          ...(recollectFrom
+            ? { recollectionOfOrderId: recollectFrom, episodeAlreadyCharged }
+            : {}),
           ...ownerActingCreateFields(role),
         },
         {
@@ -233,11 +270,20 @@ function NewOrderContent() {
     <main className="min-h-screen bg-white">
       <AppNav />
       <div className="max-w-lg mx-auto px-6 py-16">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-1">Order tests</h1>
+        <h1 className="text-2xl font-semibold text-gray-900 mb-1">
+          {recollectFrom ? "Recollection order" : "Order tests"}
+        </h1>
         {isOwner(role) && !writeClinicId && <ActingClinicPrompt />}
         <p className="text-gray-600 mb-6">
           {patientName} — Lab ID: {patientLabId}
         </p>
+        {recollectFrom && (
+          <p className="text-sm text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-6">
+            {episodeAlreadyCharged
+              ? "This recollection will not be counted again. The original episode already carried a charge."
+              : "Rejected samples are not charged. This recollection is the delivered test and will be counted once at release."}
+          </p>
+        )}
 
         {loadingPending && <p className="text-sm text-gray-500 mb-4">Checking for existing orders...</p>}
 
@@ -301,19 +347,36 @@ function NewOrderContent() {
                 {filteredTests.length === 0 && (
                   <p className="text-sm text-gray-500 px-3 py-2">No matching tests found.</p>
                 )}
-                {filteredTests.map((t) => (
-                  <button
-                    key={t.code}
-                    onClick={() => addTest(t)}
-                    className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
-                  >
-                    <span className="font-medium text-gray-900">{t.name}</span>
-                    <span className="text-gray-400 ml-2">{t.category}</span>
-                    <span className="text-gray-400 ml-2">
-                      {SPECIMEN_TYPE_LABELS[resolveSpecimenType(t.specimenType, t.code)]}
-                    </span>
-                  </button>
-                ))}
+                {filteredTests.map((t) => {
+                  const sopCheck = catalogTestMayBeOrdered(t);
+                  if (!sopCheck.ok) {
+                    return (
+                      <div
+                        key={t.code}
+                        className="w-full text-left px-3 py-2 text-sm bg-gray-50 border-b border-gray-100 last:border-b-0"
+                      >
+                        <span className="font-medium text-gray-500">{t.name}</span>
+                        <span className="text-gray-400 ml-2">{t.category}</span>
+                        <p className="text-xs text-red-800 mt-0.5">
+                          SOP reference required in Clinic Settings before this test can be ordered.
+                        </p>
+                      </div>
+                    );
+                  }
+                  return (
+                    <button
+                      key={t.code}
+                      onClick={() => addTest(t)}
+                      className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
+                    >
+                      <span className="font-medium text-gray-900">{t.name}</span>
+                      <span className="text-gray-400 ml-2">{t.category}</span>
+                      <span className="text-gray-400 ml-2">
+                        {SPECIMEN_TYPE_LABELS[resolveSpecimenType(t.specimenType, t.code)]}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
             )}
 
@@ -365,7 +428,13 @@ function NewOrderContent() {
 export default function NewOrder() {
   return (
     <ProtectedRoute require={canOrderTests}>
-      <NewOrderContent />
+      <Suspense
+        fallback={
+          <main className="min-h-screen flex items-center justify-center text-gray-600">Loading...</main>
+        }
+      >
+        <NewOrderContent />
+      </Suspense>
     </ProtectedRoute>
   );
 }
