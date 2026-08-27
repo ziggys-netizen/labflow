@@ -214,7 +214,7 @@ export function SyncStatus() {
   return (
     <>
       {(showBar || showOffline) && (
-        <div className="border-t border-amber-200 bg-amber-50 px-6 py-2">
+        <div className="no-print border-t border-amber-200 bg-amber-50 px-6 py-2">
           <div className="max-w-5xl mx-auto text-sm text-amber-950 flex flex-wrap items-center gap-x-4 gap-y-1">
             {showBar && <p>{persistenceReason}</p>}
             {showOffline && (
@@ -230,7 +230,7 @@ export function SyncStatus() {
         </div>
       )}
       {(syncing || showProblems) && (
-        <div className="px-6 py-1">
+        <div className="no-print px-6 py-1">
           <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-end gap-3 text-xs">
             {syncing && <span className="text-gray-500">Syncing…</span>}
             {showProblems && (
@@ -246,7 +246,7 @@ export function SyncStatus() {
         </div>
       )}
       {panelOpen && (
-        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 py-8">
+        <div className="no-print fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/40 px-4 py-8">
           <div
             role="dialog"
             aria-modal="true"

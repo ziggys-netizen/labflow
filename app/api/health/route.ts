@@ -23,7 +23,7 @@ export async function GET() {
       return notOk();
     }
     await credential.getAccessToken();
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, serverNow: new Date().toISOString() });
   } catch (err) {
     if (err instanceof AdminUnavailableError || isAdminCredentialError(err)) {
       return notOk();

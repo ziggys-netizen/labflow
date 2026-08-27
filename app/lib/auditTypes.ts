@@ -1,11 +1,14 @@
 /** One audit log shape for client `logAudit` and Admin SDK `auditAdmin`. */
 
+import { sessionOffRoster } from "./rosterStamp";
+
 export type AuditActor = {
   uid: string;
   email: string | null;
   role: string | null;
   shift: string | null;
   actingAsOwner: boolean;
+  offRoster?: boolean;
 };
 
 export type AuditLogWrite = {
@@ -16,6 +19,7 @@ export type AuditLogWrite = {
   targetId: string;
   targetLabel: string;
   detail?: Record<string, unknown>;
+  offRoster?: boolean;
 };
 
 /** Stored `auditLogs/{id}` fields. `detail` is omitted when the writer passed none. */
@@ -27,6 +31,7 @@ export type AuditLogRecord = {
   actorRole: string | null;
   actorShift: string | null;
   actingAsOwner: boolean;
+  offRoster: boolean;
   action: string;
   targetCollection: string;
   targetId: string;
@@ -54,6 +59,7 @@ export const AUDIT_ACTIONS = [
   "order.selfReleased",
   "order.criticalNotified",
   "order.provisionalPrinted",
+  "disclosure.print",
   "patient.correct",
   "patient.erasure",
   "staff.pinReset",
@@ -76,6 +82,12 @@ export const AUDIT_ACTIONS = [
   "preApproval.consume",
   "preApproval.lapse",
   "report.exported",
+  "roster.breakGlass",
+  "roster.entryCreate",
+  "roster.entryUpdate",
+  "roster.entryDelete",
+  "roster.exceptionCreate",
+  "roster.exceptionDelete",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];
@@ -89,6 +101,7 @@ export const AUDIT_CSV_COLUMNS = [
   "actorRole",
   "actorShift",
   "actingAsOwner",
+  "offRoster",
   "targetCollection",
   "targetId",
   "targetLabel",
@@ -109,6 +122,7 @@ export function actorFromAuth(
     role,
     shift,
     actingAsOwner: role === "owner",
+    offRoster: sessionOffRoster() || undefined,
   };
 }
 
@@ -136,6 +150,9 @@ export function auditLogPayload(entry: AuditLogWrite): Record<string, unknown> {
     at: new Date().toISOString(),
   };
   if (entry.detail) payload.detail = entry.detail;
+  if (entry.offRoster === true || entry.actor.offRoster === true || sessionOffRoster()) {
+    payload.offRoster = true;
+  }
   return payload;
 }
 
@@ -157,6 +174,7 @@ export function parseAuditLog(id: string, data: Record<string, unknown>): AuditL
     actorRole: asString(data.actorRole),
     actorShift: asString(data.actorShift),
     actingAsOwner: data.actingAsOwner === true,
+    offRoster: data.offRoster === true,
     action: asString(data.action) || "",
     targetCollection: asString(data.targetCollection) || "",
     targetId: asString(data.targetId) || "",

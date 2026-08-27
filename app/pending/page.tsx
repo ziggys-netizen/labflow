@@ -5,10 +5,10 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/AuthContext";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import { forceTokenRefresh, syncCustomClaims } from "../lib/authApi";
-import { landingPathForRole } from "../lib/permissions";
+import { continuePathAfterAuth, sessionAuthInput } from "../lib/authState";
 
 function PendingContent() {
-  const { user, role, status, clinicId, logout } = useAuth();
+  const { user, role, status, clinicId, writeClinicId, logout } = useAuth();
   const router = useRouter();
   const refreshing = useRef(false);
   const rejected = status === "rejected";
@@ -25,13 +25,13 @@ function PendingContent() {
         console.error(err);
       }
       if (!cancelled) {
-        router.replace(landingPathForRole(role, clinicId));
+        router.replace(continuePathAfterAuth(sessionAuthInput({ user, role, status, clinicId, writeClinicId })));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [status, user, role, clinicId, router]);
+  }, [status, user, role, clinicId, writeClinicId, router]);
 
   return (
     <main className="min-h-screen bg-white flex items-center justify-center px-6">

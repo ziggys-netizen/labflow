@@ -49,6 +49,7 @@ export type ResultVersion = {
 export type PendingAmendment = {
   values: ResultValues;
   amendmentReason: string;
+  amendmentReasonCode?: string | null;
   initiatedBy: string | null;
   initiatedByUid: string | null;
   initiatedByRole: string | null;
@@ -201,6 +202,7 @@ export function parsePendingAmendment(value: unknown): PendingAmendment | null {
   return {
     values: cloneResultValues(rec.values as ResultValues),
     amendmentReason,
+    amendmentReasonCode: asString(rec.amendmentReasonCode),
     initiatedBy: asString(rec.initiatedBy),
     initiatedByUid: asString(rec.initiatedByUid),
     initiatedByRole: asString(rec.initiatedByRole),
@@ -385,6 +387,7 @@ export function startAmendment(input: {
     const pending: PendingAmendment = {
       values: cloneResultValues(input.newValues),
       amendmentReason: reasonText,
+      amendmentReasonCode: input.reason,
       initiatedBy: input.actor.email,
       initiatedByUid: input.actor.uid,
       initiatedByRole: input.actor.role,

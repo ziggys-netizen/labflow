@@ -1,12 +1,15 @@
 "use client";
 
 import Link from "next/link";
+import { useRouter } from "next/navigation";
+import { useEffect, useState } from "react";
 import { useAuth } from "../lib/AuthContext";
-import { landingPathForRole } from "../lib/permissions";
-import { useState } from "react";
+import { continuePathAfterAuth, sessionAuthInput } from "../lib/authState";
 
 export default function Login() {
-  const { user, role, clinicId, login, loading, popupBlocked, authError } = useAuth();
+  const { user, role, status, clinicId, writeClinicId, login, loading, popupBlocked, authError } =
+    useAuth();
+  const router = useRouter();
   const [error, setError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
 
@@ -25,7 +28,14 @@ export default function Login() {
   }
 
   const failureMessage = authError || error;
-  const workspaceHref = landingPathForRole(role, clinicId);
+  const continueHref = continuePathAfterAuth(
+    sessionAuthInput({ user, role, status, clinicId, writeClinicId })
+  );
+
+  useEffect(() => {
+    if (loading || !user || continueHref === "/login") return;
+    router.replace(continueHref);
+  }, [loading, user, continueHref, router]);
 
   if (loading && !failureMessage && !signingIn) {
     return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading...</main>;
@@ -35,17 +45,10 @@ export default function Login() {
     return (
       <main className="min-h-screen bg-white flex items-center justify-center px-6">
         <div className="max-w-sm w-full text-center">
-          <p className="text-gray-600 mb-4">You are already signed in as {user.email}.</p>
-          <div className="flex flex-col items-center gap-2">
-            {role === "owner" && (
-              <Link href="/owner" className="text-gray-900 underline font-medium">
-                Owner
-              </Link>
-            )}
-            <Link href={workspaceHref} className="text-gray-900 underline font-medium">
-              Go to your workspace
-            </Link>
-          </div>
+          <p className="text-gray-600 mb-4">Continuing as {user.email}…</p>
+          <Link href={continueHref} className="text-gray-900 underline font-medium">
+            Continue
+          </Link>
         </div>
       </main>
     );

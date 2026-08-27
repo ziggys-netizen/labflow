@@ -109,6 +109,7 @@ export type ActingStaff = {
   role: string | null;
   shift: string | null;
   clinicId: string | null;
+  offRoster?: boolean;
 };
 
 export function clinicPinDocId(clinicId: string, uid: string): string {

@@ -8,6 +8,7 @@ import { useAuth } from "../lib/AuthContext";
 import { useClinicCollection } from "../lib/clinicListen";
 import { canEnterResults, canOrderTests } from "../lib/permissions";
 import { isOrderForDeletedPatient } from "../lib/patientSoftDelete";
+import { patientsByIdFromDocs, resolvePatientNameById } from "../lib/patientDisplay";
 import { orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../lib/sampleCollection";
 import { orderDisplayLabel, orderDisplayToneClass } from "../lib/orderLifecycle";
 
@@ -33,15 +34,18 @@ function OrdersContent() {
     direction: "desc",
     enabled: allowed,
   });
+  const patientsQuery = useClinicCollection("patients", role, clinicId, { enabled: allowed });
+  const patientsById = patientsByIdFromDocs(patientsQuery.docs);
 
   const orders: Order[] = query.docs
     .filter((docSnap) => !isOrderForDeletedPatient(docSnap.data()))
     .map((docSnap) => {
       const data = docSnap.data();
       const parsed = orderCollectionFromData(docSnap.id, data, docSnap.metadata.hasPendingWrites);
+      const patientId = typeof data.patientId === "string" ? data.patientId : "";
       return {
         id: parsed.id,
-        patientName: data.patientName,
+        patientName: resolvePatientNameById(patientId, patientsById) || "Unknown patient",
         patientLabId: data.patientLabId,
         tests: parsed.tests,
         status: parsed.status,

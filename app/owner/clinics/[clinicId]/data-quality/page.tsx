@@ -17,7 +17,8 @@ import {
 import ProtectedRoute from "../../../../lib/ProtectedRoute";
 import AppNav from "../../../../lib/AppNav";
 import { useAuth } from "../../../../lib/AuthContext";
-import { actorFromAuth, logAudit } from "../../../../lib/audit";
+import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../../../../lib/audit";
+import { patientDisplayName } from "../../../../lib/patientDisplay";
 import { db } from "../../../../lib/firebase";
 import { isOwner } from "../../../../lib/clinicScope";
 import { landingPathForRole } from "../../../../lib/permissions";
@@ -69,9 +70,10 @@ function DataQualityContent() {
       setLoading(true);
       setStatus("");
       try {
-        const [clinic, snapshot] = await Promise.all([
+        const [clinic, snapshot, patientSnap] = await Promise.all([
           loadClinic(clinicId),
           getDocs(query(collection(db, "orders"), where("clinicId", "==", clinicId))),
+          getDocs(query(collection(db, "patients"), where("clinicId", "==", clinicId))),
         ]);
         if (cancelled) return;
         if (!clinic) {
@@ -81,14 +83,19 @@ function DataQualityContent() {
         }
         setClinicMissing(false);
         setClinicName(clinic.name || clinicId);
+        const namesByPatient = new Map<string, string>();
+        for (const d of patientSnap.docs) {
+          namesByPatient.set(d.id, patientDisplayName(d.data()));
+        }
         const rows: CollectionQualityOrder[] = [];
         for (const d of snapshot.docs) {
           const data = d.data();
           if (isOrderForDeletedPatient(data)) continue;
           const parsed = orderCollectionFromData(d.id, data);
+          const patientId = typeof data.patientId === "string" ? data.patientId : "";
           rows.push({
             id: parsed.id,
-            patientName: typeof data.patientName === "string" ? data.patientName : "",
+            patientName: namesByPatient.get(patientId) || "",
             patientLabId: typeof data.patientLabId === "string" ? data.patientLabId : "",
             createdAt: typeof data.createdAt === "string" ? data.createdAt : "",
             reviewedAt: typeof data.reviewedAt === "string" ? data.reviewedAt : null,
@@ -174,7 +181,6 @@ function DataQualityContent() {
         clinicId,
         clinicName: clinicName || clinicId,
         orderId: row.id,
-        patientName: row.patientName,
         patientLabId: row.patientLabId,
         createdAt: row.createdAt,
         clearedTimes: row.stampedTimes,
@@ -188,24 +194,20 @@ function DataQualityContent() {
         console.error(err);
       }
       if (actor) {
-        try {
-          await logAudit({
-            clinicId,
-            actor,
-            action: AUDIT_CLEAR_COLLECTION_TIME,
-            targetCollection: "orders",
-            targetId: row.id,
-            targetLabel: [row.patientName, row.patientLabId].filter(Boolean).join(" — ") || row.id,
-            detail: {
-              reasons: row.reasons,
-              clearedTimes: row.stampedTimes,
-              createdAt: row.createdAt,
-              reviewedAt: row.reviewedAt,
-            },
-          });
-        } catch (err) {
-          console.error(err);
-        }
+        safeLogAudit({
+          clinicId,
+          actor,
+          action: AUDIT_CLEAR_COLLECTION_TIME,
+          targetCollection: "orders",
+          targetId: row.id,
+          targetLabel: auditTargetLabel(row.patientLabId, "order"),
+          detail: {
+            reasons: row.reasons,
+            clearedTimes: row.stampedTimes,
+            createdAt: row.createdAt,
+            reviewedAt: row.reviewedAt,
+          },
+        });
       }
 
       setClearedIds((prev) => new Set(prev).add(row.id));

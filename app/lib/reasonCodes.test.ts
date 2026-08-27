@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   AMENDMENT_CODES,
+  BREAK_GLASS_CODES,
   SAMPLE_REJECTION_CODES,
   SELF_RELEASE_CODES,
   formatJustification,
@@ -24,6 +25,21 @@ describe("justificationError", () => {
       "Describe the reason when you choose Other."
     );
     expect(justificationError(SELF_RELEASE_CODES, "sole_approver_on_duty", "")).toBeNull();
+  });
+});
+
+describe("break-glass codes", () => {
+  it("includes roster incorrect so a wrong roster is visible as a staffing signal", () => {
+    expect(BREAK_GLASS_CODES.map((item) => item.code)).toEqual([
+      "covering_absent_colleague",
+      "urgent_sample",
+      "overrunning_shift",
+      "called_in",
+      "roster_incorrect",
+      "other",
+    ]);
+    expect(justificationReady(BREAK_GLASS_CODES, "roster_incorrect", "")).toBe(true);
+    expect(justificationReady(BREAK_GLASS_CODES, "other", "")).toBe(false);
   });
 });
 

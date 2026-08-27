@@ -2,7 +2,7 @@ import { doc, writeBatch, type DocumentData, type UpdateData } from "firebase/fi
 import { db } from "./firebase";
 import { getClinicDocs } from "./clinicScope";
 import { trackedBatchCommit } from "./trackedWrites";
-import { actorFromAuth, safeLogAudit } from "./audit";
+import { actorFromAuth, auditTargetLabel, safeLogAudit } from "./audit";
 
 const BATCH_LIMIT = 450;
 
@@ -74,6 +74,7 @@ export async function softDeletePatient(params: {
   role: string | null;
   clinicId: string | null;
   targetLabel?: string;
+  reasonCode?: string;
   patientClinicId?: string | null;
 }): Promise<void> {
   const deletionReason = params.reason.trim();
@@ -113,15 +114,15 @@ export async function softDeletePatient(params: {
 
   const auditActor = actorFromAuth(params.actor, params.actor.role, params.actor.shift ?? null);
   if (auditActor) {
-    await safeLogAudit({
+    safeLogAudit({
       clinicId: params.patientClinicId || params.clinicId,
       actor: auditActor,
       action: "patient.softDelete",
       targetCollection: "patients",
       targetId: params.patientId,
-      targetLabel: params.targetLabel || params.patientId,
+      targetLabel: params.targetLabel || auditTargetLabel(null, "patient"),
       detail: {
-        reason: deletionReason,
+        reasonCode: params.reasonCode || "",
         fields: ["deleted", "deletedAt", "deletedBy", "deletedByUid", "deletedByRole", "deletionReason"],
       },
     });
@@ -176,7 +177,7 @@ export async function restorePatient(params: {
 
   const auditActor = actorFromAuth(params.actor, params.actor.role, params.actor.shift ?? null);
   if (auditActor) {
-    await safeLogAudit({
+    safeLogAudit({
       clinicId: params.patientClinicId || params.clinicId,
       actor: auditActor,
       action: "patient.restore",

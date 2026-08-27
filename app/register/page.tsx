@@ -178,10 +178,12 @@ const COUNTRY_CODES = [
 ];
 
 const LAWFUL_BASES = [
-  { code: "consent", label: "Consent" },
+  { code: "contract", label: "Contract (typical private clinic)" },
+  { code: "legitimate_interests", label: "Legitimate interests (private clinic only)" },
+  { code: "public_task", label: "Public task (public authority)" },
   { code: "legal_obligation", label: "Legal obligation" },
   { code: "vital_interests", label: "Vital interests" },
-  { code: "public_task", label: "Public task" },
+  { code: "consent", label: "Consent — do not use as the primary clinical path" },
 ] as const;
 
 // Normalizes a name: trims extra whitespace, converts to consistent Title Case
@@ -211,7 +213,7 @@ export default function Register() {
   const [dob, setDob] = useState("");
   const [ageYears, setAgeYears] = useState("");
   const [ageMonths, setAgeMonths] = useState("");
-  const [lawfulBasis, setLawfulBasis] = useState("consent");
+  const [lawfulBasis, setLawfulBasis] = useState("contract");
   const [referredOutside, setReferredOutside] = useState(false);
   const [referringFacility, setReferringFacility] = useState("");
   const [countryCode, setCountryCode] = useState("+220");
@@ -255,9 +257,6 @@ export default function Register() {
     }
     if (!LAWFUL_BASES.some((item) => item.code === lawfulBasis)) {
       newErrors.lawfulBasis = "Choose a lawful basis.";
-    }
-    if (!consentGiven) {
-      newErrors.consent = "Patient consent is required before registration.";
     }
 
     setErrors(newErrors);
@@ -348,7 +347,7 @@ export default function Register() {
           referringClinician: cleanClinician,
           referringFacility: referringFacility.trim() || null,
           reasonForVisit: reasonForVisit.trim() || null,
-          consentGiven: true,
+          consentGiven,
           lawfulBasis,
           createdAt: new Date().toISOString(),
           clinicId: writeClinicId,
@@ -374,7 +373,7 @@ export default function Register() {
         writer.shift ?? shift
       );
       if (actor) {
-        await safeLogAudit({
+        safeLogAudit({
           clinicId: writeClinicId,
           actor,
           action: "patient.register",
@@ -590,7 +589,8 @@ export default function Register() {
               ))}
             </select>
             <p className="text-xs text-gray-500 mt-1">
-              A consent checkbox is not a lawful basis on its own. Confirm with counsel before production use.
+              This is the legal ground, not the information checkbox below. Default is contract for a private clinic.
+              Public authorities cannot use legitimate interests.
             </p>
           </div>
 
@@ -615,10 +615,10 @@ export default function Register() {
                 className="mt-1"
               />
               <span>
-                The patient (or their guardian) has been informed about this laboratory testing and consents to registration and sample collection.
+                The patient (or their guardian) has been told what this laboratory will do with their record.
+                This is a record of what was said — not the legal ground for processing, and not a condition of the test.
               </span>
             </label>
-            {errors.consent && <p className="text-sm text-red-600 mt-1">{errors.consent}</p>}
           </div>
 
           <button type="submit" className="w-full bg-gray-900 text-white rounded-lg py-2 font-medium hover:bg-gray-800 transition">

@@ -89,6 +89,10 @@ async function record(ctx: NewTrackedWrite): Promise<string> {
   return entry.id;
 }
 
+/**
+ * Roster windows are not applied here. A write queued offline and synced
+ * outside the roster is retained — the work happened. See PRD §5.2.1.
+ */
 export async function trackedSetDoc(
   ref: DocumentReference,
   data: DocumentData,

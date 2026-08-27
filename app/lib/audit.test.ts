@@ -21,6 +21,7 @@ function sampleRecord(overrides: Partial<AuditLogRecord> = {}): AuditLogRecord {
     actorRole: "technician",
     actorShift: null,
     actingAsOwner: false,
+    offRoster: false,
     action: "patient.register",
     targetCollection: "patients",
     targetId: "p1",
@@ -60,6 +61,26 @@ describe("audit log shape", () => {
     expect(typeof payload.at).toBe("string");
     expect("detail" in payload).toBe(false);
     expect("joinCode" in payload).toBe(false);
+    expect("offRoster" in payload).toBe(false);
+  });
+
+  it("stamps offRoster when the actor is working through break-glass", () => {
+    const payload = auditLogPayload({
+      clinicId: "clinicA",
+      actor: {
+        uid: "uid-1",
+        email: "a@lab.test",
+        role: "technician",
+        shift: null,
+        actingAsOwner: false,
+        offRoster: true,
+      },
+      action: "order.approved",
+      targetCollection: "orders",
+      targetId: "o1",
+      targetLabel: "LF-1 · order",
+    });
+    expect(payload.offRoster).toBe(true);
   });
 
   it("stamps owner actingAsOwner from role", () => {
@@ -72,6 +93,30 @@ describe("audit log shape", () => {
     expect(auditTargetLabel("LF-1", "patient")).toBe("LF-1 · patient");
     expect(auditTargetLabel("LF-1", "order")).toBe("LF-1 · order");
     expect(auditTargetLabel(null, "patient")).toBe("patient");
+  });
+
+  it("never writes a patient's name field into targetLabel", () => {
+    const patient = { name: "Ada Lovelace", labId: "LF-20260821-0001" };
+    const targetLabel = auditTargetLabel(patient.labId, "patient");
+    const payload = auditLogPayload({
+      clinicId: "clinicA",
+      actor: {
+        uid: "uid-1",
+        email: "a@lab.test",
+        role: "technician",
+        shift: null,
+        actingAsOwner: false,
+      },
+      action: "patient.softDelete",
+      targetCollection: "patients",
+      targetId: "p1",
+      targetLabel,
+      detail: { reasonCode: "duplicate" },
+    });
+    expect(payload.targetLabel).toBe("LF-20260821-0001 · patient");
+    expect(String(payload.targetLabel)).not.toEqual(patient.name);
+    expect(String(payload.targetLabel).toLowerCase()).not.toContain(patient.name.toLowerCase());
+    expect(payload.detail).toEqual({ reasonCode: "duplicate" });
   });
 });
 
@@ -101,7 +146,9 @@ describe("audit action vocabulary", () => {
       "preApproval.create",
       "order.amended",
       "report.exported",
+      "disclosure.print",
       "joinCode.failedAttempt",
+      "roster.breakGlass",
     ];
     for (const action of required) {
       expect(AUDIT_ACTIONS).toContain(action);
@@ -120,6 +167,7 @@ describe("audit CSV", () => {
       "actorRole",
       "actorShift",
       "actingAsOwner",
+      "offRoster",
       "targetCollection",
       "targetId",
       "targetLabel",

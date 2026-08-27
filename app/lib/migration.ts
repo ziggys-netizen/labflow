@@ -126,7 +126,6 @@ export type HistoricalOrderStatus =
 
 export interface HistoricalOrderImportData {
   patientId: string;
-  patientName: string;
   patientLabId: string;
   tests: { code: string; name: string; specimenType?: SpecimenType }[];
   status: HistoricalOrderStatus;
@@ -1738,7 +1737,6 @@ function validateHistoricalOrders(
       issues.length === 0 && patient && createdAt && status
         ? {
             patientId: patient.id,
-            patientName: patient.name,
             patientLabId: patient.labId,
             tests: tests.map((test) => ({
               code: test.code,

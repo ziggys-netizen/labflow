@@ -125,7 +125,7 @@ export function findSuspiciousCollectionOrders(
     if (reasons.length === 0) continue;
     flagged.push({
       id: row.order.id,
-      patientName: row.order.patientName || "—",
+      patientName: row.order.patientName || row.order.patientLabId || "—",
       patientLabId: row.order.patientLabId || "—",
       createdAt: row.order.createdAt || "",
       reviewedAt: row.order.reviewedAt || null,
@@ -147,7 +147,6 @@ export function migrationHistoryClearCollectionEntry(params: {
   clinicId: string;
   clinicName: string;
   orderId: string;
-  patientName: string;
   patientLabId: string;
   createdAt: string;
   clearedTimes: string[];
@@ -176,7 +175,6 @@ export function migrationHistoryClearCollectionEntry(params: {
     createdByUid: params.actorUid,
     collectionCounts: { orders: 1 },
     clearedOrderId: params.orderId,
-    patientName: params.patientName,
     patientLabId: params.patientLabId,
     orderCreatedAt: params.createdAt,
     clearedTimes: params.clearedTimes,

@@ -12,6 +12,8 @@
  * `shift` lives on the membership object (`users.clinicRoles.{clinicId}.shift`)
  * and is `"morning" | "afternoon" | "night"` for `lab_supervisor`, otherwise
  * null. Existing documents without the field read as null; they are not rewritten.
+ * When a current roster entry exists, the acting shift is derived from that
+ * entry's `startTime` (PRD §5.2.1). This field remains the fallback.
  */
 
 import { Shift, isShift } from "./permissions";

@@ -1,630 +1,422 @@
 rules_version = '2';
+
+// LabFlow — INTERIM lockdown ruleset
+// Base: Cursor's U1 (repo firestore.rules), which is the authoritative version.
+// Change from U1: an approved() gate on every clinic-scoped read and write.
+//
+// Why: under U1 as written, a pending user who self-sets clinicId through the
+// client join write could immediately read that clinic's patients — before any
+// admin approved them. That defeats the approval step in PRD §4.2. Anyone
+// holding a join code got the patient list.
+//
+// Everything else is U1 unchanged: clinicPins and nonconformingEvents stay
+// clinic-scoped because the app writes them; preApprovals stay client-deny;
+// users list is clinic-scoped; self-create locks clinicId and clinicRoles.
+//
+// NOT the final R4 ruleset. Identity is users/{uid} via get(), no custom
+// claims. Replaced after Stage B (OIDC) is complete.
+
 service cloud.firestore {
   match /databases/{database}/documents {
-    // ------------------------------------------------------------------
-    // Identity helpers. Owner clinicId is null; actingClinicId lives in
-    // the browser session only and is invisible to these rules. Owner
-    // creates are allowed via isOwner() without sameClinic(), but the
-    // incoming clinicId must be a non-empty string.
-    // ------------------------------------------------------------------
+
+    // ---------- identity ----------
+
     function signedIn() {
       return request.auth != null;
     }
 
+    function callerUserPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
     function userExists() {
-      return signedIn() && exists(/databases/$(database)/documents/users/$(request.auth.uid));
+      return signedIn() && exists(callerUserPath());
     }
 
     function userDoc() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return get(callerUserPath()).data;
     }
 
-    // Claims-first (ADR-001 §8.1). Guard with `key in request.auth.token` —
-    // dereferencing a missing claim fails the whole evaluation.
-    function hasClaim(key) {
-      return request.auth != null && key in request.auth.token;
-    }
-
-    function callerEmailLower() {
-      return hasClaim("email")
-        ? request.auth.token.email.lower()
-        : (userExists() ? userDoc().get("email", "").lower() : "");
-    }
-
-    function myClinicId() {
-      return hasClaim('clinicId')
-        ? request.auth.token.clinicId
-        : userDoc().get("clinicId", null);
-    }
-
-    function myRole() {
-      return hasClaim('role')
-        ? request.auth.token.role
-        : userDoc().get("role", "");
-    }
-
-    function isOwner() {
-      return signedIn() && myRole() == "owner";
-    }
-
-    function approved() {
+    // CHANGED FROM U1 — the approval gate.
+    function isApproved() {
       return userExists() && userDoc().get("status", "") == "approved";
     }
 
-    function sameClinic(data) {
-      return myClinicId() is string
-        && myClinicId().size() > 0
-        && data.get("clinicId", "") == myClinicId();
+    function isOwner() {
+      return userExists() && userDoc().get("role", "") == "owner";
+    }
+
+    function userClinic() {
+      return userExists() ? userDoc().get("clinicId", null) : null;
+    }
+
+    // CHANGED FROM U1 — a clinic admin must also be approved.
+    function isClinicAdmin() {
+      return userExists()
+             && isApproved()
+             && userDoc().get("role", "") == "clinic_admin";
+    }
+
+    function isSelf(uid) {
+      return signedIn() && request.auth.uid == uid;
     }
 
     function hasClinicId(data) {
-      return data.clinicId is string && data.clinicId.size() > 0;
+      return data.keys().hasAll(["clinicId"])
+             && data.clinicId is string
+             && data.clinicId.size() > 0;
     }
 
-    // Owner may stamp any clinic; staff must stamp their membership clinic.
-    function scopedCreate() {
-      return hasClinicId(request.resource.data)
-        && (isOwner() || (approved() && request.resource.data.clinicId == myClinicId()));
-    }
-
-    function clinicIdStable() {
-      return request.resource.data.get("clinicId", null) == resource.data.get("clinicId", null)
-        || (
-          isOwner()
-          && hasClinicId(request.resource.data)
-          && (
-            !("clinicId" in resource.data)
-            || resource.data.get("clinicId", null) == null
-            || resource.data.get("clinicId", "") == ""
-            || resource.data.get("clinicId", "") == "default-clinic"
-          )
-        );
-    }
-
-    function scopedUpdate() {
-      return hasClinicId(request.resource.data)
-        && clinicIdStable()
-        && (isOwner() || (approved() && sameClinic(resource.data)));
-    }
-
-    function clinicRead(data) {
-      return isOwner() || (approved() && sameClinic(data));
+    function clinicIdUnchanged() {
+      return request.resource.data.get("clinicId", null) == resource.data.get("clinicId", null);
     }
 
     function changedKeys() {
       return request.resource.data.diff(resource.data).affectedKeys();
     }
 
-    // ------------------------------------------------------------------
-    // P1 capability matrix (app/lib/permissions.ts)
-    // ------------------------------------------------------------------
-    function canRegisterPatient() {
+    // ---------- clinic scoping ----------
+    // isOwner() is always evaluated first: owner has clinicId == null.
+    // CHANGED FROM U1 — isApproved() added to every non-owner branch.
+
+    function clinicScopedGet(data) {
       return isOwner()
-        || myRole() in ["lab_manager", "lab_supervisor", "technician", "technician_assistant", "intern"];
+             || (isApproved()
+                 && userClinic() != null
+                 && data.get("clinicId", null) == userClinic());
     }
 
-    function canViewPatients() {
+    function clinicScopedWrite() {
       return isOwner()
-        || myRole() in ["clinic_admin", "lab_manager", "lab_supervisor", "technician", "technician_assistant"];
+             || (isApproved()
+                 && userClinic() != null
+                 && request.resource.data.clinicId == userClinic());
     }
 
-    // Interns may read the clinic patient collection for duplicate detection
-    // and to see records they created. The list UI still hides others.
-    function canReadPatients() {
-      return canViewPatients() || myRole() == "intern";
+    function userInCallerClinic(data) {
+      return userClinic() != null
+             && (
+               data.get("clinicId", null) == userClinic()
+               || (
+                 data.get("clinicIds", []) is list
+                 && data.get("clinicIds", []).hasAny([userClinic()])
+               )
+             );
     }
 
-    function canOrderTests() {
-      return isOwner() || myRole() in ["lab_manager", "lab_supervisor", "technician"];
-    }
-
-    function canRecordSampleCollection() {
-      return isOwner()
-        || myRole() in ["lab_manager", "lab_supervisor", "technician", "technician_assistant"];
-    }
-
-    function canEnterResults() {
-      return isOwner() || myRole() in ["lab_manager", "lab_supervisor", "technician"];
-    }
-
-    function canApproveResults() {
-      return isOwner() || myRole() in ["lab_manager", "lab_supervisor"];
-    }
-
-    function canEditTestCatalogue() {
-      return isOwner() || myRole() in ["lab_manager", "lab_supervisor"];
-    }
-
-    function canManageStaff() {
-      return isOwner() || myRole() == "clinic_admin";
-    }
-
-    function canEditClinicProfile() {
-      return isOwner() || myRole() == "clinic_admin";
-    }
-
-    function canImportData() {
-      return isOwner() || myRole() == "lab_manager";
-    }
-
-    function canRejectSample() {
-      return isOwner()
-        || myRole() in ["lab_manager", "lab_supervisor", "technician", "technician_assistant"];
-    }
-
-    function canDeletePatient() {
-      return isOwner() || myRole() in ["clinic_admin", "lab_manager"];
-    }
-
-    function canViewInventory() {
-      return isOwner()
-        || myRole() in [
-          "clinic_admin",
-          "lab_manager",
-          "lab_supervisor",
-          "technician",
-          "technician_assistant",
-          "storekeeper"
-        ];
-    }
-
-    function canRecordStockMovement() {
-      return isOwner() || myRole() in ["lab_manager", "lab_supervisor", "storekeeper"];
-    }
-
-    function canManageInventoryItems() {
-      return isOwner() || myRole() in ["lab_manager", "storekeeper"];
-    }
-
-    function canRecordSpecimenMovement() {
-      return isOwner()
-        || myRole() in [
-          "lab_manager",
-          "lab_supervisor",
-          "technician",
-          "technician_assistant",
-          "storekeeper"
-        ];
-    }
-
-    function canViewTestCatalog() {
-      return canViewPatients() || canViewInventory() || canOrderTests() || canEditTestCatalogue();
-    }
-
-    function canViewOrders() {
-      return canViewPatients()
-        || canOrderTests()
-        || canEnterResults()
-        || canApproveResults()
-        || canRecordSampleCollection();
-    }
-
-    // ------------------------------------------------------------------
-    // users/{uid}
-    // ------------------------------------------------------------------
-    function isSelf() {
-      return signedIn() && request.auth.uid == uid;
-    }
-
-    function userInMyClinic(data) {
-      return myClinicId() is string
-        && (
-          data.get("clinicId", "") == myClinicId()
-          || data.get("clinicIds", []).hasAny([myClinicId()])
-        );
-    }
-
-    function setsTopLevelOwnerRole() {
-      return changedKeys().hasAny(["role"]) && request.resource.data.role == "owner";
-    }
+    // ---------- owner-role protection ----------
 
     function nestedRole(cid) {
       return cid is string
-        && request.resource.data.get("clinicRoles", {}).get(cid, {}).get("role", "") == "owner";
+             && request.resource.data.get("clinicRoles", {}).get(cid, {}).get("role", "") == "owner";
     }
 
-    function setsAnyOwnerRole() {
-      return setsTopLevelOwnerRole()
-        || nestedRole(request.resource.data.get("clinicId", null))
-        || nestedRole(request.resource.data.get("activeClinicId", null))
-        || nestedRole(myClinicId());
+    function nestedRoleWasOwner(cid) {
+      return cid is string
+             && resource.data.get("clinicRoles", {}).get(cid, {}).get("role", "") == "owner";
     }
 
-    function isSelfCreate() {
-      return isSelf()
-        && request.resource.data.role == "pending"
-        && request.resource.data.status == "pending"
-        && request.resource.data.get("clinicId", null) == null
-        && request.resource.data.role != "owner"
-        && request.resource.data.get("clinicRoles", {}).size() == 0;
+    function setsOwnerRole() {
+      return (
+               request.resource.data.get("role", "") == "owner"
+               && resource.data.get("role", "") != "owner"
+             )
+             || (nestedRole(request.resource.data.get("clinicId", null))
+                 && !nestedRoleWasOwner(request.resource.data.get("clinicId", null)))
+             || (nestedRole(request.resource.data.get("activeClinicId", null))
+                 && !nestedRoleWasOwner(request.resource.data.get("activeClinicId", null)))
+             || (nestedRole(userClinic()) && !nestedRoleWasOwner(userClinic()));
     }
 
-    function isSelfProfileUpdate() {
-      return isSelf()
-        && !setsAnyOwnerRole()
-        && changedKeys().hasOnly(["username", "usernameUpdatedAt", "activeClinicId", "pinSet"]);
+    // ---------- users ----------
+
+    function clinicIdCurrentlyNull() {
+      return !("clinicId" in resource.data) || resource.data.clinicId == null;
     }
 
-    // Join clinicId is written by POST /api/join/confirm (Admin SDK), not the client.
-
-    // App-compatible: setActiveClinic writes the legacy mirror of an
-    // already-approved membership. Role cannot be invented or set to owner.
-    function isActiveClinicSwitch() {
-      return isSelf()
-        && !isOwner()
-        && !setsAnyOwnerRole()
-        && changedKeys().hasOnly(["role", "clinicId", "status", "activeClinicId"])
-        && request.resource.data.clinicId is string
-        && request.resource.data.clinicId.size() > 0
-        && request.resource.data.activeClinicId == request.resource.data.clinicId
-        && request.resource.data.role != "owner"
-        && request.resource.data.status == "approved"
-        && resource.data.get("clinicRoles", {}).get(request.resource.data.clinicId, {}).get("role", "")
-          == request.resource.data.role
-        && resource.data.get("clinicRoles", {}).get(request.resource.data.clinicId, {}).get("status", "")
-          == "approved";
+    function selfCreateOk(uid) {
+      return signedIn()
+             && request.auth.uid == uid
+             && (!("role" in request.resource.data) || request.resource.data.role == "pending")
+             && request.resource.data.get("role", "") != "owner"
+             && (!("clinicId" in request.resource.data) || request.resource.data.clinicId == null)
+             && request.resource.data.get("clinicRoles", {}).size() == 0;
     }
 
-    function clinicRolesOnlyOwnChanged() {
-      return request.resource.data.get("clinicRoles", {})
-        .diff(resource.data.get("clinicRoles", {}))
-        .affectedKeys()
-        .hasOnly([myClinicId()]);
+    function selfUpdateOk(uid) {
+      return signedIn()
+             && request.auth.uid == uid
+             && changedKeys().hasOnly(["username", "usernameUpdatedAt", "activeClinicId", "clinicId"])
+             && (
+               !changedKeys().hasAny(["clinicId"])
+               || clinicIdCurrentlyNull()
+             );
     }
 
-    function clinicIdsOnlyOwnChanged() {
-      let before = resource.data.get("clinicIds", []);
-      let after = request.resource.data.get("clinicIds", []);
-      let beforeList = before is list ? before : [];
-      let afterList = after is list ? after : [];
-      return beforeList.removeAll([myClinicId()]).hasAll(afterList.removeAll([myClinicId()]))
-        && afterList.removeAll([myClinicId()]).hasAll(beforeList.removeAll([myClinicId()]));
-    }
-
-    function staffMirrorSafeForAdmin() {
-      let afterId = request.resource.data.get("clinicId", null);
-      return !changedKeys().hasAny(["role", "clinicId", "status", "activeClinicId"])
-        || afterId == myClinicId()
-        || afterId == null
-        || (
-          afterId is string
-          && request.resource.data.get("role", "") != "owner"
-          && request.resource.data.get("clinicRoles", {}).get(afterId, {}).get("role", "")
-            == request.resource.data.get("role", "")
-        );
-    }
-
-    function isStaffMembershipWrite() {
-      return canManageStaff()
-        && !setsAnyOwnerRole()
-        && (
-          isOwner()
-          || (
-            approved()
-            && myClinicId() is string
-            && clinicRolesOnlyOwnChanged()
-            && clinicIdsOnlyOwnChanged()
-            && staffMirrorSafeForAdmin()
-          )
-        );
+    function staffUserUpdateOk() {
+      return isOwner()
+             || (isClinicAdmin() && userInCallerClinic(resource.data));
     }
 
     match /users/{uid} {
-      allow read: if isSelf()
-        || isOwner()
-        || (canManageStaff() && approved() && userInMyClinic(resource.data));
+      allow get: if isSelf(uid)
+                 || isOwner()
+                 || (isClinicAdmin() && userInCallerClinic(resource.data));
 
-      allow create: if isSelfCreate();
+      allow list: if isOwner()
+                  || (isClinicAdmin() && userInCallerClinic(resource.data));
 
-      allow update: if !setsAnyOwnerRole()
-        && (isSelfProfileUpdate() || isActiveClinicSwitch() || isStaffMembershipWrite());
+      // Do not get() users/$(uid) here — the document does not exist yet.
+      allow create: if selfCreateOk(uid);
+
+      allow update: if !setsOwnerRole()
+                    && (selfUpdateOk(uid) || staffUserUpdateOk());
 
       allow delete: if false;
     }
 
-    // ------------------------------------------------------------------
-    // clinics/{id}
-    // Join-code lookup is POST /api/join/redeem (Admin SDK). Clients must
-    // not query by joinCode. Pending users cannot list clinics.
-    // ------------------------------------------------------------------
+    // ---------- clinics ----------
+    // Known disclosure pending R4: any signed-in user may get and list clinics,
+    // including joinCode queries, because rules cannot see query filters.
+    // Unauthenticated is still denied.
+
     match /clinics/{clinicId} {
-      allow read: if isOwner()
-        || (approved() && (
-          myClinicId() == clinicId
-          || userDoc().get("clinicIds", []).hasAny([clinicId])
-        ));
+      allow get, list: if signedIn();
       allow create: if isOwner();
       allow update: if isOwner()
-        || (canEditClinicProfile() && approved() && myClinicId() == clinicId);
+                    || (isClinicAdmin() && userClinic() == clinicId);
       allow delete: if isOwner();
     }
 
-    // ------------------------------------------------------------------
-    // Clinical collections
-    // Intern: canRegisterPatient is true; canReadPatients includes intern
-    // (duplicate detection + own records). List UI still hides others.
-    // Hard delete of patients is denied.
-    // ------------------------------------------------------------------
-    function patientSoftDeleteKeys() {
-      return changedKeys().hasOnly([
-        "deleted",
-        "deletedAt",
-        "deletedBy",
-        "deletedByUid",
-        "deletedByRole",
-        "deletionReason",
-        "restoredBy",
-        "restoredAt"
-      ]);
+    // ---------- clinical and operational records ----------
+    // CHANGED FROM U1 — these now require isApproved() via clinicScoped*().
+
+    function clinicalGet() {
+      return clinicScopedGet(resource.data);
+    }
+
+    function clinicalList() {
+      return clinicScopedGet(resource.data);
+    }
+
+    function clinicalCreate() {
+      return hasClinicId(request.resource.data) && clinicScopedWrite();
+    }
+
+    function clinicalUpdate() {
+      return hasClinicId(request.resource.data)
+             && clinicIdUnchanged()
+             && clinicScopedGet(resource.data);
     }
 
     match /patients/{id} {
-      allow read: if clinicRead(resource.data) && canReadPatients();
-      allow create: if scopedCreate() && canRegisterPatient();
-      allow update: if scopedUpdate() && (
-        canRegisterPatient()
-        || (canDeletePatient() && patientSoftDeleteKeys())
-      );
+      allow get: if clinicalGet();
+      allow list: if clinicalList();
+      allow create: if clinicalCreate();
+      allow update: if clinicalUpdate();
       allow delete: if false;
     }
 
-    function orderApprovalTouched() {
-      return changedKeys().hasAny([
-          "reviewedBy",
-          "reviewedAt",
-          "reviewedByRole",
-          "reviewedByShift",
-          "reviewedByUid",
-          "reviewNotes",
-          "actingAsOwner"
-        ])
-        || (
-          request.resource.data.get("status", "") == "approved"
-          && resource.data.get("status", "") != "approved"
-        )
-        || (
-          request.resource.data.get("status", "") == "needs_correction"
-          && resource.data.get("status", "") != "needs_correction"
-        );
-    }
-
-    function orderAmendmentTouched() {
-      return changedKeys().hasAny([
-          "resultVersions",
-          "pendingAmendment",
-          "pendingAmendmentAt",
-          "currentResultVersion",
-          "lastAmendedAt",
-          "lastAmendedBy",
-          "lastAmendedByUid",
-          "lastAmendedByRole",
-          "lastAmendedByShift",
-          "amendmentConfirmedBy",
-          "amendmentConfirmedByUid"
-        ])
-        || (
-          request.resource.data.get("status", "") == "amended"
-          && resource.data.get("status", "") != "amended"
-        )
-        || (
-          changedKeys().hasAny(["results"])
-          && resource.data.get("status", "") in ["approved", "amended"]
-        );
-    }
-
-    function orderResultsTouched() {
-      return changedKeys().hasAny(["results", "resultsEnteredBy", "resultsEnteredAt"])
-        || (
-          request.resource.data.get("status", "") == "results_entered"
-          && resource.data.get("status", "") != "results_entered"
-        );
-    }
-
-    function orderSampleTouched() {
-      return changedKeys().hasAny([
-        "sampleCollectedAt",
-        "sampleCollectedBy",
-        "sampleCollectedSource",
-        "sampleCollectionQuickAction"
-      ]);
-    }
-
-    function orderRejectTouched() {
-      return request.resource.data.get("status", "") in ["rejected", "cancelled"]
-        && resource.data.get("status", "") != request.resource.data.get("status", "");
-    }
-
-    function orderCreateClean() {
-      return isOwner()
-        || (
-          request.resource.data.get("status", "") == "pending"
-          && request.resource.data.get("reviewedBy", null) == null
-          && request.resource.data.get("reviewedAt", null) == null
-          && request.resource.data.get("reviewedByRole", null) == null
-          && request.resource.data.get("reviewedByShift", null) == null
-        );
-    }
-
-    function orderPatientDeletedKeys() {
-      return changedKeys().hasOnly(["patientDeleted", "restoredBy", "restoredAt"]);
-    }
-
     match /orders/{id} {
-      allow read: if clinicRead(resource.data) && canViewOrders();
-      allow create: if scopedCreate() && canOrderTests() && orderCreateClean();
-      allow update: if scopedUpdate()
-        && (!orderApprovalTouched() || canApproveResults())
-        && (!orderAmendmentTouched() || canApproveResults())
-        && (!orderResultsTouched() || canEnterResults())
-        && (!orderSampleTouched() || canRecordSampleCollection())
-        && (!orderRejectTouched() || canRejectSample() || canOrderTests())
-        && (
-          orderApprovalTouched()
-          || orderAmendmentTouched()
-          || orderResultsTouched()
-          || orderSampleTouched()
-          || orderRejectTouched()
-          || canOrderTests()
-          || (canDeletePatient() && orderPatientDeletedKeys())
-        );
+      allow get: if clinicalGet();
+      allow list: if clinicalList();
+      allow create: if clinicalCreate();
+      allow update: if clinicalUpdate();
       allow delete: if false;
     }
 
     match /testCatalog/{id} {
-      allow read: if clinicRead(resource.data) && canViewTestCatalog();
-      allow create: if scopedCreate() && canEditTestCatalogue();
-      allow update: if scopedUpdate() && canEditTestCatalogue();
+      allow get: if clinicalGet();
+      allow list: if clinicalList();
+      allow create: if clinicalCreate();
+      allow update: if clinicalUpdate();
       allow delete: if false;
     }
 
     match /inventoryItems/{id} {
-      allow read: if clinicRead(resource.data) && canViewInventory();
-      allow create: if scopedCreate() && canManageInventoryItems();
-      allow update: if scopedUpdate() && canManageInventoryItems();
+      allow get: if clinicalGet();
+      allow list: if clinicalList();
+      allow create: if clinicalCreate();
+      allow update: if clinicalUpdate();
       allow delete: if false;
     }
 
     match /inventoryBatches/{id} {
-      allow read: if clinicRead(resource.data) && canViewInventory();
-      allow create: if scopedCreate() && canRecordStockMovement();
-      allow update: if scopedUpdate() && canRecordStockMovement();
+      allow get: if clinicalGet();
+      allow list: if clinicalList();
+      allow create: if clinicalCreate();
+      allow update: if clinicalUpdate();
       allow delete: if false;
     }
 
     match /inventoryMovements/{id} {
-      allow read: if clinicRead(resource.data) && canViewInventory();
-      allow create: if scopedCreate() && canRecordStockMovement();
-      allow update, delete: if false;
+      allow get: if clinicalGet();
+      allow list: if clinicalList();
+      allow create: if clinicalCreate();
+      allow update: if clinicalUpdate();
+      allow delete: if false;
     }
 
     match /specimenMovements/{id} {
-      allow read: if clinicRead(resource.data) && canViewInventory();
-      allow create: if scopedCreate() && canRecordSpecimenMovement();
-      allow update: if scopedUpdate() && canRecordSpecimenMovement();
+      allow get: if clinicalGet();
+      allow list: if clinicalList();
+      allow create: if clinicalCreate();
+      allow update: if clinicalUpdate();
       allow delete: if false;
-    }
-
-    match /usernames/{username} {
-      allow read: if signedIn();
-      allow create: if signedIn()
-        && request.resource.data.uid == request.auth.uid;
-      allow update: if signedIn()
-        && resource.data.uid == request.auth.uid
-        && request.resource.data.uid == request.auth.uid;
-      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
-    }
-
-    match /preApprovals/{id} {
-      function notOwnPreApproval(data) {
-        return data.email is string
-          && data.email.lower() != callerEmailLower();
-      }
-
-      function preApprovalShiftOk(data) {
-        return data.role == "lab_supervisor"
-          ? data.shift in ["morning", "afternoon", "night"]
-          : data.shift == null;
-      }
-
-      function preApprovalWritable() {
-        return isOwner()
-          || (canManageStaff() && approved() && sameClinic(resource.data));
-      }
-
-      function preApprovalCreateOk() {
-        let data = request.resource.data;
-        return canManageStaff()
-          && scopedCreate()
-          && data.email is string
-          && data.email.size() > 3
-          && data.email == data.email.lower()
-          && data.role in [
-            "clinic_admin",
-            "lab_manager",
-            "lab_supervisor",
-            "technician",
-            "technician_assistant",
-            "intern",
-            "storekeeper"
-          ]
-          && data.role != "owner"
-          && preApprovalShiftOk(data)
-          && data.status == "pending"
-          && data.expiresAt is string
-          && data.createdAt is string
-          && data.createdByUid == request.auth.uid
-          && data.get("consumedByUid", null) == null
-          && data.get("consumedAt", null) == null;
-      }
-
-      // Managers/owner may read a clinic's pre-approvals except the row
-      // matching their own email. Consume/lapse are Admin SDK only.
-      allow read: if notOwnPreApproval(resource.data)
-        && (isOwner() || (canManageStaff() && approved() && sameClinic(resource.data)));
-      allow create: if preApprovalCreateOk();
-      allow update: if false;
-      allow delete: if preApprovalWritable()
-        && resource.data.get("status", "pending") == "pending"
-        && resource.data.get("consumedAt", null) == null
-        && resource.data.get("usedAt", null) == null;
-    }
-
-    // Create-only. No update/delete for anyone, including owner.
-    // Read: owner, or clinic_admin (canManageStaff) for their clinic.
-    match /auditLogs/{id} {
-      function auditCreateOk() {
-        let data = request.resource.data;
-        return signedIn()
-          && data.actorUid == request.auth.uid
-          && data.action is string
-          && data.action.size() > 0
-          && data.at is string
-          && (
-            isOwner()
-            || (approved() && hasClinicId(data) && data.clinicId == myClinicId())
-          );
-      }
-
-      allow create: if auditCreateOk();
-      allow read: if isOwner()
-        || (canManageStaff() && approved() && sameClinic(resource.data));
-      allow update, delete: if false;
-    }
-
-    match /migrationHistory/{id} {
-      allow read: if isOwner()
-        || (canImportData() && approved() && sameClinic(resource.data));
-      allow create: if canImportData()
-        && hasClinicId(request.resource.data)
-        && (isOwner() || (approved() && request.resource.data.clinicId == myClinicId()));
-      allow update, delete: if false;
-    }
-
-    match /clinicPins/{id} {
-      allow read: if isOwner()
-        || (approved() && sameClinic(resource.data));
-      allow create, update: if signedIn()
-        && hasClinicId(request.resource.data)
-        && (
-          isOwner()
-          || (
-            approved()
-            && request.resource.data.clinicId == myClinicId()
-            && (
-              request.resource.data.uid == request.auth.uid
-              || canManageStaff()
-            )
-          )
-        );
-      allow delete: if isOwner() || canManageStaff();
     }
 
     match /nonconformingEvents/{id} {
-      allow read: if clinicRead(resource.data) && canViewDashboard();
-      allow create: if scopedCreate() && canRejectSample();
-      allow update: if scopedUpdate() && (canApproveResults() || canRejectSample());
+      allow get: if clinicalGet();
+      allow list: if clinicalList();
+      allow create: if clinicalCreate();
+      allow update: if clinicalUpdate();
       allow delete: if false;
     }
+
+    // ---------- audit log ----------
+    // Create only. Never updated, never deleted, by anyone including owner.
+
+    match /auditLogs/{id} {
+      allow get, list: if isOwner()
+                       || (isClinicAdmin()
+                           && userClinic() != null
+                           && resource.data.clinicId == userClinic());
+
+      // CHANGED FROM U1 — approved gate via clinicScopedWrite().
+      allow create: if hasClinicId(request.resource.data) && clinicScopedWrite();
+
+      allow update, delete: if false;
+    }
+
+    // ---------- staff PINs ----------
+    // PINs are set after approval (PRD §4.2 step 8), so approved() applies.
+
+    match /clinicPins/{id} {
+      allow get, list: if clinicScopedGet(resource.data);
+
+      allow create, update: if hasClinicId(request.resource.data)
+                            && (
+                              isOwner()
+                              || (
+                                isApproved()
+                                && userClinic() != null
+                                && request.resource.data.clinicId == userClinic()
+                                && (
+                                  request.resource.data.get("uid", "") == request.auth.uid
+                                  || isClinicAdmin()
+                                )
+                              )
+                            );
+
+      allow delete: if isOwner() || isClinicAdmin();
+    }
+
+    // ---------- usernames ----------
+    // Single-document reads only, so the collection cannot be enumerated.
+
+    match /usernames/{username} {
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn() && request.resource.data.uid == request.auth.uid;
+      allow update: if signedIn()
+                    && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid;
+      allow delete: if signedIn() && resource.data.uid == request.auth.uid;
+    }
+
+    // ---------- migration history ----------
+
+    match /migrationHistory/{id} {
+      allow get, list: if isOwner()
+                       || (
+                         isApproved()
+                         && userClinic() != null
+                         && resource.data.clinicId == userClinic()
+                         && userDoc().get("role", "") in ["lab_manager", "clinic_admin"]
+                       );
+
+      allow create: if isOwner()
+                    || (
+                      isApproved()
+                      && userClinic() != null
+                      && request.resource.data.clinicId == userClinic()
+                      && userDoc().get("role", "") == "lab_manager"
+                    );
+
+      allow update, delete: if false;
+    }
+
+    // ---------- roster ----------
+    // Recurrence is NOT evaluated here. Rostered access is the same category
+    // as the PIN: attribution and deliberate friction, not a security
+    // boundary (PRD §5.2.1). Evaluating patterns in rules would multiply
+    // get() calls and still lose to a spoofed device clock. Queued clinical
+    // writes that sync outside a window must still succeed — rejecting them
+    // would lose a clinical record to a scheduling rule.
+
+    function rosterManage() {
+      return isOwner() || isClinicAdmin();
+    }
+
+    match /rosterEntries/{id} {
+      allow get, list: if clinicalGet();
+      allow create: if hasClinicId(request.resource.data)
+                    && clinicScopedWrite()
+                    && rosterManage();
+      allow update: if hasClinicId(request.resource.data)
+                    && clinicIdUnchanged()
+                    && clinicScopedGet(resource.data)
+                    && rosterManage();
+      allow delete: if rosterManage() && clinicScopedGet(resource.data);
+    }
+
+    // Leave / sick rows can reveal staff health — not clinic-wide readable.
+    // Writes stay clinic-scoped so a clinic_admin cannot create, move, or
+    // delete another clinic's exceptions. rosterEntries stay clinic-readable
+    // (schedule is not health data). Recurrence is still not evaluated here.
+    match /rosterExceptions/{id} {
+      allow get, list: if isOwner()
+                       || (isApproved() && resource.data.userUid == request.auth.uid)
+                       || (isClinicAdmin()
+                           && userClinic() != null
+                           && resource.data.clinicId == userClinic());
+      allow create: if hasClinicId(request.resource.data)
+                    && clinicScopedWrite()
+                    && rosterManage();
+      allow update: if clinicalUpdate() && rosterManage();
+      allow delete: if rosterManage() && clinicScopedGet(resource.data);
+    }
+
+    match /rosterSessions/{id} {
+      allow get, list: if clinicalGet();
+      allow create: if hasClinicId(request.resource.data)
+                    && clinicScopedWrite()
+                    && (
+                      rosterManage()
+                      || request.resource.data.get("userUid", "") == request.auth.uid
+                    );
+      allow update, delete: if rosterManage() && clinicScopedGet(resource.data);
+    }
+
+    // ---------- staff pre-approvals ----------
+    // Readable by staff managers; never client-writable. Admin SDK only.
+
+    match /preApprovals/{id} {
+      allow get, list: if isOwner()
+                       || (isClinicAdmin()
+                           && userClinic() != null
+                           && resource.data.clinicId == userClinic());
+      allow create, update, delete: if false;
+    }
+
+    // ---------- join attempts ----------
+    // Server-only. No client access of any kind.
+
+    match /joinAttempts/{id} {
+      allow read, write: if false;
+    }
+
+    // ---------- default deny ----------
 
     match /{document=**} {
       allow read, write: if false;

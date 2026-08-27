@@ -240,7 +240,7 @@ function PatientsContent() {
       if (collected) {
         const actor = actorFromAuth(user, role, shift);
         if (actor) {
-          await safeLogAudit({
+          safeLogAudit({
             clinicId: patient.clinicId || clinicId,
             actor,
             action: "order.sampleCollected",
@@ -293,6 +293,7 @@ function PatientsContent() {
         role,
         clinicId,
         targetLabel: auditTargetLabel(pendingDelete.labId, "patient"),
+        reasonCode: deletionCode,
         patientClinicId: pendingDelete.clinicId,
       });
       setPendingDelete(null);
@@ -365,10 +366,14 @@ function PatientsContent() {
                       <td className="py-2 pr-2 align-middle">
                         <Link
                           href={`/patients/${p.id}/print`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          title={`Print record for ${p.name}`}
-                          aria-label={`Print record for ${p.name}`}
+                          title={
+                            (ordersByPatient[p.id] || []).some((o) =>
+                              isReleasedResultStatus(o.status)
+                            )
+                              ? `Print report for ${p.name}`
+                              : `No released report for ${p.name} yet`
+                          }
+                          aria-label={`Print report for ${p.name}`}
                           className="inline-flex text-gray-500 hover:text-gray-900"
                         >
                           <PrintIcon />

@@ -164,6 +164,10 @@ export function canManageStaff(role: string | null | undefined) {
   return allows(role, "owner", "clinic_admin");
 }
 
+export function isClinicAdmin(role: string | null | undefined) {
+  return role === "clinic_admin";
+}
+
 /**
  * Nested clinic profile/staff pages under `/owner/clinics/[id]`.
  * Owner: any clinic. clinic_admin: only the clinic currently active on their account.

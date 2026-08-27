@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
+import Link from "next/link";
 import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
 import { doc, getDocs } from "firebase/firestore";
@@ -10,6 +11,7 @@ import { isTestReviewed, UNREVIEWED_RANGE_CAVEAT } from "../../lib/catalogSeed";
 import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
 import NotYetSynced from "../../lib/NotYetSynced";
+import PrintIcon from "../../lib/PrintIcon";
 import { clinicCollectionQuery, isOwner, ownerActingReviewFields } from "../../lib/clinicScope";
 import { subscribeDocument } from "../../lib/clinicListen";
 import { useConnection } from "../../lib/ConnectionContext";
@@ -23,7 +25,8 @@ import {
   canRejectSample,
   canSendBackForCorrection,
 } from "../../lib/permissions";
-import { actorFromAuth, logAudit } from "../../lib/audit";
+import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../../lib/audit";
+import { patientDisplayName } from "../../lib/patientDisplay";
 import {
   OFFLINE_AMENDMENT_MESSAGE,
   SELF_RELEASE_MESSAGE,
@@ -77,6 +80,7 @@ import {
   type SampleCollections,
 } from "../../lib/sampleCollection";
 import { toDateTimeLocal, fromDateTimeLocal } from "../../lib/datetime";
+import { clearResultDraft, loadResultDraft, saveResultDraft } from "../../lib/rosterDrafts";
 
 interface OrderTest {
   code: string;
@@ -86,7 +90,6 @@ interface OrderTest {
 
 interface OrderData {
   patientId: string;
-  patientName: string;
   patientLabId: string;
   tests: OrderTest[];
   status: string;
@@ -157,7 +160,11 @@ function OrderDetailContent() {
   const [expandedTest, setExpandedTest] = useState<string | null>(null);
   const [collectionTimes, setCollectionTimes] = useState<Partial<Record<SpecimenType, string>>>({});
   const [editingType, setEditingType] = useState<SpecimenType | null>(null);
-  const [patientRecord, setPatientRecord] = useState<{ id: string; sex: string | null } | null>(null);
+  const [patientRecord, setPatientRecord] = useState<{
+    id: string;
+    name: string;
+    sex: string | null;
+  } | null>(null);
   const resultsDirty = useRef(false);
   const amendDirty = useRef(false);
   const loading = loadedOrderId !== orderId;
@@ -183,8 +190,24 @@ function OrderDetailContent() {
             sampleCollectedSource: parseSampleCollectedSource(data.sampleCollectedSource),
             notYetSynced: snap.metadata.hasPendingWrites,
           });
-          if (!resultsDirty.current) setResults(data.results || {});
-          if (!amendDirty.current) setAmendDraft(cloneResultValues(data.results));
+          if (!resultsDirty.current) {
+            const draft = loadResultDraft(orderId);
+            if (draft && Object.keys(draft.results).length > 0) {
+              resultsDirty.current = true;
+              setResults(draft.results);
+              if (draft.amendDraft && Object.keys(draft.amendDraft).length > 0) {
+                amendDirty.current = true;
+                setAmendDraft(draft.amendDraft);
+              } else {
+                setAmendDraft(cloneResultValues(data.results));
+              }
+            } else {
+              setResults(data.results || {});
+              if (!amendDirty.current) setAmendDraft(cloneResultValues(data.results));
+            }
+          } else if (!amendDirty.current) {
+            setAmendDraft(cloneResultValues(data.results));
+          }
         }
         setLoadedOrderId(orderId);
       },
@@ -203,8 +226,12 @@ function OrderDetailContent() {
       "patients",
       patientId,
       (snap) => {
-        const sex = snap.exists() ? snap.data()?.sex : null;
-        setPatientRecord({ id: patientId, sex: typeof sex === "string" ? sex : null });
+        const data = snap.exists() ? snap.data() : null;
+        setPatientRecord({
+          id: patientId,
+          name: patientDisplayName(data),
+          sex: typeof data?.sex === "string" ? data.sex : null,
+        });
       },
       (err) => {
         console.error(err);
@@ -240,13 +267,22 @@ function OrderDetailContent() {
   function updateResultValue(testCode: string, paramName: string, value: string) {
     if (!resultsEditable || !canEnterResults(role)) return;
     resultsDirty.current = true;
-    setResults((prev) => ({
-      ...prev,
-      [testCode]: {
-        ...(prev[testCode] || {}),
-        [paramName]: value,
-      },
-    }));
+    setResults((prev) => {
+      const next = {
+        ...prev,
+        [testCode]: {
+          ...(prev[testCode] || {}),
+          [paramName]: value,
+        },
+      };
+      saveResultDraft({
+        orderId,
+        results: next,
+        amendDraft,
+        savedAt: new Date().toISOString(),
+      });
+      return next;
+    });
   }
 
   function orderWriteMeta(summary: string, expected: Record<string, unknown>) {
@@ -258,7 +294,6 @@ function OrderDetailContent() {
       operation: "update" as const,
       summary,
       clinicId: order?.clinicId || clinicId,
-      patientName: order?.patientName,
       patientLabId: order?.patientLabId,
       orderId,
       expected,
@@ -281,11 +316,11 @@ function OrderDetailContent() {
       { ...updates, sampleCollectionQuickAction: null },
       { merge: true },
       orderWriteMeta(
-        `Recorded ${SPECIMEN_TYPE_LABELS[type].toLowerCase()} collection for ${order?.patientName ?? "order"}`,
+        `Recorded ${SPECIMEN_TYPE_LABELS[type].toLowerCase()} collection for ${order?.patientLabId ?? "order"}`,
         { sampleCollections: { [type]: { collectedAt: iso } } }
       )
     );
-    await auditOrder("order.sampleCollected", { specimenType: type, source: SAMPLE_COLLECTED_SOURCE.order });
+    auditOrder("order.sampleCollected", { specimenType: type, source: SAMPLE_COLLECTED_SOURCE.order });
     setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
     setEditingType(null);
     setStatus(`${SPECIMEN_TYPE_LABELS[type]} collection recorded.`);
@@ -307,18 +342,19 @@ function OrderDetailContent() {
       doc(db, "orders", orderId),
       updates,
       { merge: true },
-      orderWriteMeta(`Entered results for ${order?.patientName ?? "order"}`, {
+      orderWriteMeta(`Entered results for ${order?.patientLabId ?? "order"}`, {
         status: "results_entered",
       })
     );
     resultsDirty.current = false;
+    clearResultDraft(orderId);
     setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
-    await auditOrder("order.resultsEntered", { status: "results_entered" });
+    auditOrder("order.resultsEntered", { status: "results_entered" });
     setStatus("Results submitted for review.");
     setTimeout(() => setStatus(""), 2500);
   }
 
-  async function auditOrder(
+  function auditOrder(
     action:
       | "order.approved"
       | "order.sentBack"
@@ -336,19 +372,15 @@ function OrderDetailContent() {
       writer.shift
     );
     if (!actor) return;
-    try {
-      await logAudit({
-        clinicId: order?.clinicId || clinicId || null,
-        actor,
-        action,
-        targetCollection: "orders",
-        targetId: orderId,
-        targetLabel: [order?.patientLabId, "order"].filter(Boolean).join(" · ") || orderId,
-        detail,
-      });
-    } catch (err) {
-      console.error(err);
-    }
+    safeLogAudit({
+      clinicId: order?.clinicId || clinicId || null,
+      actor,
+      action,
+      targetCollection: "orders",
+      targetId: orderId,
+      targetLabel: auditTargetLabel(order?.patientLabId, "order"),
+      detail,
+    });
   }
 
   function amendmentActor(): AmendmentActor | null {
@@ -397,12 +429,12 @@ function OrderDetailContent() {
       doc(db, "orders", orderId),
       updates,
       { merge: true },
-      orderWriteMeta(`Released results for ${order?.patientName ?? "order"}`, {
+      orderWriteMeta(`Released results for ${order?.patientLabId ?? "order"}`, {
         status: "approved",
       })
     );
     setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
-    await auditOrder("order.approved", {
+    auditOrder("order.approved", {
       status: "approved",
       selfReleased: ownResults,
       selfReleaseReasonCode: ownResults ? selfReleaseCode : null,
@@ -438,12 +470,12 @@ function OrderDetailContent() {
       doc(db, "orders", orderId),
       updates,
       { merge: true },
-      orderWriteMeta(`Sent results back for ${order?.patientName ?? "order"}`, {
+      orderWriteMeta(`Sent results back for ${order?.patientLabId ?? "order"}`, {
         status: "needs_correction",
       })
     );
     setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
-    await auditOrder("order.sentBack", { status: "needs_correction", reasonCode: sendBackCode });
+    auditOrder("order.sentBack", { status: "needs_correction", reasonCode: sendBackCode });
     setSendBackCode("");
     setSendBackNote("");
     setStatus("Sent back for correction.");
@@ -479,7 +511,7 @@ function OrderDetailContent() {
       doc(db, "orders", orderId),
       updates,
       { merge: true },
-      orderWriteMeta(`Rejected sample for ${order.patientName}`, { status: "rejected" })
+      orderWriteMeta(`Rejected sample for ${order.patientLabId}`, { status: "rejected" })
     );
     if (nce.clinicId) {
       await trackedSetDoc(
@@ -497,7 +529,7 @@ function OrderDetailContent() {
       );
     }
     setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
-    await auditOrder("order.rejected", { reasonCode: rejectCode });
+    auditOrder("order.rejected", { reasonCode: rejectCode });
     setStatus("Sample rejected. A nonconforming event was recorded.");
     setTimeout(() => setStatus(""), 4000);
   }
@@ -520,10 +552,10 @@ function OrderDetailContent() {
       doc(db, "orders", orderId),
       updates,
       { merge: true },
-      orderWriteMeta(`Cancelled order for ${order.patientName}`, { status: "cancelled" })
+      orderWriteMeta(`Cancelled order for ${order.patientLabId}`, { status: "cancelled" })
     );
     setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
-    await auditOrder("order.cancelled", { reasonCode: cancelCode });
+    auditOrder("order.cancelled", { reasonCode: cancelCode });
     setStatus("Order stopped.");
     setTimeout(() => setStatus(""), 2500);
   }
@@ -547,12 +579,12 @@ function OrderDetailContent() {
       doc(db, "orders", orderId),
       { criticalNotification: notification },
       { merge: true },
-      orderWriteMeta(`Recorded critical notification for ${order.patientName}`, {
+      orderWriteMeta(`Recorded critical notification for ${order.patientLabId}`, {
         criticalNotification: notification,
       })
     );
     setOrder((prev) => (prev ? { ...prev, criticalNotification: notification, notYetSynced: true } : prev));
-    await auditOrder("order.criticalNotified", { outcome: criticalOutcome });
+    auditOrder("order.criticalNotified", { outcome: criticalOutcome });
     setStatus("Critical-result communication recorded.");
     setTimeout(() => setStatus(""), 2500);
   }
@@ -602,8 +634,8 @@ function OrderDetailContent() {
       { merge: true },
       orderWriteMeta(
         result.mode === "pending"
-          ? `Requested amendment for ${order.patientName}`
-          : `Amended results for ${order.patientName}`,
+          ? `Requested amendment for ${order.patientLabId}`
+          : `Amended results for ${order.patientLabId}`,
         result.mode === "applied"
           ? { status: "amended" }
           : { pendingAmendmentAt: result.updates.pendingAmendmentAt }
@@ -615,10 +647,10 @@ function OrderDetailContent() {
     setAmendReason("");
     if (result.mode === "applied") {
       setResults(result.updates.results as ResultValues);
-      await auditOrder(
+      auditOrder(
         "order.amended",
         amendmentAuditDetail({
-          reason: formatJustification(AMENDMENT_CODES, amendReason, amendNote),
+          reason: amendReason,
           previousVersion: result.previousVersion,
           newVersion: result.newVersion,
           amender: actor,
@@ -662,15 +694,15 @@ function OrderDetailContent() {
       doc(db, "orders", orderId),
       result.updates,
       { merge: true },
-      orderWriteMeta(`Confirmed amendment for ${order.patientName}`, { status: "amended" })
+      orderWriteMeta(`Confirmed amendment for ${order.patientLabId}`, { status: "amended" })
     );
     setOrder((prev) => (prev ? { ...prev, ...result.updates, notYetSynced: true } : prev));
     setResults(result.updates.results as ResultValues);
     const pending = parsePendingAmendment(order.pendingAmendment);
-    await auditOrder(
+    auditOrder(
       "order.amended",
       amendmentAuditDetail({
-        reason: pending?.amendmentReason || "",
+        reason: pending?.amendmentReasonCode || "",
         previousVersion: result.previousVersion,
         newVersion: result.newVersion,
         amender: result.amender,
@@ -693,7 +725,7 @@ function OrderDetailContent() {
       doc(db, "orders", orderId),
       updates,
       { merge: true },
-      orderWriteMeta(`Cancelled pending amendment for ${order.patientName}`, { pendingAmendmentAt: null })
+      orderWriteMeta(`Cancelled pending amendment for ${order.patientLabId}`, { pendingAmendmentAt: null })
     );
     setOrder((prev) => (prev ? { ...prev, ...updates, notYetSynced: true } : prev));
     setStatus("Pending amendment cancelled.");
@@ -766,8 +798,19 @@ function OrderDetailContent() {
           </span>
         </div>
         <p className="text-gray-600 mb-1">
-          {order.patientName} — Lab ID: {order.patientLabId}
+          {patientRecord?.name || "Patient"} — Lab ID: {order.patientLabId}
         </p>
+        {released && order.patientId && (
+          <p className="mb-3">
+            <Link
+              href={`/patients/${order.patientId}/print`}
+              className="inline-flex items-center gap-1.5 text-sm text-gray-900 underline"
+            >
+              <PrintIcon className="h-3.5 w-3.5" />
+              Print report
+            </Link>
+          </p>
+        )}
         {order.patientDeleted && (
           <p className="text-sm text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
             This order belongs to a removed patient record and is hidden from active queues. The

@@ -10,6 +10,7 @@ import {
 import { db } from "./firebase";
 import { isPatientDeleted } from "./patientSoftDelete";
 import { parseClinicTier, type ClinicTier } from "./resultModel";
+import { DEFAULT_BREAK_GLASS_MINUTES, DEFAULT_GRACE_MINUTES } from "./roster";
 
 /** Seven health regions used by the Ministry of Health. */
 export const GAMBIA_HEALTH_REGIONS = [
@@ -39,6 +40,9 @@ export interface ClinicRecord {
   licenceNumber: string;
   licenceExpiry: string;
   idleLockMinutes: number;
+  rosteringEnabled: boolean;
+  rosterGraceMinutes: number;
+  breakGlassMinutes: number;
 }
 
 export function clinicFromData(id: string, data: Record<string, unknown>): ClinicRecord {
@@ -57,6 +61,15 @@ export function clinicFromData(id: string, data: Record<string, unknown>): Clini
     licenceNumber: typeof data.licenceNumber === "string" ? data.licenceNumber : "",
     licenceExpiry: typeof data.licenceExpiry === "string" ? data.licenceExpiry : "",
     idleLockMinutes: typeof data.idleLockMinutes === "number" ? data.idleLockMinutes : 5,
+    rosteringEnabled: data.rosteringEnabled === true,
+    rosterGraceMinutes:
+      typeof data.rosterGraceMinutes === "number" && data.rosterGraceMinutes >= 0
+        ? Math.min(180, Math.round(data.rosterGraceMinutes))
+        : DEFAULT_GRACE_MINUTES,
+    breakGlassMinutes:
+      typeof data.breakGlassMinutes === "number" && data.breakGlassMinutes > 0
+        ? Math.min(480, Math.round(data.breakGlassMinutes))
+        : DEFAULT_BREAK_GLASS_MINUTES,
   };
 }
 
@@ -111,6 +124,9 @@ export async function saveClinicProfile(params: {
   licenceNumber: string;
   licenceExpiry: string;
   idleLockMinutes: number;
+  rosteringEnabled: boolean;
+  rosterGraceMinutes: number;
+  breakGlassMinutes: number;
   actor: { uid: string; email: string | null };
 }) {
   const idle =
@@ -129,6 +145,15 @@ export async function saveClinicProfile(params: {
     licenceNumber: params.licenceNumber.trim(),
     licenceExpiry: params.licenceExpiry.trim(),
     idleLockMinutes: idle,
+    rosteringEnabled: params.rosteringEnabled === true,
+    rosterGraceMinutes:
+      typeof params.rosterGraceMinutes === "number" && params.rosterGraceMinutes >= 0
+        ? Math.min(180, Math.round(params.rosterGraceMinutes))
+        : DEFAULT_GRACE_MINUTES,
+    breakGlassMinutes:
+      typeof params.breakGlassMinutes === "number" && params.breakGlassMinutes > 0
+        ? Math.min(480, Math.round(params.breakGlassMinutes))
+        : DEFAULT_BREAK_GLASS_MINUTES,
     ...auditFields(params.actor),
   });
 }

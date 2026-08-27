@@ -104,6 +104,9 @@ function ClinicProfileEditor({
   const [licenceNumber, setLicenceNumber] = useState("");
   const [licenceExpiry, setLicenceExpiry] = useState("");
   const [idleLockMinutes, setIdleLockMinutes] = useState("5");
+  const [rosteringEnabled, setRosteringEnabled] = useState(false);
+  const [rosterGraceMinutes, setRosterGraceMinutes] = useState("30");
+  const [breakGlassMinutes, setBreakGlassMinutes] = useState("120");
   const [active, setActive] = useState(true);
 
   useEffect(() => {
@@ -124,6 +127,9 @@ function ClinicProfileEditor({
           setLicenceNumber(record.licenceNumber);
           setLicenceExpiry(record.licenceExpiry);
           setIdleLockMinutes(String(record.idleLockMinutes || 5));
+          setRosteringEnabled(record.rosteringEnabled);
+          setRosterGraceMinutes(String(record.rosterGraceMinutes || 30));
+          setBreakGlassMinutes(String(record.breakGlassMinutes || 120));
           setActive(record.active);
         }
       })
@@ -153,6 +159,9 @@ function ClinicProfileEditor({
       setLicenceNumber(record.licenceNumber);
       setLicenceExpiry(record.licenceExpiry);
       setIdleLockMinutes(String(record.idleLockMinutes || 5));
+      setRosteringEnabled(record.rosteringEnabled);
+      setRosterGraceMinutes(String(record.rosterGraceMinutes || 30));
+      setBreakGlassMinutes(String(record.breakGlassMinutes || 120));
       setActive(record.active);
     }
     return record;
@@ -181,6 +190,9 @@ function ClinicProfileEditor({
         licenceNumber,
         licenceExpiry,
         idleLockMinutes: Number(idleLockMinutes) || 5,
+        rosteringEnabled,
+        rosterGraceMinutes: Number(rosterGraceMinutes) || 30,
+        breakGlassMinutes: Number(breakGlassMinutes) || 120,
         actor: { uid: user.uid, email: user.email },
       });
       const actor = actorFromAuth(user, role, shift);
@@ -205,6 +217,9 @@ function ClinicProfileEditor({
               "licenceNumber",
               "licenceExpiry",
               "idleLockMinutes",
+              "rosteringEnabled",
+              "rosterGraceMinutes",
+              "breakGlassMinutes",
             ],
           },
         });
@@ -422,6 +437,39 @@ function ClinicProfileEditor({
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
+                checked={rosteringEnabled}
+                onChange={(e) => setRosteringEnabled(e.target.checked)}
+                disabled={!canEdit}
+              />
+              Enable rostered access
+            </label>
+            <label className="block">
+              <span className="text-sm text-gray-600">Roster grace (minutes, both ends)</span>
+              <input
+                type="number"
+                min={0}
+                max={180}
+                value={rosterGraceMinutes}
+                onChange={(e) => setRosterGraceMinutes(e.target.value)}
+                disabled={!canEdit}
+                className="mt-1 w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+              />
+            </label>
+            <label className="block">
+              <span className="text-sm text-gray-600">Break-glass duration (minutes)</span>
+              <input
+                type="number"
+                min={15}
+                max={480}
+                value={breakGlassMinutes}
+                onChange={(e) => setBreakGlassMinutes(e.target.value)}
+                disabled={!canEdit}
+                className="mt-1 w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+              />
+            </label>
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input
+                type="checkbox"
                 checked={active}
                 onChange={(e) => setActive(e.target.checked)}
                 disabled={!canEdit}
@@ -460,6 +508,17 @@ function ClinicProfileEditor({
         )}
 
         <div className="grid gap-3 sm:grid-cols-2">
+          {canManageStaff(role) && (
+            <Link
+              href={`/owner/clinics/${clinic.id}/roster`}
+              className="border border-gray-200 rounded-lg p-4 hover:bg-gray-50"
+            >
+              <p className="font-medium text-gray-900">Roster</p>
+              <p className="text-sm text-gray-600 mt-1">
+                Scheduled windows, leave, and planned cover. Off until you enable it above.
+              </p>
+            </Link>
+          )}
           {canManageStaff(role) && (
             <Link
               href={`/owner/clinics/${clinic.id}/staff`}

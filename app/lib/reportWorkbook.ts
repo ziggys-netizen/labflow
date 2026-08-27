@@ -56,12 +56,13 @@ export function workbookToBuffer(sheetName: string, headers: string[], rows: unk
 
 export function buildReportWorkbook(
   reportType: ReportType,
-  docs: { id: string; data: Record<string, unknown> }[]
+  docs: { id: string; data: Record<string, unknown> }[],
+  namesByPatientId?: Map<string, string>
 ): { buffer: Buffer; rowCount: number } {
   const sheets: Record<ReportType, { name: string; headers: string[]; rows: unknown[][] }> = {
     patients: { name: "Patients", headers: PATIENT_HEADERS, rows: patientExportRows(docs) },
-    orders: { name: "Orders", headers: ORDER_HEADERS, rows: orderExportRows(docs) },
-    results: { name: "Results", headers: RESULT_HEADERS, rows: resultExportRows(docs) },
+    orders: { name: "Orders", headers: ORDER_HEADERS, rows: orderExportRows(docs, namesByPatientId) },
+    results: { name: "Results", headers: RESULT_HEADERS, rows: resultExportRows(docs, namesByPatientId) },
     inventory: { name: "Inventory", headers: INVENTORY_HEADERS, rows: inventoryExportRows(docs) },
   };
   const sheet = sheets[reportType];

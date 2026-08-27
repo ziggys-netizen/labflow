@@ -30,6 +30,8 @@ Firebase Admin credentials are unchanged (`docs/OIDC-SETUP.md`). Region stays `f
 
 ## PHI
 
-The spreadsheet is patient / order / result / inventory data. It is assembled on **Vercel** and handed to **Resend** for delivery. Both are processors of clinical data. Record them on the clinic’s data-protection register (sub-processors). This is **not** a legal problem in The Gambia today (no HIPAA analogue); treat it as an “appropriate safeguards” note if the 2023/2025 Act is applied later, and before any deployment outside The Gambia.
+The spreadsheet is patient / order / result / inventory data. It is assembled on **Vercel** and handed to **Resend** for delivery. Both are processors of clinical data. Record them on the clinic’s data-protection register (sub-processors). Vercel and Resend are cross-border destinations under s.37 of the Bill as published by the National Assembly (not verified against the enacted 2025 text). Record each on the transfer assessment (PRD v0.5 §12.6–12.7). Do not assume the Act is in force; do not invent a localisation requirement.
+
+The Firestore `nam7` destination has a factual seed (`app/lib/transferAssessments.ts`; brief [`TRANSFER-ASSESSMENT-FIRESTORE-NAM7-2026-08-23.md`](TRANSFER-ASSESSMENT-FIRESTORE-NAM7-2026-08-23.md)). `receivingCountryLawAssessment` is `PENDING LEGAL REVIEW`. Vercel `fra1` and Resend still need their own assessment records.
 
 Audit action: `report.exported` (who, when, type, date range, row count, recipient).

@@ -160,7 +160,6 @@ describe("collection clear payload", () => {
       clinicId: "clinic-1",
       clinicName: "Harbor Lab",
       orderId: "order-1",
-      patientName: "Ada",
       patientLabId: "LF-1",
       createdAt: "2026-08-20T07:00:00.000Z",
       clearedTimes: ["2026-08-21T08:00:00.000Z"],

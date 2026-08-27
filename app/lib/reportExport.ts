@@ -130,6 +130,15 @@ function asRecord(value: unknown): Record<string, unknown> {
     : {};
 }
 
+export function exportPatientLabel(
+  data: Record<string, unknown>,
+  namesByPatientId?: Map<string, string>
+): string {
+  const id = asString(data.patientId);
+  if (id && namesByPatientId?.has(id)) return namesByPatientId.get(id) || "";
+  return "";
+}
+
 function testNames(value: unknown): string {
   if (!Array.isArray(value)) return "";
   return value
@@ -194,7 +203,10 @@ export const PATIENT_HEADERS = [
   "Registered",
 ];
 
-export function orderExportRows(docs: { id: string; data: Record<string, unknown> }[]): unknown[][] {
+export function orderExportRows(
+  docs: { id: string; data: Record<string, unknown> }[],
+  namesByPatientId?: Map<string, string>
+): unknown[][] {
   return docs
     .filter((doc) => doc.data.patientDeleted !== true)
     .map((doc) => {
@@ -203,7 +215,7 @@ export function orderExportRows(docs: { id: string; data: Record<string, unknown
         asString(d.clinicId),
         doc.id,
         asString(d.patientLabId),
-        asString(d.patientName),
+        exportPatientLabel(d, namesByPatientId),
         asString(d.status),
         testNames(d.tests),
         toExcelDate(d.createdAt),
@@ -231,7 +243,10 @@ export const ORDER_HEADERS = [
   "Reviewed",
 ];
 
-export function resultExportRows(docs: { id: string; data: Record<string, unknown> }[]): unknown[][] {
+export function resultExportRows(
+  docs: { id: string; data: Record<string, unknown> }[],
+  namesByPatientId?: Map<string, string>
+): unknown[][] {
   const rows: unknown[][] = [];
   for (const doc of docs) {
     if (doc.data.patientDeleted === true) continue;
@@ -252,7 +267,7 @@ export function resultExportRows(docs: { id: string; data: Record<string, unknow
           asString(d.clinicId),
           doc.id,
           asString(d.patientLabId),
-          asString(d.patientName),
+          exportPatientLabel(d, namesByPatientId),
           asString(d.status),
           testCode,
           names.get(testCode) || testCode,
@@ -270,7 +285,7 @@ export function resultExportRows(docs: { id: string; data: Record<string, unknow
           asString(d.clinicId),
           doc.id,
           asString(d.patientLabId),
-          asString(d.patientName),
+          exportPatientLabel(d, namesByPatientId),
           asString(d.status),
           testCode,
           names.get(testCode) || testCode,

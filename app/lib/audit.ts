@@ -17,6 +17,13 @@ import {
   type AuditLogRecord,
   type AuditLogWrite,
 } from "./auditTypes";
+import {
+  auditFailureSummary,
+  auditRejectionReason,
+  scheduleSafeAudit,
+} from "./auditSafety";
+import { lastKnownOnline } from "./firestoreConnectivity";
+import { enqueuePending, markRejected } from "./writeQueue";
 
 export type { AuditActor, AuditLogRecord, AuditLogWrite } from "./auditTypes";
 export {
@@ -41,12 +48,39 @@ export async function logAudit(entry: AuditLogWrite) {
   await addDoc(collection(db, "auditLogs"), auditLogPayload(entry));
 }
 
-/** Audit must not fail the clinical write. */
-export async function safeLogAudit(entry: AuditLogWrite) {
+/**
+ * Fire-and-forget client audit. Never await this on a clinical path — a denied
+ * or hung audit must not take down print, release, collection, or amendment.
+ * Failures land in Sync problems.
+ */
+export function safeLogAudit(entry: AuditLogWrite): void {
+  scheduleSafeAudit(
+    () => logAudit(entry),
+    (err) => {
+      console.error(err);
+      void surfaceAuditFailure(entry, err);
+    }
+  );
+}
+
+async function surfaceAuditFailure(entry: AuditLogWrite, err: unknown) {
   try {
-    await logAudit(entry);
-  } catch (err) {
-    console.error(err);
+    const queued = await enqueuePending({
+      operation: "create",
+      collection: "auditLogs",
+      documentId: `${entry.action}:${entry.targetId}`,
+      actorUid: entry.actor.uid,
+      actorLabel: entry.actor.email || entry.actor.uid,
+      clinicId: entry.clinicId,
+      orderId: entry.targetCollection === "orders" ? entry.targetId : null,
+      patientLabId: null,
+      summary: auditFailureSummary(entry.action),
+      expected: null,
+      wroteWhileOffline: !lastKnownOnline(),
+    });
+    await markRejected(queued.id, auditRejectionReason(err), false);
+  } catch (queueErr) {
+    console.error(queueErr);
   }
 }
 

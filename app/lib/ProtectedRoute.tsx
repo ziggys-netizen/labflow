@@ -1,7 +1,7 @@
 "use client";
 
 import { useAuth } from "./AuthContext";
-import { capabilityRedirect, landingPathForRole } from "./permissions";
+import { protectedRouteDestination, sessionAuthInput, type RouteRequire } from "./authState";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
@@ -10,24 +10,7 @@ import { useEffect, useRef } from "react";
  * Owner still bypasses login/pending/rejected destination checks; this `require`
  * still runs for owner unless the predicate itself includes owner.
  */
-export type RouteRequire = (role: string | null) => boolean;
-
-function getDestination(
-  user: { uid: string } | null,
-  role: string | null,
-  status: string | null,
-  clinicId: string | null,
-  pathname: string
-): string | null {
-  if (!user) return "/login";
-  if (role === "owner") return null;
-  if (status === "pending" && !clinicId) return "/join";
-  if (status === "pending" && clinicId) return "/pending";
-  if (status === "rejected") return "/pending";
-  const locked = capabilityRedirect(role, pathname);
-  if (locked && pathname !== locked) return locked;
-  return null;
-}
+export type { RouteRequire };
 
 export default function ProtectedRoute({
   children,
@@ -36,16 +19,19 @@ export default function ProtectedRoute({
   children: React.ReactNode;
   require?: RouteRequire;
 }) {
-  const { user, loading, role, status, clinicId } = useAuth();
+  const { user, loading, role, status, clinicId, writeClinicId } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const hasRedirected = useRef(false);
   const lastDest = useRef<string | null | undefined>(undefined);
 
-  const authDest = loading ? null : getDestination(user, role, status, clinicId, pathname);
-  const capabilityDest =
-    !loading && !authDest && require && !require(role) ? landingPathForRole(role, clinicId) : null;
-  const dest = authDest ?? capabilityDest;
+  const dest = loading
+    ? null
+    : protectedRouteDestination(
+        sessionAuthInput({ user, role, status, clinicId, writeClinicId }),
+        pathname,
+        require
+      );
 
   useEffect(() => {
     if (lastDest.current !== dest) {

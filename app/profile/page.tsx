@@ -6,6 +6,9 @@ import AppNav from "../lib/AppNav";
 import { useAuth } from "../lib/AuthContext";
 import { loadClinicNames } from "../lib/clinicScope";
 import { roleDisplay } from "../lib/permissions";
+import { ISO_WEEKDAY_LABELS, deriveShiftLabel, findNextWindow, type RosterEntry } from "../lib/roster";
+import { loadClinicRoster, readRosterCache } from "../lib/rosterStore";
+import { loadClinic } from "../lib/clinics";
 import {
   USERNAME_RULES,
   UsernameTakenError,
@@ -22,6 +25,9 @@ function ProfileContent() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [myEntries, setMyEntries] = useState<RosterEntry[]>([]);
+  const [nextShift, setNextShift] = useState<Date | null>(null);
+  const [rosteringOn, setRosteringOn] = useState(false);
 
   // The username arrives from a Firestore listener, so the field is reconciled
   // during render rather than in an effect, which would cost an extra pass.
@@ -29,6 +35,34 @@ function ProfileContent() {
     setSyncedUsername(username);
     setDraft(username ?? "");
   }
+
+  useEffect(() => {
+    if (!user || !clinicId) {
+      setMyEntries([]);
+      setNextShift(null);
+      return;
+    }
+    let cancelled = false;
+    const cached = readRosterCache(clinicId, user.uid);
+    if (cached) {
+      const mine = cached.entries.filter((row) => row.userUid === user.uid);
+      setMyEntries(mine);
+      setRosteringOn(cached.rosteringEnabled);
+      setNextShift(findNextWindow(mine, cached.exceptions.filter((row) => row.userUid === user.uid), new Date()));
+    }
+    Promise.all([loadClinic(clinicId), loadClinicRoster(clinicId, { exceptionUserUid: user.uid })])
+      .then(([clinic, cache]) => {
+        if (cancelled || !user) return;
+        const mine = cache.entries.filter((row) => row.userUid === user.uid);
+        setMyEntries(mine);
+        setRosteringOn(clinic?.rosteringEnabled === true);
+        setNextShift(findNextWindow(mine, cache.exceptions.filter((row) => row.userUid === user.uid), new Date()));
+      })
+      .catch((err) => console.error(err));
+    return () => {
+      cancelled = true;
+    };
+  }, [user, clinicId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -191,6 +225,35 @@ function ProfileContent() {
             })}
           </div>
         </section>
+
+        {role !== "owner" && clinicId && (
+          <section className="border border-gray-200 rounded-lg p-4 mb-6">
+            <h2 className="font-medium text-gray-900 mb-1">Your roster</h2>
+            {!rosteringOn ? (
+              <p className="text-sm text-gray-600">
+                This clinic has not turned rostered access on. You can work at any hour.
+              </p>
+            ) : myEntries.length === 0 ? (
+              <p className="text-sm text-gray-600">You do not have a roster entry yet. Ask a clinic administrator.</p>
+            ) : (
+              <>
+                {nextShift && (
+                  <p className="text-sm text-gray-700 mb-3">
+                    Next expected: {nextShift.toLocaleString([], { weekday: "long", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                )}
+                <ul className="text-sm text-gray-700 space-y-1">
+                  {myEntries.map((entry) => (
+                    <li key={entry.id}>
+                      {entry.daysOfWeek.map((day) => ISO_WEEKDAY_LABELS[day]).join(", ")} · {entry.startTime}–
+                      {entry.endTime} · {entry.pattern} · {deriveShiftLabel(entry.startTime)}
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </section>
+        )}
 
         <section className="border border-gray-200 rounded-lg p-4">
           <h2 className="font-medium text-gray-900 mb-1">Sign-in account</h2>

@@ -162,7 +162,6 @@ function NewOrderContent() {
         collection(db, "orders"),
         {
           patientId,
-          patientName,
           patientLabId,
           tests: orderTestsPayload(selectedTests),
           status: "pending",
@@ -172,16 +171,15 @@ function NewOrderContent() {
         },
         {
           ...writeActorFromUser(user, username),
-          summary: `Created order for ${patientName}`,
+          summary: `Created order for ${patientLabId || "patient"}`,
           clinicId: writeClinicId,
-          patientName,
           patientLabId,
           expected: { status: "pending", patientId },
         }
       );
       const actor = actorFromAuth(user, role, shift);
       if (actor) {
-        await safeLogAudit({
+        safeLogAudit({
           clinicId: writeClinicId,
           actor,
           action: "order.create",

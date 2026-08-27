@@ -77,6 +77,15 @@ export const CRITICAL_NOTIFY_MEANS = [
   { code: "sms", label: "SMS" },
 ] as const;
 
+export const BREAK_GLASS_CODES: ReasonCode[] = [
+  { code: "covering_absent_colleague", label: "Covering absent colleague" },
+  { code: "urgent_sample", label: "Urgent sample" },
+  { code: "overrunning_shift", label: "Overrunning shift" },
+  { code: "called_in", label: "Called in" },
+  { code: "roster_incorrect", label: "Roster incorrect" },
+  { code: "other", label: "Other" },
+];
+
 export const CRITICAL_NOTIFY_OUTCOMES = [
   { code: "read_back_ok", label: "Read-back obtained" },
   { code: "informed_no_readback", label: "Informed, no read-back" },

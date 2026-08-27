@@ -88,6 +88,14 @@
         { "fieldPath": "clinicId", "order": "ASCENDING" },
         { "fieldPath": "at", "order": "DESCENDING" }
       ]
+    },
+    {
+      "collectionGroup": "rosterExceptions",
+      "queryScope": "COLLECTION",
+      "fields": [
+        { "fieldPath": "clinicId", "order": "ASCENDING" },
+        { "fieldPath": "userUid", "order": "ASCENDING" }
+      ]
     }
   ],
   "fieldOverrides": []

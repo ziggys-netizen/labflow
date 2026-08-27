@@ -6,6 +6,7 @@ import {
   readJsonBody,
   requireVerifiedUser,
 } from "@/app/lib/apiAuth";
+import { requireRosterAccess } from "@/app/lib/rosterServer";
 import {
   actorFromIdentity,
   assertCanManageClinicStaff,
@@ -23,6 +24,13 @@ export async function POST(request: Request) {
     const id = typeof body.id === "string" ? body.id.trim() : "";
     if (!id) return jsonError(400, "Missing pre-approval.");
     const { identity } = await assertCanManageClinicStaff(auth.token.uid, clinicId);
+    const roster = await requireRosterAccess({
+      uid: auth.token.uid,
+      role: identity.role,
+      clinicId,
+      staffManagement: true,
+    });
+    if (roster instanceof Response) return roster;
     await revokePreApproval({
       id,
       clinicId,

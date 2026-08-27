@@ -12,6 +12,7 @@ import { canApproveResults } from "../lib/permissions";
 import { LabTest } from "../lib/testCatalog";
 import { orderCollectionFromData, type OrderTestRef } from "../lib/sampleCollection";
 import { orderHasAbnormalResults } from "../lib/resultFlag";
+import { patientsByIdFromDocs, resolvePatientNameById } from "../lib/patientDisplay";
 import {
   compareQueueOldestFirst,
   formatHours,
@@ -71,6 +72,11 @@ function ReviewContent() {
     return map;
   }, [patientsQuery.docs, scopeId]);
 
+  const patientsById = useMemo(
+    () => patientsByIdFromDocs(patientsQuery.docs),
+    [patientsQuery.docs]
+  );
+
   const queued = useMemo(() => {
     if (!scopeId) return [] as QueueOrder[];
     const rows: QueueOrder[] = [];
@@ -88,7 +94,7 @@ function ReviewContent() {
       const patientId = typeof data.patientId === "string" ? data.patientId : "";
       rows.push({
         id: parsed.id,
-        patientName: typeof data.patientName === "string" ? data.patientName : "Unknown patient",
+        patientName: resolvePatientNameById(patientId, patientsById) || "Unknown patient",
         patientLabId: typeof data.patientLabId === "string" ? data.patientLabId : "—",
         tests: parsed.tests,
         status: parsed.status,
@@ -107,7 +113,7 @@ function ReviewContent() {
       });
     }
     return rows.sort(compareQueueOldestFirst);
-  }, [ordersQuery.docs, catalog, sexByPatient, scopeId, nowMs]);
+  }, [ordersQuery.docs, catalog, sexByPatient, patientsById, scopeId, nowMs]);
 
   const awaiting = queued.filter((row) => row.status === "results_entered");
   const returned = queued.filter((row) => row.status === "needs_correction");

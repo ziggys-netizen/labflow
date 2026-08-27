@@ -9,6 +9,7 @@ import {
 } from "@/app/lib/apiAuth";
 import { logAudit } from "@/app/lib/auditAdmin";
 import { canExportData } from "@/app/lib/permissions";
+import { requireRosterAccess } from "@/app/lib/rosterServer";
 import {
   MAX_EXPORT_RANGE_DAYS,
   MAX_EXPORT_ROWS,
@@ -72,6 +73,19 @@ async function fetchInRange(options: {
   return { docs: out.slice(0, MAX_EXPORT_ROWS + 1), capped: out.length > MAX_EXPORT_ROWS };
 }
 
+async function loadPatientNames(clinicId: string | null): Promise<Map<string, string>> {
+  const db = getAdminDb();
+  const names = new Map<string, string>();
+  let q: Query = db.collection("patients");
+  if (clinicId) q = q.where("clinicId", "==", clinicId);
+  const snap = await q.get();
+  for (const d of snap.docs) {
+    const name = typeof d.data()?.name === "string" ? String(d.data()?.name).trim() : "";
+    if (name) names.set(d.id, name);
+  }
+  return names;
+}
+
 async function consumeExportQuota(uid: string): Promise<boolean> {
   const hour = new Date().toISOString().slice(0, 13);
   const ref = getAdminDb().collection("serverExportRateLimits").doc(uid);
@@ -131,6 +145,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const auth = await requireCapability(request, canExportData, EXPORT_DENIED_MESSAGE);
   if (auth instanceof Response) return auth;
+  const roster = await requireRosterAccess({
+    uid: auth.token.uid,
+    role: auth.role,
+    clinicId: auth.clinicId,
+  });
+  if (roster instanceof Response) return roster;
 
   try {
     const parsed = parseExportRequest(asRecord(await readJsonBody(request)));
@@ -170,7 +190,11 @@ export async function POST(request: Request) {
       id: doc.id,
       data: doc.data() as Record<string, unknown>,
     }));
-    const workbook = buildReportWorkbook(parsed.reportType, docs);
+    const namesByPatientId =
+      parsed.reportType === "orders" || parsed.reportType === "results"
+        ? await loadPatientNames(scope.clinicId)
+        : undefined;
+    const workbook = buildReportWorkbook(parsed.reportType, docs, namesByPatientId);
     const filename = exportFilename(parsed.reportType, parsed.startDate, parsed.endDate);
     const label = REPORT_TYPE_LABELS[parsed.reportType];
 
@@ -210,29 +234,35 @@ export async function POST(request: Request) {
       rowCount: workbook.rowCount,
       recipient: recipient || (parsed.delivery === "download" ? "download" : ""),
     };
-    await logAudit({
-      clinicId: scope.clinicId,
-      actor: {
-        uid: auth.token.uid,
-        email: recipient,
-        role: auth.role,
-        shift: auth.identity.shift,
-        actingAsOwner: auth.role === "owner",
-      },
-      action: "report.exported",
-      targetCollection: target.collection,
-      targetId: parsed.reportType,
-      targetLabel: `${label} ${parsed.startDate} to ${parsed.endDate}`,
-      detail: {
-        reportType: parsed.reportType,
-        startDate: parsed.startDate,
-        endDate: parsed.endDate,
-        rowCount: workbook.rowCount,
-        recipient: recipient || null,
-        delivery: parsed.delivery,
-        allClinics: scope.allClinics,
-      },
-    });
+    try {
+      await logAudit({
+        clinicId: scope.clinicId,
+        actor: {
+          uid: auth.token.uid,
+          email: recipient,
+          role: auth.role,
+          shift: auth.identity.shift,
+          actingAsOwner: auth.role === "owner",
+          offRoster: roster.offRoster,
+        },
+        action: "report.exported",
+        offRoster: roster.offRoster,
+        targetCollection: target.collection,
+        targetId: parsed.reportType,
+        targetLabel: `${label} ${parsed.startDate} to ${parsed.endDate}`,
+        detail: {
+          reportType: parsed.reportType,
+          startDate: parsed.startDate,
+          endDate: parsed.endDate,
+          rowCount: workbook.rowCount,
+          recipient: recipient || null,
+          delivery: parsed.delivery,
+          allClinics: scope.allClinics,
+        },
+      });
+    } catch (err) {
+      console.error(err);
+    }
     await appendRecentExport(auth.token.uid, recent);
 
     if (parsed.delivery === "download") {

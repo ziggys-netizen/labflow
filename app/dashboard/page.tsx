@@ -19,6 +19,8 @@ import { orderHasCriticalResults } from "../lib/resultFlag";
 import { SAMPLE_REJECTION_CODES } from "../lib/reasonCodes";
 import { SensitivePinPrompt } from "../lib/PinGate";
 import type { LabTest } from "../lib/testCatalog";
+import { parseRosterSession } from "../lib/rosterStore";
+import { reasonCodeLabel, BREAK_GLASS_CODES } from "../lib/reasonCodes";
 import {
   MAX_EXPORT_RANGE_DAYS,
   MAX_EXPORTS_PER_HOUR,
@@ -319,6 +321,7 @@ function DashboardContent() {
   const ordersQuery = useClinicCollection("orders", role, clinicId, { enabled: allowed });
   const patientsQuery = useClinicCollection("patients", role, clinicId, { enabled: allowed });
   const catalogQuery = useClinicCollection("testCatalog", role, clinicId, { enabled: allowed });
+  const rosterSessionsQuery = useClinicCollection("rosterSessions", role, clinicId, { enabled: allowed });
 
   const orders: OrderRecord[] = ordersQuery.docs
     .filter((d) => !isOrderForDeletedPatient(d.data()))
@@ -348,6 +351,9 @@ function DashboardContent() {
     .filter((d) => !isPatientDeleted(d.data()))
     .map((d) => d.data().createdAt)
     .filter(Boolean);
+  const offRosterSessions = rosterSessionsQuery.docs
+    .map((d) => parseRosterSession(d.id, d.data() as Record<string, unknown>))
+    .filter((row): row is NonNullable<typeof row> => row !== null);
   const loading = ordersQuery.loading || patientsQuery.loading || catalogQuery.loading;
   const error = ordersQuery.error
     ? `Could not load dashboard data. ${ordersQuery.error}`
@@ -413,8 +419,25 @@ function DashboardContent() {
         })
       ).length,
       pendingReprints: orders.filter((o) => o.needsFinalReprint).length,
+      offRosterByStaff: (() => {
+        const rows = offRosterSessions.filter((session) => isWithin(session.startsAt, window));
+        const byUid = new Map<string, { name: string; count: number; codes: Record<string, number> }>();
+        for (const session of rows) {
+          const current = byUid.get(session.userUid) ?? {
+            name: session.displayName,
+            count: 0,
+            codes: {},
+          };
+          current.count += 1;
+          current.codes[session.reasonCode] = (current.codes[session.reasonCode] || 0) + 1;
+          byUid.set(session.userUid, current);
+        }
+        return [...byUid.entries()]
+          .map(([uid, row]) => ({ uid, ...row }))
+          .sort((a, b) => b.count - a.count);
+      })(),
     };
-  }, [orders, patientDates, windowKey, catalog]);
+  }, [orders, patientDates, windowKey, catalog, offRosterSessions]);
 
   if (!allowed) return null;
 
@@ -513,6 +536,11 @@ function DashboardContent() {
                 value={String(stats.selfReleased)}
                 hint="Approver released their own entry"
               />
+              <Metric
+                label="Off-roster sessions"
+                value={String(stats.offRosterByStaff.reduce((sum, row) => sum + row.count, 0))}
+                hint="Break-glass unlocks in this period"
+              />
               <div className="border border-gray-200 rounded-lg p-4 md:col-span-2">
                 <p className="text-sm text-gray-600">Median turnaround</p>
                 <p className="text-2xl font-semibold text-gray-900 mt-1">
@@ -525,6 +553,29 @@ function DashboardContent() {
                   </p>
                 )}
               </div>
+            </div>
+
+            <div className="border border-gray-200 rounded-lg p-4 mb-8">
+              <h3 className="text-sm font-medium text-gray-900 mb-3">Off-roster sessions by staff</h3>
+              {stats.offRosterByStaff.length === 0 ? (
+                <p className="text-sm text-gray-600">No break-glass sessions in this period.</p>
+              ) : (
+                <table className="w-full text-left text-sm">
+                  <tbody>
+                    {stats.offRosterByStaff.map((row) => (
+                      <tr key={row.uid} className="border-b border-gray-100 last:border-0">
+                        <td className="py-2 text-gray-900">{row.name}</td>
+                        <td className="py-2 text-gray-600">
+                          {Object.entries(row.codes)
+                            .map(([code, count]) => `${reasonCodeLabel(BREAK_GLASS_CODES, code)} ${count}`)
+                            .join(" · ")}
+                        </td>
+                        <td className="py-2 text-right text-gray-600">{row.count}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
             </div>
 
             <div className="border border-gray-200 rounded-lg p-4 mb-8">

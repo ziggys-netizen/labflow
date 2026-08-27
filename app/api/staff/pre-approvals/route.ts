@@ -16,6 +16,7 @@ import {
   PreApprovalError,
 } from "@/app/lib/preApprovalServer";
 import type { PreApprovalInputRow } from "@/app/lib/preApprovals";
+import { requireRosterAccess } from "@/app/lib/rosterServer";
 
 function readClinicId(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
@@ -43,6 +44,13 @@ export async function GET(request: NextRequest) {
       auth.token.uid,
       requested || ""
     );
+    const roster = await requireRosterAccess({
+      uid: auth.token.uid,
+      role: identity.role,
+      clinicId,
+      staffManagement: true,
+    });
+    if (roster instanceof Response) return roster;
     const rows = await listPendingPreApprovals({
       clinicId,
       callerEmail: identity.email || auth.token.email,
@@ -66,6 +74,13 @@ export async function POST(request: Request) {
       auth.token.uid,
       readClinicId(body.clinicId)
     );
+    const roster = await requireRosterAccess({
+      uid: auth.token.uid,
+      role: identity.role,
+      clinicId,
+      staffManagement: true,
+    });
+    if (roster instanceof Response) return roster;
     const actor = actorFromIdentity(auth.token.uid, identity);
     const rows = readRows(body);
     if (rows) {

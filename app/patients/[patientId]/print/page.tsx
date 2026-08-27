@@ -2,7 +2,16 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useParams } from "next/navigation";
-import { doc, getDoc, getDocs, where } from "firebase/firestore";
+import {
+  doc,
+  getDoc,
+  getDocFromCache,
+  getDocs,
+  getDocsFromCache,
+  where,
+  type DocumentReference,
+  type Query,
+} from "firebase/firestore";
 import { db } from "../../../lib/firebase";
 import { useAuth } from "../../../lib/AuthContext";
 import ProtectedRoute from "../../../lib/ProtectedRoute";
@@ -12,14 +21,20 @@ import { isPatientDeleted } from "../../../lib/patientSoftDelete";
 import { LabTest, SPECIMEN_TYPE_LABELS } from "../../../lib/testCatalog";
 import { isTestReviewed, UNREVIEWED_RANGE_CAVEAT } from "../../../lib/catalogSeed";
 import { parameterFlag } from "../../../lib/resultFlag";
-import { isProvisionalPrint, PROVISIONAL_HEADING, PROVISIONAL_NOTICE } from "../../../lib/provisionalReport";
+import {
+  isProvisionalPrint,
+  planReportPrint,
+  printReadyToIssue,
+  PROVISIONAL_HEADING,
+  PROVISIONAL_NOTICE,
+} from "../../../lib/provisionalReport";
 import { canViewOwnRegisteredPatients, canViewPatients } from "../../../lib/permissions";
 import ResultFlagMark from "../../../lib/ResultFlagMark";
 import { interpretCollection, orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../../../lib/sampleCollection";
 import { orderDisplayLabel } from "../../../lib/orderLifecycle";
-import { useWriteIdentity } from "../../../lib/pinSession";
+import { useStaffSession, useWriteIdentity } from "../../../lib/pinSession";
 import { trackedSetDoc, writeActorFromUser } from "../../../lib/trackedWrites";
-import { actorFromAuth, safeLogAudit } from "../../../lib/audit";
+import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../../../lib/audit";
 import {
   changedResultValues,
   isReleasedResultStatus,
@@ -79,6 +94,24 @@ const PRINT_CSS = `
   }
 `;
 
+async function docFromCacheOrServer(ref: DocumentReference) {
+  try {
+    return await getDocFromCache(ref);
+  } catch {
+    return getDoc(ref);
+  }
+}
+
+async function docsFromCacheOrServer(q: Query) {
+  try {
+    const cached = await getDocsFromCache(q);
+    if (!cached.empty) return cached;
+  } catch {
+    // No matching cache — fall through to the live query.
+  }
+  return getDocs(q);
+}
+
 function formatDateTime(iso?: string | null) {
   if (!iso) return "—";
   const d = new Date(iso);
@@ -109,6 +142,8 @@ function PatientPrintContent() {
   const patientId = params.patientId as string;
   const { user, role, clinicId } = useAuth();
   const writer = useWriteIdentity();
+  const { locked, needsSetup, ready } = useStaffSession();
+  const staffGateOpen = !ready || locked || needsSetup;
 
   const [patient, setPatient] = useState<PatientRecord | null>(null);
   const [clinic, setClinic] = useState<ClinicRecord | null>(null);
@@ -122,7 +157,7 @@ function PatientPrintContent() {
   useEffect(() => {
     async function load() {
       try {
-        const patientSnap = await getDoc(doc(db, "patients", patientId));
+        const patientSnap = await docFromCacheOrServer(doc(db, "patients", patientId));
         if (!patientSnap.exists()) {
           setNotFound(true);
           return;
@@ -148,45 +183,38 @@ function PatientPrintContent() {
         setPatient(data);
 
         const [clinicSnap, orderSnap, catalogSnap] = await Promise.all([
-          data.clinicId ? getDoc(doc(db, "clinics", data.clinicId)) : Promise.resolve(null),
-          getDocs(
+          data.clinicId ? docFromCacheOrServer(doc(db, "clinics", data.clinicId)) : Promise.resolve(null),
+          docsFromCacheOrServer(
             clinicCollectionQuery("orders", role, clinicId, [where("patientId", "==", patientId)])
           ),
-          getDocs(clinicCollectionQuery("testCatalog", role, clinicId)),
+          docsFromCacheOrServer(clinicCollectionQuery("testCatalog", role, clinicId)),
         ]);
 
         if (clinicSnap?.exists()) setClinic(clinicSnap.data() as ClinicRecord);
 
-        setOrders(
-          orderSnap.docs
-            .map((d) => {
-              const o = d.data();
-              const parsed = orderCollectionFromData(d.id, o);
-              return {
-                id: parsed.id,
-                tests: parsed.tests,
-                status: parsed.status,
-                createdAt: o.createdAt,
-                sampleCollectedAt: parsed.sampleCollectedAt,
-                sampleCollections: parsed.sampleCollections,
-                results: o.results || {},
-                reviewedBy: o.reviewedBy || null,
-                reviewedByUid: o.reviewedByUid || null,
-                reviewedAt: o.reviewedAt || null,
-                resultVersions: o.resultVersions,
-                lastAmendedAt: o.lastAmendedAt || null,
-                notYetSynced: d.metadata.hasPendingWrites,
-              };
-            })
-            .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1))
-        );
-
-        const hasReleased = orderSnap.docs.some((d) =>
-          isReleasedResultStatus(String(d.data().status || ""))
-        );
-        if (!hasReleased) {
-          setPrintBlocked("Results that have not been released cannot be printed.");
-        }
+        const loadedOrders = orderSnap.docs
+          .map((d) => {
+            const o = d.data();
+            const parsed = orderCollectionFromData(d.id, o);
+            return {
+              id: parsed.id,
+              tests: parsed.tests,
+              status: parsed.status,
+              createdAt: o.createdAt,
+              sampleCollectedAt: parsed.sampleCollectedAt,
+              sampleCollections: parsed.sampleCollections,
+              results: o.results || {},
+              reviewedBy: o.reviewedBy || null,
+              reviewedByUid: o.reviewedByUid || null,
+              reviewedAt: o.reviewedAt || null,
+              resultVersions: o.resultVersions,
+              lastAmendedAt: o.lastAmendedAt || null,
+              notYetSynced: d.metadata.hasPendingWrites,
+            };
+          })
+          .sort((a, b) => (a.createdAt < b.createdAt ? 1 : -1));
+        setOrders(loadedOrders);
+        setPrintBlocked(planReportPrint(loadedOrders).blockedReason || "");
 
         const catalogRows = catalogSnap.docs.map((d) => d.data() as LabTest);
         setCatalog(
@@ -205,59 +233,92 @@ function PatientPrintContent() {
   }, [patientId, role, clinicId, writer.uid]);
 
   useEffect(() => {
-    if (loading || !patient || printed.current || printBlocked) return;
-    printed.current = true;
-    const actor = writeActorFromUser(user ? { uid: writer.uid, email: writer.email } : null, writer.username);
-    const provisional = orders.filter((order) =>
-      isProvisionalPrint({
-        released: isReleasedResultStatus(order.status),
-        locallyConfirmed: true,
-        synced: !order.notYetSynced,
+    if (
+      !printReadyToIssue({
+        loading,
+        hasPatient: !!patient,
+        blockedReason: printBlocked || null,
+        staffGateOpen,
       })
-    );
-    if (provisional.length > 0) {
-      void Promise.all(
-        provisional.map((order) =>
-          trackedSetDoc(
-            doc(db, "orders", order.id),
-            {
-              needsFinalReprint: true,
-              provisionalPrintedAt: new Date().toISOString(),
-            },
-            { merge: true },
-            {
-              summary: `Provisional report printed for ${patient.labId || patientId}`,
-              actorUid: actor.actorUid,
-              actorLabel: actor.actorLabel,
-              clinicId: patient.clinicId,
-              patientLabId: patient.labId,
-              orderId: order.id,
-            }
-          )
-        )
-      ).then(() => {
-        const auditActor = actorFromAuth(
-          user ? { uid: writer.uid, email: writer.email } : null,
-          writer.role,
-          writer.shift
+    ) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      if (printed.current) return;
+      printed.current = true;
+      const plan = planReportPrint(orders);
+      const actor = writeActorFromUser(
+        user ? { uid: writer.uid, email: writer.email } : null,
+        writer.username
+      );
+      const auditActor = actorFromAuth(
+        user ? { uid: writer.uid, email: writer.email } : null,
+        writer.role,
+        writer.shift
+      );
+      const provisional = orders.filter((order) => plan.provisionalOrderIds.includes(order.id));
+      for (const order of provisional) {
+        void trackedSetDoc(
+          doc(db, "orders", order.id),
+          {
+            needsFinalReprint: true,
+            provisionalPrintedAt: new Date().toISOString(),
+          },
+          { merge: true },
+          {
+            summary: `Provisional report printed for ${patient?.labId || patientId}`,
+            actorUid: actor.actorUid,
+            actorLabel: actor.actorLabel,
+            clinicId: patient?.clinicId,
+            patientLabId: patient?.labId,
+            orderId: order.id,
+          }
         );
-        if (auditActor) {
-          void safeLogAudit({
+      }
+      if (auditActor && patient && plan.allowPrint) {
+        safeLogAudit({
+          clinicId: patient.clinicId || clinicId,
+          actor: auditActor,
+          action: plan.disclosureAction,
+          targetCollection: "orders",
+          targetId: plan.releasedOrderIds[0] || patientId,
+          targetLabel: auditTargetLabel(patient.labId, "report"),
+          detail: {
+            orderIds: plan.releasedOrderIds,
+            provisional: plan.provisionalOrderIds.length > 0,
+            provisionalOrderIds: plan.provisionalOrderIds,
+          },
+        });
+        if (provisional.length > 0) {
+          safeLogAudit({
             clinicId: patient.clinicId || clinicId,
             actor: auditActor,
             action: "order.provisionalPrinted",
             targetCollection: "orders",
             targetId: provisional[0].id,
-            targetLabel: `${patient.labId || "LF"} · report`,
+            targetLabel: auditTargetLabel(patient.labId, "report"),
             detail: { orderIds: provisional.map((order) => order.id) },
           });
         }
-      });
-    }
-    // Wait for layout so the dialog previews the finished sheet.
-    const timer = setTimeout(() => window.print(), 300);
+      }
+      window.print();
+    }, 300);
     return () => clearTimeout(timer);
-  }, [loading, patient, printBlocked, orders, user, writer, clinicId, patientId]);
+  }, [
+    loading,
+    patient,
+    printBlocked,
+    staffGateOpen,
+    orders,
+    user?.uid,
+    writer.uid,
+    writer.email,
+    writer.username,
+    writer.role,
+    writer.shift,
+    clinicId,
+    patientId,
+  ]);
 
   if (loading) {
     return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading record...</main>;
