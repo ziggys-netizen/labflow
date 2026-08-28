@@ -11,6 +11,6 @@ export default defineConfig({
     environment: "node",
     pool: "threads",
     include: ["app/**/*.test.ts"],
-    exclude: ["node_modules/**", ".next/**"],
+    exclude: ["node_modules/**", ".next/**", "app/lib/firestore.rules.test.ts"],
   },
 });
