@@ -161,7 +161,9 @@ service cloud.firestore {
 
     function staffUserUpdateOk() {
       return isOwner()
-             || (isClinicAdmin() && userInCallerClinic(resource.data));
+        || (isClinicAdmin()
+          && userInCallerClinic(resource.data)
+          && !changedKeys().hasAny(["clinicId", "clinicIds"]));
     }
 
     match /users/{uid} {
@@ -222,10 +224,6 @@ service cloud.firestore {
     // CHANGED FROM U1 — these now require isApproved() via clinicScoped*().
 
     function clinicalGet() {
-      return clinicScopedGet(resource.data);
-    }
-
-    function clinicalList() {
       return clinicScopedGet(resource.data);
     }
 
@@ -419,7 +417,8 @@ service cloud.firestore {
                               )
                             );
 
-      allow delete: if isOwner() || isClinicAdmin();
+      allow delete: if isOwner()
+        || (isClinicAdmin() && clinicScopedGet(resource.data));
     }
 
     // ---------- usernames ----------
