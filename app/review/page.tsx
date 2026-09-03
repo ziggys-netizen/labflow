@@ -11,7 +11,7 @@ import { useClinicCollection } from "../lib/clinicListen";
 import { canApproveResults } from "../lib/permissions";
 import { LabTest } from "../lib/testCatalog";
 import { orderCollectionFromData, type OrderTestRef } from "../lib/sampleCollection";
-import { orderHasAbnormalResults } from "../lib/resultFlag";
+import { orderHasAbnormalResults, parseAgeYears } from "../lib/resultFlag";
 import { patientsByIdFromDocs, resolvePatientNameById } from "../lib/patientDisplay";
 import {
   compareQueueOldestFirst,
@@ -61,13 +61,17 @@ function ReviewContent() {
       .filter((test) => !test.clinicId || test.clinicId === scopeId);
   }, [catalogQuery.docs, scopeId]);
 
-  const sexByPatient = useMemo(() => {
-    const map = new Map<string, string | null>();
+  const flagByPatient = useMemo(() => {
+    const map = new Map<string, { sex: string | null; dob: string | null; ageYears: number | null }>();
     if (!scopeId) return map;
     for (const docSnap of patientsQuery.docs) {
       const data = docSnap.data();
       if (data.clinicId && data.clinicId !== scopeId) continue;
-      map.set(docSnap.id, typeof data.sex === "string" ? data.sex : null);
+      map.set(docSnap.id, {
+        sex: typeof data.sex === "string" ? data.sex : null,
+        dob: typeof data.dob === "string" ? data.dob : null,
+        ageYears: parseAgeYears(data.ageYears),
+      });
     }
     return map;
   }, [patientsQuery.docs, scopeId]);
@@ -107,13 +111,13 @@ function ReviewContent() {
           parsed.tests,
           data.results || {},
           catalog,
-          sexByPatient.get(patientId) ?? null
+          flagByPatient.get(patientId) ?? {}
         ),
         notYetSynced: parsed.notYetSynced,
       });
     }
     return rows.sort(compareQueueOldestFirst);
-  }, [ordersQuery.docs, catalog, sexByPatient, patientsById, scopeId, nowMs]);
+  }, [ordersQuery.docs, catalog, flagByPatient, patientsById, scopeId, nowMs]);
 
   const awaiting = queued.filter((row) => row.status === "results_entered");
   const returned = queued.filter((row) => row.status === "needs_correction");

@@ -20,7 +20,7 @@ import { clinicCollectionQuery, isOwner } from "../../../lib/clinicScope";
 import { isPatientDeleted } from "../../../lib/patientSoftDelete";
 import { LabTest, SPECIMEN_TYPE_LABELS } from "../../../lib/testCatalog";
 import { isTestReviewed, UNREVIEWED_RANGE_CAVEAT } from "../../../lib/catalogSeed";
-import { parameterFlag } from "../../../lib/resultFlag";
+import { parameterFlag, parameterHlSuppressionReason, parseAgeYears } from "../../../lib/resultFlag";
 import {
   isProvisionalPrint,
   planReportPrint,
@@ -51,6 +51,7 @@ interface PatientRecord {
   preferredName?: string | null;
   sex?: string;
   dob?: string;
+  ageYears?: number | null;
   phone?: string;
   address?: string;
   nationalId?: string | null;
@@ -482,7 +483,13 @@ function PatientPrintContent() {
                           }
                           return rows.map((p, i) => {
                             const value = values[p.name] || "";
-                            const flag = parameterFlag(value, p, patient.sex);
+                            const flagCtx = {
+                              sex: patient.sex,
+                              dob: patient.dob,
+                              ageYears: parseAgeYears(patient.ageYears),
+                            };
+                            const flag = parameterFlag(value, p, flagCtx);
+                            const hlReason = parameterHlSuppressionReason(value, p, flagCtx);
                             return (
                             <tr key={`${t.code}-${i}`} className="border-b border-gray-100">
                               <td className="py-1 pr-3 text-gray-900">
@@ -496,6 +503,7 @@ function PatientPrintContent() {
                                     <ResultFlagMark flag={flag} />
                                   </span>
                                 ) : null}
+                                {hlReason ? ` — ${hlReason}` : ""}
                               </td>
                               <td className="py-1 pr-3 text-gray-600">{p.unit}</td>
                               <td className="py-1 text-gray-600">

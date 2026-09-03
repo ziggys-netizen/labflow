@@ -65,7 +65,7 @@ import {
 import { canCancelStatus, canEnterResultsForStatus, canRejectStatus, canReleaseStatus, orderDisplayLabel } from "../../lib/orderLifecycle";
 import { nceFromRejection } from "../../lib/nonconformingEvents";
 import { criticalNotificationReady, parseCriticalNotification } from "../../lib/criticalResults";
-import { orderHasCriticalResults } from "../../lib/resultFlag";
+import { orderHasCriticalResults, parseAgeYears } from "../../lib/resultFlag";
 import ReasonCodeField from "../../lib/ReasonCodeField";
 import ResultValueField from "../../lib/ResultValueField";
 import { useWriteIdentity } from "../../lib/pinSession";
@@ -175,6 +175,8 @@ function OrderDetailContent() {
     id: string;
     name: string;
     sex: string | null;
+    dob: string | null;
+    ageYears: number | null;
   } | null>(null);
   const resultsDirty = useRef(false);
   const amendDirty = useRef(false);
@@ -243,6 +245,8 @@ function OrderDetailContent() {
           id: patientId,
           name: patientDisplayName(data),
           sex: typeof data?.sex === "string" ? data.sex : null,
+          dob: typeof data?.dob === "string" ? data.dob : null,
+          ageYears: parseAgeYears(data?.ageYears),
         });
       },
       (err) => {
@@ -822,6 +826,9 @@ function OrderDetailContent() {
   const canEnter = canEnterResults(actingRole);
   const ownResults = isSelfRelease(order.resultsEnteredBy, writer.email);
   const patientSex = patientRecord?.id === order.patientId ? patientRecord.sex : null;
+  const patientDob = patientRecord?.id === order.patientId ? patientRecord.dob : null;
+  const patientAgeYears = patientRecord?.id === order.patientId ? patientRecord.ageYears : null;
+  const flagCtx = { sex: patientSex, dob: patientDob, ageYears: patientAgeYears };
   const collection = interpretCollection(order, catalog);
   const awaitingSample = !collection.allCollected;
   const statusLabel = orderDisplayLabel(order, catalog).label;
@@ -833,7 +840,7 @@ function OrderDetailContent() {
     uid: writer.uid,
     email: writer.email,
   });
-  const critical = orderHasCriticalResults(order.tests, order.results || results, catalog, patientSex);
+  const critical = orderHasCriticalResults(order.tests, order.results || results, catalog, flagCtx);
   const criticalRecord = parseCriticalNotification(order.criticalNotification);
 
   return (
@@ -1044,6 +1051,8 @@ function OrderDetailContent() {
                           parameter={p}
                           value={results[t.code]?.[p.name] || ""}
                           sex={patientSex}
+                          dob={patientDob}
+                          ageYears={patientAgeYears}
                           disabled={!resultsEditable || !canEnter}
                           onChange={(value) => updateResultValue(t.code, p.name, value)}
                         />

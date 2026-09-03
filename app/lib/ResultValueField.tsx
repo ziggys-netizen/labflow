@@ -1,24 +1,30 @@
 "use client";
 
 import { displayRange, normalizeParameter, type TestParameter } from "./resultModel";
-import { parameterFlag } from "./resultFlag";
+import { parameterFlag, parameterHlSuppressionReason } from "./resultFlag";
 import ResultFlagMark from "./ResultFlagMark";
 
 export default function ResultValueField({
   parameter,
   value,
   sex,
+  dob,
+  ageYears,
   disabled,
   onChange,
 }: {
   parameter: TestParameter;
   value: string;
   sex?: string | null;
+  dob?: string | null;
+  ageYears?: number | null;
   disabled?: boolean;
   onChange: (value: string) => void;
 }) {
   const normalized = normalizeParameter(parameter);
-  const flag = parameterFlag(value, normalized, sex);
+  const flagCtx = { sex, dob, ageYears };
+  const flag = parameterFlag(value, normalized, flagCtx);
+  const hlReason = parameterHlSuppressionReason(value, normalized, flagCtx);
   const range = displayRange(normalized);
   const unit =
     normalized.resultType === "numeric" && normalized.unit && normalized.unit !== "—"
@@ -33,6 +39,7 @@ export default function ResultValueField({
           {range}
           {unit ? ` (${unit})` : ""}
         </p>
+        {hlReason ? <p className="text-xs text-gray-500 mt-0.5">{hlReason}</p> : null}
       </div>
       <div className="col-span-2 flex items-center gap-2">
         {normalized.resultType === "qualitative" || normalized.resultType === "semi_quantitative" ? (

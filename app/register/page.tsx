@@ -241,8 +241,9 @@ export default function Register() {
     if (!sex) {
       newErrors.sex = "Please select a sex.";
     }
-    if (!dob && !ageYears.trim()) {
-      newErrors.dob = "Enter a date of birth, or age in years if the date is unknown.";
+    if (!dob && !ageYears.trim() && !ageMonths.trim()) {
+      newErrors.dob =
+        "Enter a date of birth, or age in years or months if the date is unknown.";
     } else if (dob && new Date(dob) > new Date()) {
       newErrors.dob = "Date of birth cannot be in the future.";
     }
@@ -479,6 +480,11 @@ export default function Register() {
               />
             </div>
             {errors.dob && <p className="text-sm text-red-600 mt-1">{errors.dob}</p>}
+            {!dob && !ageYears.trim() && !ageMonths.trim() && (
+              <p className="text-xs text-gray-500 mt-1">
+                Without a date of birth or age, results will not be flagged against reference ranges.
+              </p>
+            )}
           </div>
 
           <div>
