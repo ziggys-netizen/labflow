@@ -12,6 +12,7 @@ export const SENSITIVE_PIN_ACTIONS = [
   "erasure",
   "export",
   "staff",
+  "print",
 ] as const;
 
 export type SensitivePinAction = (typeof SENSITIVE_PIN_ACTIONS)[number];

@@ -708,5 +708,7 @@ export function sensitiveActionLabel(action: SensitivePinAction): string {
       return "export data";
     case "staff":
       return "change staff";
+    case "print":
+      return "print a patient history";
   }
 }

@@ -531,6 +531,7 @@ describe("landingPathForRole", () => {
     expect(internAllowedPath("/profile")).toBe(true);
     expect(internAllowedPath("/patients")).toBe(true);
     expect(internAllowedPath("/patients/abc/print")).toBe(true);
+    expect(internAllowedPath("/patients/abc/history")).toBe(false);
     expect(internAllowedPath("/legal/acceptable-use")).toBe(true);
     expect(internAllowedPath("/legal/privacy")).toBe(true);
     expect(internAllowedPath("/orders")).toBe(false);

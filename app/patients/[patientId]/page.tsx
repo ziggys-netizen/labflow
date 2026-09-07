@@ -11,12 +11,18 @@ import { useAuth } from "../../lib/AuthContext";
 import { useWriteIdentity } from "../../lib/pinSession";
 import { isOwner } from "../../lib/clinicScope";
 import { isPatientDeleted } from "../../lib/patientSoftDelete";
-import { canViewOwnRegisteredPatients, canViewPatients, roleLabel } from "../../lib/permissions";
+import {
+  canApproveResults,
+  canViewOwnRegisteredPatients,
+  canViewPatients,
+  roleLabel,
+} from "../../lib/permissions";
 import { patientDisplayName } from "../../lib/patientDisplay";
 import { formatSexAge } from "../../lib/patientList";
 import IconButton from "../../lib/IconButton";
 import PrintIcon from "../../lib/PrintIcon";
 import { ICON_ACTION_LABELS } from "../../lib/iconAction";
+import { patientHistoryHref } from "../../lib/patientHistory";
 
 /**
  * Identity page for fields that left the patient list (E1).
@@ -124,9 +130,19 @@ function PatientRecordContent() {
                 <h1 className="text-2xl font-semibold text-lf-ink">{displayName}</h1>
                 <p className="text-sm text-lf-ink-2">{formatSexAge(patient)}</p>
               </div>
-              <IconButton label={ICON_ACTION_LABELS.print} href={`/patients/${patientId}/print`}>
-                <PrintIcon />
-              </IconButton>
+              <div className="flex shrink-0 items-center gap-2">
+                {canApproveResults(role) && (
+                  <Link
+                    href={patientHistoryHref(patientId)}
+                    className="lf-touch inline-flex items-center justify-center rounded-lf-md border border-lf-line bg-lf-surface px-3 text-sm font-medium text-lf-ink hover:bg-lf-surface-2"
+                  >
+                    History
+                  </Link>
+                )}
+                <IconButton label={ICON_ACTION_LABELS.print} href={`/patients/${patientId}/print`}>
+                  <PrintIcon />
+                </IconButton>
+              </div>
             </div>
             <div className="grid grid-cols-1 gap-4 rounded-lf-md border border-lf-line bg-lf-surface p-4 sm:grid-cols-2">
               <Field label="Phone" value={patient.phone} />
