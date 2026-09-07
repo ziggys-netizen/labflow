@@ -17,6 +17,7 @@ import {
   internAllowedPath,
   accountsAllowedPath,
   landingPathForRole,
+  isTechnicianBoardRole,
   type Role,
 } from "./permissions";
 
@@ -516,6 +517,13 @@ describe("landingPathForRole", () => {
     expect(landingPathForRole("accounts")).toBe("/accounts");
     expect(landingPathForRole("pending")).toBe("/patients");
     expect(landingPathForRole(null)).toBe("/patients");
+  });
+
+  it("turns the technician landing into the work board", () => {
+    expect(isTechnicianBoardRole("technician")).toBe(true);
+    expect(isTechnicianBoardRole("technician_assistant")).toBe(true);
+    expect(isTechnicianBoardRole("clinic_admin")).toBe(false);
+    expect(isTechnicianBoardRole("lab_manager")).toBe(false);
   });
 
   it("intern may open register, profile, their patients, a print page, and legal documents", () => {

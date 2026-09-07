@@ -54,6 +54,8 @@ import {
   primaryActionHref,
   type PatientListOrder,
 } from "../lib/patientList";
+import TechnicianBoard from "./TechnicianBoard";
+import { isTechnicianBoardRole } from "../lib/permissions";
 
 interface Patient {
   id: string;
@@ -745,10 +747,16 @@ function PatientsContent() {
   );
 }
 
+function PatientsGate() {
+  const { role } = useAuth();
+  if (isTechnicianBoardRole(role)) return <TechnicianBoard />;
+  return <PatientsContent />;
+}
+
 export default function Patients() {
   return (
     <ProtectedRoute require={(role) => canViewPatients(role) || canViewOwnRegisteredPatients(role)}>
-      <PatientsContent />
+      <PatientsGate />
     </ProtectedRoute>
   );
 }

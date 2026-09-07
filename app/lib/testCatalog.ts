@@ -66,6 +66,12 @@ export interface LabTest {
   specimenType: SpecimenType;
   parameters: TestParameter[];
   price?: number;
+  /**
+   * Optional clinic turnaround target for this test as a whole, in minutes.
+   * Panels (FBC, LFT) have one clock — not one per parameter. Absent means
+   * the board must not invent overdue / due-within.
+   */
+  tatMinutes?: number | null;
   clinicId?: string;
   /** True only after a lab manager or supervisor confirms ranges for this clinic. */
   reviewed?: boolean;
@@ -336,6 +342,18 @@ export const TEST_CATALOG: LabTest[] = [
 
 export function testsForTier(tier: ClinicTier): LabTest[] {
   return TEST_CATALOG.filter((row) => (row.tiers ?? [...CLINIC_TIERS]).includes(tier));
+}
+
+/** Positive minutes only. Empty, zero, and non-numeric values mean “no target”. */
+export function parseTatMinutes(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) {
+    return Math.round(value);
+  }
+  if (typeof value === "string" && value.trim()) {
+    const parsed = Number(value.trim());
+    if (Number.isFinite(parsed) && parsed > 0) return Math.round(parsed);
+  }
+  return null;
 }
 
 const SEED_SPECIMEN_BY_CODE = new Map(TEST_CATALOG.map((row) => [row.code, row.specimenType]));

@@ -1,6 +1,6 @@
 import { collection, doc, getDocs, query, where, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
-import { TEST_CATALOG, testsForTier, type LabTest } from "./testCatalog";
+import { TEST_CATALOG, parseTatMinutes, testsForTier, type LabTest } from "./testCatalog";
 import { parseClinicTier, type ClinicTier } from "./resultModel";
 import { logAudit, type AuditActor } from "./audit";
 
@@ -18,6 +18,7 @@ export const UNREVIEWED_RANGE_CAVEAT = "Range not confirmed by this laboratory."
 
 /** Intentionally omits `sopRequired` so seeded tests stay grandfathered and orderable. */
 export function catalogSeedPayload(clinicId: string, test: LabTest, seededAt: string) {
+  const tatMinutes = parseTatMinutes(test.tatMinutes);
   return {
     code: test.code,
     name: test.name,
@@ -31,6 +32,7 @@ export function catalogSeedPayload(clinicId: string, test: LabTest, seededAt: st
     seededFrom: "national_tier" as const,
     onNationalMenu: test.onNationalMenu !== false,
     tiers: test.tiers ?? [],
+    ...(tatMinutes != null ? { tatMinutes } : {}),
   };
 }
 

@@ -125,6 +125,11 @@ export function canViewPatients(role: string | null | undefined) {
   );
 }
 
+/** Technician landing on /patients is the work board, not the patient list. */
+export function isTechnicianBoardRole(role: string | null | undefined) {
+  return allows(role, "technician", "technician_assistant");
+}
+
 export function canOrderTests(role: string | null | undefined) {
   // technician_assistant is excluded — collection only, no ordering.
   return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");

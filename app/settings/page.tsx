@@ -7,6 +7,7 @@ import { doc, setDoc } from "firebase/firestore";
 import {
   LabTest,
   parseSpecimenType,
+  parseTatMinutes,
   resolveSpecimenType,
   SPECIMEN_TYPE_LABELS,
   SPECIMEN_TYPES,
@@ -72,6 +73,7 @@ function SettingsContent() {
   const [newTestName, setNewTestName] = useState("");
   const [newTestCategory, setNewTestCategory] = useState("");
   const [newTestPrice, setNewTestPrice] = useState("");
+  const [newTestTatMinutes, setNewTestTatMinutes] = useState("");
   const [newTestSpecimenType, setNewTestSpecimenType] = useState<SpecimenType | "">("");
   const [newTestParams, setNewTestParams] = useState<TestParameter[]>([
     { name: "", unit: "", referenceRange: "", resultType: "numeric" },
@@ -158,6 +160,11 @@ function SettingsContent() {
     setTests(updated);
   }
 
+  async function updateTatMinutes(testCode: string, raw: string) {
+    const tatMinutes = parseTatMinutes(raw);
+    setTests((prev) => prev.map((t) => (t.code === testCode ? { ...t, tatMinutes } : t)));
+  }
+
   async function logReviewed(test: CatalogRow, actor: AuditActor) {
     try {
       await logAudit({
@@ -190,6 +197,7 @@ function SettingsContent() {
           specimenType: resolveSpecimenType(test.specimenType, test.code),
           parameters: test.parameters.map((p) => normalizeParameter(p)),
           price: test.price || 0,
+          tatMinutes: parseTatMinutes(test.tatMinutes),
           clinicId: test.clinicId || writeClinicId || clinicId || null,
           reviewed: true,
           reviewedAt,
@@ -241,6 +249,31 @@ function SettingsContent() {
     } catch (err) {
       console.error(err);
       setStatus("Failed to save specimen type.");
+    }
+  }
+
+  async function saveTatMinutes(testCode: string, raw: string) {
+    const test = tests.find((t) => t.code === testCode);
+    if (!test) return;
+    const tatMinutes = parseTatMinutes(raw);
+    setTests((prev) => prev.map((t) => (t.code === testCode ? { ...t, tatMinutes } : t)));
+    try {
+      await setDoc(doc(db, "testCatalog", test.firestoreId), { tatMinutes }, { merge: true });
+      const actor = actorFromAuth(user, role, shift);
+      if (actor) {
+        await safeLogAudit({
+          clinicId: test.clinicId || writeClinicId || clinicId || null,
+          actor,
+          action: "catalogue.update",
+          targetCollection: "testCatalog",
+          targetId: test.firestoreId,
+          targetLabel: test.name,
+          detail: { fields: ["tatMinutes"], code: test.code },
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus("Failed to save turnaround minutes.");
     }
   }
 
@@ -479,6 +512,7 @@ function SettingsContent() {
       specimenType,
       parameters: validParams.map((p) => normalizeParameter(p)),
       price: parseFloat(newTestPrice) || 0,
+      tatMinutes: parseTatMinutes(newTestTatMinutes),
       clinicId: writeClinicId,
       sop,
       sopRequired: true,
@@ -492,6 +526,7 @@ function SettingsContent() {
         specimenType: newTest.specimenType,
         parameters: newTest.parameters,
         price: newTest.price,
+        tatMinutes: newTest.tatMinutes ?? null,
         clinicId: writeClinicId,
         reviewed: true,
         reviewedAt: new Date().toISOString(),
@@ -509,7 +544,7 @@ function SettingsContent() {
           targetId: newTest.firestoreId,
           targetLabel: newTest.name,
           detail: {
-            fields: ["code", "name", "parameters", "price", "specimenType", "sop"],
+            fields: ["code", "name", "parameters", "price", "tatMinutes", "specimenType", "sop"],
             code: newTest.code,
           },
         });
@@ -518,6 +553,7 @@ function SettingsContent() {
       setNewTestName("");
       setNewTestCategory("");
       setNewTestPrice("");
+      setNewTestTatMinutes("");
       setNewTestSpecimenType("");
       setNewTestParams([{ name: "", unit: "", referenceRange: "", resultType: "numeric" }]);
       setNewSop(emptySopDraft());
@@ -553,7 +589,7 @@ function SettingsContent() {
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">Clinic Settings</h1>
         <p className="text-gray-600 mb-6">
-          Edit test units, reference ranges, pricing, and SOP references.
+          Edit test units, reference ranges, pricing, optional turnaround minutes, and SOP references.
         </p>
         {needsClinic && <ActingClinicPrompt />}
         {!needsClinic && tests.length === 0 && (
@@ -632,6 +668,20 @@ function SettingsContent() {
                   type="number"
                   value={newTestPrice}
                   onChange={(e) => setNewTestPrice(e.target.value)}
+                  className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Turnaround (minutes, optional)
+                </label>
+                <input
+                  type="number"
+                  min={1}
+                  value={newTestTatMinutes}
+                  onChange={(e) => setNewTestTatMinutes(e.target.value)}
+                  placeholder="Leave blank if none"
                   className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
@@ -793,6 +843,16 @@ function SettingsContent() {
                     defaultValue={test.price || 0}
                     onChange={(e) => updatePrice(test.code, e.target.value)}
                     className="w-24 border border-gray-300 rounded px-2 py-1 text-sm"
+                  />
+                  <label className="text-sm text-gray-600">TAT (min):</label>
+                  <input
+                    type="number"
+                    min={1}
+                    defaultValue={parseTatMinutes(test.tatMinutes) ?? ""}
+                    onBlur={(e) => void saveTatMinutes(test.code, e.target.value)}
+                    onChange={(e) => updateTatMinutes(test.code, e.target.value)}
+                    placeholder="—"
+                    className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
                   />
                   {!isTestReviewed(test) && (
                     <button

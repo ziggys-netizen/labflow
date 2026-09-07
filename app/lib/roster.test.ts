@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   currentRosterShift,
   deriveShiftLabel,
+  rosterShiftWindow,
   evaluateRosterAccess,
   findNextWindow,
   formatRosterMessage,
@@ -248,6 +249,14 @@ describe("next window and derived shift fallback", () => {
     expect(currentRosterShift([entry()], [], new Date(2026, 7, 3, 10, 0), "afternoon")).toBe("morning");
     expect(currentRosterShift([entry()], [], new Date(2026, 7, 3, 20, 0), "afternoon")).toBe("afternoon");
     expect(currentRosterShift([], [], new Date(2026, 7, 3, 10, 0), "night")).toBe("night");
+  });
+
+  it("returns today's shift window when the technician is rostered, otherwise nothing", () => {
+    const window = rosterShiftWindow([entry()], new Date(2026, 7, 3, 10, 0));
+    expect(window?.startTime).toBe("09:00");
+    expect(window?.endTime).toBe("14:00");
+    expect(rosterShiftWindow([], new Date(2026, 7, 3, 10, 0))).toBeNull();
+    expect(rosterShiftWindow([entry()], new Date(2026, 7, 4, 10, 0))).toBeNull();
   });
 });
 

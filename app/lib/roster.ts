@@ -626,6 +626,34 @@ export function parseRosterSession(id: string, data: Record<string, unknown>): R
   };
 }
 
+/** Covering window now, else the first window that matches this local date. */
+export function rosterShiftWindow(
+  entries: RosterEntry[],
+  now: Date
+): { start: Date; end: Date; startTime: string; endTime: string } | null {
+  const covering = windowsCovering(entries, now)[0];
+  if (covering) {
+    return {
+      start: covering.window.start,
+      end: covering.window.end,
+      startTime: covering.entry.startTime,
+      endTime: covering.entry.endTime,
+    };
+  }
+  for (const entry of entries) {
+    const window = shiftWindowOnDate(entry, now);
+    if (window) {
+      return {
+        start: window.start,
+        end: window.end,
+        startTime: entry.startTime,
+        endTime: entry.endTime,
+      };
+    }
+  }
+  return null;
+}
+
 export function currentRosterShift(
   entries: RosterEntry[],
   exceptions: RosterException[],
