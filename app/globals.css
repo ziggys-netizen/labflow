@@ -105,6 +105,12 @@
   }
 }
 
+html,
+body {
+  overflow-x: clip;
+  max-width: 100%;
+}
+
 body {
   background: var(--background);
   color: var(--foreground);
@@ -114,6 +120,24 @@ body {
 @utility lf-num {
   font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
+}
+
+/* Shared page/header cap. 1200px above 1024; padding stays on the 4/8/12/16/24 scale. */
+@utility lf-shell {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+  padding-inline: 16px;
+
+  @variant sm {
+    padding-inline: 24px;
+  }
+}
+
+/* Gloved-hand hit area. Visual padding may be smaller; the target may not. */
+@utility lf-touch {
+  min-width: 44px;
+  min-height: 44px;
 }
 
 @media print {

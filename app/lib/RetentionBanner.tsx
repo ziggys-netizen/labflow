@@ -35,8 +35,8 @@ export default function RetentionBanner() {
   const canEdit = canEditClinicProfile(role);
 
   return (
-    <div className="border-t border-amber-200 bg-amber-50 px-6 py-2">
-      <p className="max-w-5xl mx-auto text-sm text-amber-950">
+    <div className="border-t border-amber-200 bg-amber-50 px-0 py-2">
+      <p className="lf-shell text-sm text-amber-950">
         {RETENTION_SETUP_INCOMPLETE}
         {canEdit ? (
           <>

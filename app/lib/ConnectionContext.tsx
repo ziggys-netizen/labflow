@@ -214,8 +214,8 @@ export function SyncStatus() {
   return (
     <>
       {(showBar || showOffline) && (
-        <div className="no-print border-t border-amber-200 bg-amber-50 px-6 py-2">
-          <div className="max-w-5xl mx-auto text-sm text-amber-950 flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="no-print border-t border-amber-200 bg-amber-50 px-0 py-2">
+          <div className="lf-shell text-sm text-amber-950 flex flex-wrap items-center gap-x-4 gap-y-1">
             {showBar && <p>{persistenceReason}</p>}
             {showOffline && (
               <button
@@ -230,8 +230,8 @@ export function SyncStatus() {
         </div>
       )}
       {(syncing || showProblems) && (
-        <div className="no-print px-6 py-1">
-          <div className="max-w-5xl mx-auto flex flex-wrap items-center justify-end gap-3 text-xs">
+        <div className="no-print px-0 py-1">
+          <div className="lf-shell flex flex-wrap items-center justify-end gap-3 text-xs">
             {syncing && <span className="text-gray-500">Syncing…</span>}
             {showProblems && (
               <button

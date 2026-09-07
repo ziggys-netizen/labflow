@@ -68,7 +68,7 @@ function Metric({ label, value, hint }: { label: string; value: string; hint?: s
 function StateBadge({ state }: { state: BatchState }) {
   return (
     <span
-      className={`text-xs uppercase tracking-wide border rounded px-2 py-0.5 ${BATCH_STATE_CLASSES[state]}`}
+      className={`whitespace-nowrap text-xs uppercase tracking-wide border rounded px-2 py-0.5 ${BATCH_STATE_CLASSES[state]}`}
     >
       {BATCH_STATE_LABELS[state]}
     </span>
@@ -311,25 +311,31 @@ function InventoryContent() {
   return (
     <main className="min-h-screen bg-white">
       <AppNav />
-      <div className="max-w-6xl mx-auto px-6 py-16">
-        <div className="flex flex-wrap items-start justify-between gap-4 mb-1">
+      <div className="lf-shell py-16">
+        <div className="flex flex-col gap-4 mb-1 sm:flex-row sm:items-start sm:justify-between">
           <h1 className="text-2xl font-semibold text-gray-900">Store &amp; inventory</h1>
-          <div className="flex flex-wrap items-center gap-3 text-sm">
+          <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3 text-sm">
             {canRecord && (
               <a
                 href="/inventory/movements"
-                className="bg-gray-900 text-white rounded-lg px-4 py-2 font-medium hover:bg-gray-800 transition"
+                className="lf-touch inline-flex w-full items-center justify-center bg-gray-900 text-white rounded-lg px-4 font-medium hover:bg-gray-800 transition sm:w-auto"
               >
                 Record stock movement
               </a>
             )}
             {canManageInventoryItems(role) && (
-              <a href="/inventory/items" className="text-gray-900 underline font-medium">
+              <a
+                href="/inventory/items"
+                className="lf-touch inline-flex items-center text-gray-900 underline font-medium"
+              >
                 Items
               </a>
             )}
             {canRecordSpecimenMovement(role) && (
-              <a href="/inventory/specimens" className="text-gray-900 underline font-medium">
+              <a
+                href="/inventory/specimens"
+                className="lf-touch inline-flex items-center text-gray-900 underline font-medium"
+              >
                 Specimen register
               </a>
             )}
@@ -356,7 +362,7 @@ function InventoryContent() {
 
         {!loading && !error && !empty && (
           <>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-10">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-10">
               <Metric label="Stock items" value={String(items.filter((i) => i.active).length)} />
               <Metric
                 label="Low stock"
@@ -374,7 +380,7 @@ function InventoryContent() {
 
             <section className="border border-gray-200 rounded-lg p-4 mb-10">
               <h2 className="text-sm font-medium text-gray-900 mb-3">Stock alerts</h2>
-              <div className="grid md:grid-cols-2 gap-x-8 gap-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-x-8 gap-y-4">
                 <div>
                   <p className="text-sm font-medium text-gray-700 mb-2">
                     Out of stock ({alerts.out.length})
@@ -465,13 +471,13 @@ function InventoryContent() {
                   onChange={(e) => setSearch(e.target.value)}
                   placeholder="Item, lot, catalogue code, supplier"
                   aria-label="Search"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="min-h-11 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
                 <select
                   value={category}
                   onChange={(e) => setCategory(e.target.value)}
                   aria-label="Category"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="min-h-11 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="">Any category</option>
                   {INVENTORY_CATEGORIES.map((c) => (
@@ -484,7 +490,7 @@ function InventoryContent() {
                   value={supplier}
                   onChange={(e) => setSupplier(e.target.value)}
                   aria-label="Supplier"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="min-h-11 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="">Any supplier</option>
                   {suppliers.map((s) => (
@@ -497,7 +503,7 @@ function InventoryContent() {
                   value={department}
                   onChange={(e) => setDepartment(e.target.value)}
                   aria-label="Laboratory or department"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="min-h-11 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 >
                   <option value="">Any laboratory / department</option>
                   {LAB_DEPARTMENTS.map((d) => (
@@ -510,7 +516,7 @@ function InventoryContent() {
                   value={stateFilter}
                   onChange={(e) => setStateFilter(e.target.value as "" | BatchState)}
                   aria-label="Status"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="min-h-11 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 >
                   {STATE_FILTERS.map((s) => (
                     <option key={s.value} value={s.value}>
@@ -522,7 +528,7 @@ function InventoryContent() {
                   value={expiryFilter}
                   onChange={(e) => setExpiryFilter(e.target.value)}
                   aria-label="Expiry"
-                  className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  className="min-h-11 border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 >
                   {EXPIRY_FILTERS.map((f) => (
                     <option key={f.value} value={f.value}>
@@ -536,7 +542,7 @@ function InventoryContent() {
                     type="date"
                     value={fromDate}
                     onChange={(e) => setFromDate(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-2 py-2 text-sm w-full"
+                    className="min-h-11 border border-gray-300 rounded-lg px-2 py-2 text-sm w-full"
                   />
                 </label>
                 <label className="text-sm text-gray-600 flex items-center gap-2">
@@ -545,7 +551,7 @@ function InventoryContent() {
                     type="date"
                     value={toDate}
                     onChange={(e) => setToDate(e.target.value)}
-                    className="border border-gray-300 rounded-lg px-2 py-2 text-sm w-full"
+                    className="min-h-11 border border-gray-300 rounded-lg px-2 py-2 text-sm w-full"
                   />
                 </label>
               </div>
@@ -662,7 +668,7 @@ function InventoryContent() {
             </section>
 
             <section className="mb-10">
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-col gap-2 mb-3 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-sm font-medium text-gray-900">
                   Stock by lot ({visibleLots.length} of {lotRows.length})
                 </h2>
@@ -750,7 +756,7 @@ function InventoryContent() {
             </section>
 
             <section>
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex flex-col gap-2 mb-3 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-sm font-medium text-gray-900">Specimen movement</h2>
                 <p className="text-xs text-gray-400">
                   {today.specimensIn} received today · {today.specimensOut} sent today
@@ -788,11 +794,22 @@ function InventoryContent() {
                             <Td>
                               {s.quantity} {s.container || "container(s)"}
                             </Td>
-                            <Td>{s.orderReference || "—"}</Td>
+                            <Td>
+                              <span
+                                className="lf-num block max-w-[12rem] truncate"
+                                title={s.orderReference || undefined}
+                              >
+                                {s.orderReference || "—"}
+                              </span>
+                            </Td>
                             <Td>{s.department || "—"}</Td>
                             <Td>{s.destination || "—"}</Td>
                             <Td>{s.condition}</Td>
-                            <Td>{SPECIMEN_STATUS_LABELS[s.status] ?? s.status}</Td>
+                            <Td>
+                              <span className="whitespace-nowrap">
+                                {SPECIMEN_STATUS_LABELS[s.status] ?? s.status}
+                              </span>
+                            </Td>
                             <Td>{actorLabel(s.actor)}</Td>
                             <Td>{when.date}</Td>
                             <Td>{when.time}</Td>

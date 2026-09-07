@@ -17,6 +17,7 @@ import {
   canViewOwnRegisteredPatients,
   canViewPatients,
   canViewTestValueRollup,
+  roleLabel,
 } from "./permissions";
 import { loadClinicNames } from "./clinicScope";
 import { useClinicCollection } from "./clinicListen";
@@ -25,6 +26,22 @@ import { SyncStatus } from "./ConnectionContext";
 import { countResultsEntered } from "./reviewQueue";
 import { useStaffSession } from "./pinSession";
 import RetentionBanner from "./RetentionBanner";
+import { formatHeaderIdentity, isNavActive } from "./headerIdentity";
+
+type NavItem = {
+  href: string;
+  label: string;
+  badge?: number;
+};
+
+function navClass(active: boolean) {
+  return [
+    "lf-touch inline-flex items-center justify-center gap-1 rounded-lf-sm px-[11px] py-[5px] text-sm font-medium",
+    active
+      ? "bg-lf-surface text-lf-ink ring-1 ring-inset ring-lf-line"
+      : "text-lf-ink-2 hover:text-lf-ink",
+  ].join(" ");
+}
 
 export default function AppNav() {
   const {
@@ -45,6 +62,7 @@ export default function AppNav() {
   const [clinicNames, setClinicNames] = useState<Record<string, string>>({});
   const [switching, setSwitching] = useState(false);
   const [pendingCount, setPendingCount] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
 
   const owner = role === "owner";
   const internOnly = canRegisterPatient(role) && !canViewPatients(role);
@@ -90,6 +108,10 @@ export default function AppNav() {
     };
   }, [owner]);
 
+  useEffect(() => {
+    setMenuOpen(false);
+  }, [pathname]);
+
   const pendingBadge = owner ? pendingCount : 0;
   const canReview = canApproveResults(role);
   const reviewOrders = useClinicCollection("orders", role, clinicId, { enabled: canReview });
@@ -112,6 +134,28 @@ export default function AppNav() {
     [clinicNames]
   );
 
+  const navItems = useMemo<NavItem[]>(() => {
+    if (internOnly) {
+      const items: NavItem[] = [{ href: "/register", label: "Register" }];
+      if (canViewOwnRegisteredPatients(role)) {
+        items.push({ href: "/patients", label: "My patients" });
+      }
+      return items;
+    }
+    const items: NavItem[] = [];
+    if (canViewPatients(role)) items.push({ href: "/patients", label: "Patients" });
+    if (canDeletePatient(role)) items.push({ href: "/patients/deleted", label: "Recycle bin" });
+    if (canOrderTests(role) || canEnterResults(role)) items.push({ href: "/orders", label: "Orders" });
+    if (canViewInventory(role)) items.push({ href: "/inventory", label: "Store" });
+    if (canReview) items.push({ href: "/review", label: "Review", badge: reviewBadge });
+    if (canViewDashboard(role)) items.push({ href: "/dashboard", label: "Dashboard" });
+    if (canViewTestValueRollup(role)) items.push({ href: "/accounts", label: "Test value" });
+    if (canEditTestCatalogue(role)) items.push({ href: "/settings", label: "Clinic Settings" });
+    if (canManageStaff(role) && !owner) items.push({ href: staffHref, label: "Manage Staff" });
+    if (owner) items.push({ href: "/owner", label: "Owner", badge: pendingBadge });
+    return items;
+  }, [internOnly, role, canReview, reviewBadge, owner, pendingBadge]);
+
   async function handleStaffClinicChange(next: string) {
     setSwitching(true);
     try {
@@ -125,165 +169,177 @@ export default function AppNav() {
 
   const homeHref = internOnly ? "/register" : accountsOnly ? "/accounts" : "/";
   const bannerName = actingClinicName || actingClinicId;
+  const identityText = formatHeaderIdentity(
+    acting?.displayName,
+    username,
+    roleLabel(acting?.role || role)
+  );
+  const showSessionControls = Boolean(user);
+  const showMenu = navItems.length > 0 || showSessionControls;
+
+  const clinicControls = (
+    <>
+      {showOwnerPicker && (
+        <select
+          value={actingClinicId ?? ""}
+          onChange={(e) => setActingClinic(e.target.value || null)}
+          aria-label="Acting clinic"
+          className="lf-touch max-w-full border border-lf-line rounded-lf-sm bg-lf-surface px-2 text-sm text-lf-ink"
+        >
+          <option value="">No clinic selected</option>
+          {actingClinicId && !ownerClinicOptions.some((c) => c.id === actingClinicId) && (
+            <option value={actingClinicId}>{bannerName}</option>
+          )}
+          {ownerClinicOptions.map((c) => (
+            <option key={c.id} value={c.id}>
+              {c.name}
+            </option>
+          ))}
+        </select>
+      )}
+      {showStaffSwitcher && (
+        <select
+          value={clinicId ?? ""}
+          disabled={switching}
+          onChange={(e) => handleStaffClinicChange(e.target.value)}
+          aria-label="Active clinic"
+          className="lf-touch max-w-full border border-lf-line rounded-lf-sm bg-lf-surface px-2 text-sm text-lf-ink disabled:opacity-50"
+        >
+          {memberships.map((m) => (
+            <option key={m.clinicId} value={m.clinicId}>
+              {clinicNames[m.clinicId] || m.clinicId}
+            </option>
+          ))}
+        </select>
+      )}
+    </>
+  );
+
+  const sessionActions = user ? (
+    <>
+      {acting && !locked && (
+        <button
+          type="button"
+          onClick={lock}
+          className="lf-touch inline-flex items-center justify-center rounded-lf-sm px-2 text-sm font-medium text-lf-accent"
+        >
+          Lock
+        </button>
+      )}
+      <button
+        type="button"
+        onClick={logout}
+        className="lf-touch inline-flex items-center justify-center rounded-lf-sm px-2 text-sm font-medium text-lf-accent"
+      >
+        Sign out
+      </button>
+    </>
+  ) : (
+    <Link
+      href="/login"
+      className="lf-touch inline-flex items-center justify-center rounded-lf-sm px-[11px] py-[5px] text-sm font-medium text-lf-accent"
+    >
+      Sign in
+    </Link>
+  );
+
+  const identityLink = user ? (
+    <Link
+      href="/profile"
+      title={identityText}
+      className="lf-touch inline-flex max-w-[10rem] min-w-0 items-center sm:max-w-[16rem]"
+    >
+      <span className="font-mono text-xs uppercase tracking-wide text-lf-ink-3 truncate">
+        {identityText}
+      </span>
+    </Link>
+  ) : (
+    sessionActions
+  );
+
+  const navLinks = (layout: "row" | "stack") => (
+    <div className={layout === "row" ? "flex flex-wrap items-center justify-center gap-1" : "flex flex-col gap-1"}>
+      {navItems.map((item) => (
+        <Link
+          key={item.href}
+          href={item.href}
+          className={`${navClass(isNavActive(pathname, item.href))} ${layout === "stack" ? "w-full justify-start" : ""}`}
+        >
+          {item.label}
+          {item.badge != null && item.badge > 0 && (
+            <span className="min-w-5 h-5 px-1 rounded-full bg-lf-ink text-lf-surface text-[11px] font-medium inline-flex items-center justify-center">
+              {item.badge > 99 ? "99+" : item.badge}
+            </span>
+          )}
+        </Link>
+      ))}
+    </div>
+  );
 
   return (
-    <nav className="border-b border-gray-200">
-      <div className="px-6 py-4">
-        <div className="max-w-5xl mx-auto flex items-center justify-between">
-          <Link href={homeHref} className="text-lg font-semibold text-gray-900">
-            LabFlow
+    <nav className="border-b border-lf-line bg-lf-ground">
+      <div className="px-0 py-4">
+        <div className="lf-shell flex items-center gap-4 min-w-0">
+          <Link
+            href={homeHref}
+            className="lf-touch inline-flex shrink-0 items-center gap-2 text-lf-ink"
+          >
+            <span className="size-2 rounded-full bg-lf-accent" aria-hidden />
+            <span className="text-lg font-semibold">LabFlow</span>
           </Link>
-          <div className="flex items-center gap-4">
-            {internOnly ? (
-              <>
-                <Link href="/register" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                  Register
-                </Link>
-                {canViewOwnRegisteredPatients(role) && (
-                  <Link href="/patients" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                    My patients
-                  </Link>
-                )}
-              </>
-            ) : (
-              <>
-                {canViewPatients(role) && (
-                  <Link href="/patients" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                    Patients
-                  </Link>
-                )}
-                {canDeletePatient(role) && (
-                  <Link href="/patients/deleted" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                    Recycle bin
-                  </Link>
-                )}
-                {(canOrderTests(role) || canEnterResults(role)) && (
-                  <Link href="/orders" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                    Orders
-                  </Link>
-                )}
-                {canViewInventory(role) && (
-                  <Link href="/inventory" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                    Store
-                  </Link>
-                )}
-                {canReview && (
-                  <Link
-                    href="/review"
-                    className="text-sm font-medium text-gray-700 hover:text-gray-900 inline-flex items-center gap-1.5"
-                  >
-                    Review
-                    {reviewBadge > 0 && (
-                      <span className="min-w-5 h-5 px-1 rounded-full bg-gray-900 text-white text-[11px] font-medium inline-flex items-center justify-center">
-                        {reviewBadge > 99 ? "99+" : reviewBadge}
-                      </span>
-                    )}
-                  </Link>
-                )}
-                {canViewDashboard(role) && (
-                  <Link href="/dashboard" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                    Dashboard
-                  </Link>
-                )}
-                {canViewTestValueRollup(role) && (
-                  <Link href="/accounts" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                    Test value
-                  </Link>
-                )}
-                {canEditTestCatalogue(role) && (
-                  <Link href="/settings" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                    Clinic Settings
-                  </Link>
-                )}
-                {canManageStaff(role) && !owner && (
-                  <Link href={staffHref} className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                    Manage Staff
-                  </Link>
-                )}
-                {owner && (
-                  <Link
-                    href="/owner"
-                    className="text-sm font-medium text-gray-700 hover:text-gray-900 inline-flex items-center gap-1.5"
-                  >
-                    Owner
-                    {pendingBadge > 0 && (
-                      <span className="min-w-5 h-5 px-1 rounded-full bg-gray-900 text-white text-[11px] font-medium inline-flex items-center justify-center">
-                        {pendingBadge > 99 ? "99+" : pendingBadge}
-                      </span>
-                    )}
-                  </Link>
-                )}
-              </>
-            )}
-            {user ? (
-              <div className="flex items-center gap-2">
-                {showOwnerPicker && (
-                  <select
-                    value={actingClinicId ?? ""}
-                    onChange={(e) => setActingClinic(e.target.value || null)}
-                    aria-label="Acting clinic"
-                    className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700"
-                  >
-                    <option value="">No clinic selected</option>
-                    {actingClinicId &&
-                      !ownerClinicOptions.some((c) => c.id === actingClinicId) && (
-                        <option value={actingClinicId}>{bannerName}</option>
-                      )}
-                    {ownerClinicOptions.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.name}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                {showStaffSwitcher && (
-                  <select
-                    value={clinicId ?? ""}
-                    disabled={switching}
-                    onChange={(e) => handleStaffClinicChange(e.target.value)}
-                    aria-label="Active clinic"
-                    className="border border-gray-300 rounded px-2 py-1 text-sm text-gray-700 disabled:opacity-50"
-                  >
-                    {memberships.map((m) => (
-                      <option key={m.clinicId} value={m.clinicId}>
-                        {clinicNames[m.clinicId] || m.clinicId}
-                      </option>
-                    ))}
-                  </select>
-                )}
-                <Link
-                  href="/profile"
-                  className="text-sm text-gray-600 hover:text-gray-900 hover:underline"
-                >
-                  {acting?.displayName || username || "Set username"}
-                </Link>
-                {acting && !locked && (
-                  <button
-                    type="button"
-                    onClick={lock}
-                    className="text-sm font-medium text-gray-700 hover:text-gray-900 underline"
-                  >
-                    Lock
-                  </button>
-                )}
+
+          <div className="hidden min-w-0 flex-1 lg:flex justify-center">{navLinks("row")}</div>
+
+          <div className="ml-auto flex min-w-0 items-center justify-end gap-2">
+            <div className="hidden lg:flex items-center gap-2">
+              {clinicControls}
+              {user ? identityLink : null}
+              {user ? sessionActions : identityLink}
+            </div>
+            <div className="flex min-w-0 items-center gap-2 lg:hidden">
+              {identityLink}
+              {showMenu && (
                 <button
-                  onClick={logout}
-                  className="text-sm font-medium text-gray-700 hover:text-gray-900 underline"
+                  type="button"
+                  className="lf-touch inline-flex items-center justify-center rounded-lf-sm text-lf-accent"
+                  aria-expanded={menuOpen}
+                  aria-controls="app-nav-menu"
+                  aria-label={menuOpen ? "Close menu" : "Open menu"}
+                  onClick={() => setMenuOpen((open) => !open)}
                 >
-                  Sign out
+                  {menuOpen ? (
+                    <span className="text-sm font-medium">Close</span>
+                  ) : (
+                    <span aria-hidden className="flex flex-col gap-1">
+                      <span className="block h-px w-4 bg-current" />
+                      <span className="block h-px w-4 bg-current" />
+                      <span className="block h-px w-4 bg-current" />
+                    </span>
+                  )}
                 </button>
-              </div>
-            ) : (
-              <Link href="/login" className="text-sm font-medium text-gray-700 hover:text-gray-900">
-                Sign in
-              </Link>
-            )}
+              )}
+            </div>
           </div>
         </div>
       </div>
+
+      {menuOpen && showMenu && (
+        <div id="app-nav-menu" className="border-t border-lf-line bg-lf-surface lg:hidden">
+          <div className="lf-shell flex flex-col gap-2 py-4">
+            {navLinks("stack")}
+            {user && (
+              <div className="flex flex-col gap-2">
+                {clinicControls}
+                <div className="flex flex-wrap gap-2">{sessionActions}</div>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {owner && actingClinicId && (
-        <div className="border-t border-amber-200 bg-amber-50 px-6 py-2">
-          <p className="max-w-5xl mx-auto text-sm text-amber-950">
+        <div className="border-t border-lf-warn bg-lf-warn-soft px-0 py-2">
+          <p className="lf-shell text-sm text-lf-ink">
             Acting in {bannerName} as platform owner. Actions are recorded.
           </p>
         </div>

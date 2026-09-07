@@ -53,7 +53,7 @@ import {
 
 function StatusBadge({ status }: { status: string }) {
   return (
-    <span className="text-xs uppercase tracking-wide text-gray-500 border border-gray-300 rounded px-2 py-1">
+    <span className="whitespace-nowrap text-xs uppercase tracking-wide text-gray-500 border border-gray-300 rounded px-2 py-1">
       {status}
     </span>
   );
@@ -702,11 +702,11 @@ export default function StaffPanel({
 
   const directoryTable = (
     <section>
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-3">
+      <div className="flex flex-col gap-3 mb-3 sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
         <h2 className="text-sm font-medium text-gray-900">
           Staff directory ({staffDirectory.length})
         </h2>
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
           <label className="text-sm text-gray-600">
             State{" "}
             <select
@@ -714,7 +714,7 @@ export default function StaffPanel({
               onChange={(e) =>
                 setStateFilter(e.target.value as "all" | StaffDirectoryState)
               }
-              className="border border-gray-300 rounded px-2 py-1 text-sm"
+              className="lf-touch border border-gray-300 rounded px-2 text-sm"
             >
               <option value="all">All</option>
               <option value="pre-approved">Pre-approved</option>
@@ -723,7 +723,11 @@ export default function StaffPanel({
               <option value="rejected">Rejected</option>
             </select>
           </label>
-          <button type="button" onClick={downloadStaffList} className="text-sm text-gray-900 underline">
+          <button
+            type="button"
+            onClick={downloadStaffList}
+            className="lf-touch inline-flex items-center text-sm text-gray-900 underline"
+          >
             Download list
           </button>
         </div>
@@ -864,7 +868,7 @@ export default function StaffPanel({
   return (
     <main className="min-h-screen bg-white">
       <AppNav />
-      <div className="max-w-5xl mx-auto px-6 py-16">
+      <div className="lf-shell py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">
           {scopedName ? `Staff — ${scopedName}` : "Manage Staff"}
         </h1>

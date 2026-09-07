@@ -310,18 +310,24 @@ function PatientsContent() {
   return (
     <main className="min-h-screen bg-white">
       <AppNav />
-      <div className="max-w-6xl mx-auto px-6 py-16">
-        <div className="flex items-center justify-between mb-6">
+      <div className="lf-shell py-16">
+        <div className="flex flex-col gap-4 mb-6 sm:flex-row sm:items-center sm:justify-between">
           <h1 className="text-2xl font-semibold text-gray-900">Patients</h1>
-          <div className="flex items-center gap-4">
-            {canDelete && (
-              <Link href="/patients/deleted" className="text-sm font-medium text-gray-700 underline">
-                Recycle bin
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:gap-4">
+            {canRegister && (
+              <Link
+                href="/register"
+                className="lf-touch inline-flex w-full items-center justify-center rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800 sm:w-auto"
+              >
+                Register a patient
               </Link>
             )}
-            {canRegister && (
-              <Link href="/register" className="text-sm font-medium text-gray-900 underline">
-                Register a patient
+            {canDelete && (
+              <Link
+                href="/patients/deleted"
+                className="lf-touch inline-flex w-full items-center justify-center text-sm font-medium text-gray-700 underline sm:w-auto"
+              >
+                Recycle bin
               </Link>
             )}
           </div>
@@ -374,7 +380,7 @@ function PatientsContent() {
                               : `No released report for ${p.name} yet`
                           }
                           aria-label={`Print report for ${p.name}`}
-                          className="inline-flex text-gray-500 hover:text-gray-900"
+                          className="lf-touch inline-flex items-center justify-center text-gray-500 hover:text-gray-900"
                         >
                           <PrintIcon />
                         </Link>
@@ -385,7 +391,11 @@ function PatientsContent() {
                       >
                         {p.clinicId || "—"}
                       </td>
-                      <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">{p.labId}</td>
+                      <td className="py-2 pr-4 text-gray-900 max-w-[8rem]">
+                        <span className="lf-num block truncate" title={p.labId}>
+                          {p.labId}
+                        </span>
+                      </td>
                       <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">
                         <span className="inline-flex items-center gap-2">
                           {p.name}
@@ -407,7 +417,10 @@ function PatientsContent() {
                       <td className="py-2 pr-4 text-gray-600 whitespace-nowrap">{p.referringClinician}</td>
                       <td className="py-2 pr-4 whitespace-nowrap">
                         {canOrder && (
-                          <Link href={`/orders/new/${p.id}`} className="text-gray-900 underline mr-3">
+                          <Link
+                            href={`/orders/new/${p.id}`}
+                            className="lf-touch inline-flex items-center text-gray-900 underline mr-3"
+                          >
                             Order tests
                           </Link>
                         )}
@@ -415,13 +428,13 @@ function PatientsContent() {
                           <button
                             onClick={() => openDelete(p.id, p.name, p.labId, p.clinicId)}
                             disabled={deletingId === p.id}
-                            className="text-red-600 hover:text-red-800 disabled:opacity-50"
+                            className="lf-touch inline-flex items-center text-red-600 hover:text-red-800 disabled:opacity-50"
                           >
                             {deletingId === p.id ? "Removing..." : "Delete"}
                           </button>
                         )}
                         <label
-                          className={`inline-flex items-center gap-1.5 ml-3 ${
+                          className={`lf-touch inline-flex items-center gap-1.5 ml-3 ${
                             canCollect && sampleState.canToggle
                               ? "cursor-pointer"
                               : "cursor-not-allowed"
