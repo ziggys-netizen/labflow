@@ -3,26 +3,117 @@
 :root {
   --background: #ffffff;
   --foreground: #171717;
+
+  /*
+    LabFlow tokens — ready for Tailwind utilities; not applied to screens yet.
+    Accent is for clickable things only.
+    Two radii only: 3px and 6px.
+    Shadow only where something genuinely floats (menus, dialogs — not cards).
+    No gradients anywhere.
+    Spacing scale: 4 / 8 / 12 / 16 / 24 / 32 / 48.
+    Layout uses flex/grid gap, not per-element margins.
+  */
+  --lf-ground: #F6F8F9;
+  --lf-surface: #FFFFFF;
+  --lf-surface-2: #EEF2F4;
+  --lf-ink: #16212B;
+  --lf-ink-2: #4A5A67;
+  --lf-ink-3: #7C8994;
+  --lf-line: #DCE3E8;
+  --lf-line-strong: #C3CDD4;
+  --lf-accent: #14476B;
+  --lf-accent-soft: #E4EDF4;
+  --lf-on-accent: #FFFFFF;
+  --lf-crit: #B33A2B;
+  --lf-crit-soft: #FBE9E6;
+  --lf-warn: #9A6B08;
+  --lf-warn-soft: #FBF0D9;
+  --lf-ok: #1A6E45;
+  --lf-ok-soft: #E3F2EA;
+  --lf-cap-lavender: #A78FCE;
+  --lf-cap-blue: #6BA5CE;
+  --lf-cap-gold: #C89B2E;
+  --lf-cap-grey: #93A0A9;
+  --lf-cap-red: #B85450;
+  --lf-cap-green: #4E9A72;
+  --lf-r-sm: 3px;
+  --lf-r-md: 6px;
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-ibm-plex-sans);
+  --font-mono: var(--font-ibm-plex-mono);
+
+  --color-lf-ground: var(--lf-ground);
+  --color-lf-surface: var(--lf-surface);
+  --color-lf-surface-2: var(--lf-surface-2);
+  --color-lf-ink: var(--lf-ink);
+  --color-lf-ink-2: var(--lf-ink-2);
+  --color-lf-ink-3: var(--lf-ink-3);
+  --color-lf-line: var(--lf-line);
+  --color-lf-line-strong: var(--lf-line-strong);
+  --color-lf-accent: var(--lf-accent);
+  --color-lf-accent-soft: var(--lf-accent-soft);
+  --color-lf-on-accent: var(--lf-on-accent);
+  --color-lf-crit: var(--lf-crit);
+  --color-lf-crit-soft: var(--lf-crit-soft);
+  --color-lf-warn: var(--lf-warn);
+  --color-lf-warn-soft: var(--lf-warn-soft);
+  --color-lf-ok: var(--lf-ok);
+  --color-lf-ok-soft: var(--lf-ok-soft);
+  --color-lf-cap-lavender: var(--lf-cap-lavender);
+  --color-lf-cap-blue: var(--lf-cap-blue);
+  --color-lf-cap-gold: var(--lf-cap-gold);
+  --color-lf-cap-grey: var(--lf-cap-grey);
+  --color-lf-cap-red: var(--lf-cap-red);
+  --color-lf-cap-green: var(--lf-cap-green);
+
+  --radius-lf-sm: var(--lf-r-sm);
+  --radius-lf-md: var(--lf-r-md);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
     --background: #0a0a0a;
     --foreground: #ededed;
+
+    --lf-ground: #0F151A;
+    --lf-surface: #171F26;
+    --lf-surface-2: #1E2830;
+    --lf-ink: #E3EAEF;
+    --lf-ink-2: #A6B4BF;
+    --lf-ink-3: #74828D;
+    --lf-line: #2A353E;
+    --lf-line-strong: #3A4854;
+    --lf-accent: #6BA8D6;
+    --lf-accent-soft: #1B2C3A;
+    --lf-on-accent: #0F151A;
+    --lf-crit: #E4796A;
+    --lf-crit-soft: #33201D;
+    --lf-warn: #D6A544;
+    --lf-warn-soft: #2F2717;
+    --lf-ok: #55B183;
+    --lf-ok-soft: #162B21;
+    --lf-cap-lavender: #B9A4DE;
+    --lf-cap-blue: #7FB6DC;
+    --lf-cap-gold: #D8AE45;
+    --lf-cap-grey: #9DAAB3;
+    --lf-cap-red: #CB6B67;
+    --lf-cap-green: #62AE85;
   }
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+}
+
+/* Ready to use on digits that stack: Lab IDs, timestamps, quantities, codes. */
+@utility lf-num {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
 }
 
 @media print {
