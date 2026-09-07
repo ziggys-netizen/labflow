@@ -46,7 +46,9 @@ import { operationalStripeClass } from "../lib/operationalFlag";
 import IconButton from "../lib/IconButton";
 import PrintIcon from "../lib/PrintIcon";
 import TrashIcon from "../lib/TrashIcon";
+import HistoryIcon from "../lib/HistoryIcon";
 import { ICON_ACTION_LABELS, actionPresentation } from "../lib/iconAction";
+import { patientHistoryHref } from "../lib/patientHistory";
 import {
   canPerformPrimaryAction,
   formatSexAge,
@@ -486,8 +488,6 @@ function PatientsContent() {
         </Link>
       );
     }
-    // Patient history stays hidden until E3 — no safe destination without that route.
-
     if (items.length === 0) return null;
 
     return (
@@ -509,7 +509,8 @@ function PatientsContent() {
     const showPrintIcon =
       Boolean(released) && actionPresentation("print", printSurface) === "icon";
     const menu = renderMenu(patient);
-    if (!showPrintIcon && !canDelete && !menu) return null;
+    const showHistoryIcon = canReview && actionPresentation("history", "secondary") === "icon";
+    if (!showPrintIcon && !showHistoryIcon && !canDelete && !menu) return null;
 
     return (
       <div className="flex items-center gap-2">
@@ -520,6 +521,15 @@ function PatientsContent() {
             onClick={(e) => e.stopPropagation()}
           >
             <PrintIcon />
+          </IconButton>
+        ) : null}
+        {showHistoryIcon ? (
+          <IconButton
+            label={ICON_ACTION_LABELS.history}
+            href={patientHistoryHref(patient.id)}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <HistoryIcon />
           </IconButton>
         ) : null}
         {canDelete ? (
