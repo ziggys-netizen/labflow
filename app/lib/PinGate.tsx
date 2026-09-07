@@ -5,8 +5,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useStaffSession, sensitiveActionLabel } from "./pinSession";
 import type { SensitivePinAction } from "./pinIdentity";
-import { useAuth } from "./AuthContext";
-import { evaluateAuthState, sessionAuthInput } from "./authState";
+import { useAuth, useSessionAuthInput } from "./AuthContext";
+import { evaluateAuthState } from "./authState";
 import { BREAK_GLASS_CODES } from "./reasonCodes";
 import ReasonCodeField from "./ReasonCodeField";
 import { minutesUntil, rosterExpiryWarning } from "./roster";
@@ -27,7 +27,8 @@ export default function PinGate({ children }: { children: ReactNode }) {
     driftWarning,
     rosterOffline,
   } = useStaffSession();
-  const { user, role, status, clinicId, writeClinicId } = useAuth();
+  const { writeClinicId, clinicId } = useAuth();
+  const session = useSessionAuthInput();
   const pathname = usePathname() || "";
   const [uid, setUid] = useState("");
   const [pin, setPin] = useState("");
@@ -36,8 +37,8 @@ export default function PinGate({ children }: { children: ReactNode }) {
   const [reasonCode, setReasonCode] = useState("");
   const [reasonNote, setReasonNote] = useState("");
   const scopeClinic = writeClinicId || clinicId;
-  // Spec: PIN is layer 4. This overlay must not render until pinApplies.
-  const auth = evaluateAuthState(sessionAuthInput({ user, role, status, clinicId, writeClinicId }));
+  // Spec: PIN runs after terms. This overlay must not render until pinApplies.
+  const auth = evaluateAuthState(session);
   const showRosterGate =
     ready &&
     !needsSetup &&

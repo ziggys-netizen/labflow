@@ -12,7 +12,7 @@ import {
 import { usePathname } from "next/navigation";
 import { collection, doc, getDocs, query, setDoc, where } from "firebase/firestore";
 import { db } from "./firebase";
-import { useAuth } from "./AuthContext";
+import { useAuth, useSessionAuthInput } from "./AuthContext";
 import { loadClinic } from "./clinics";
 import {
   clinicPinDocId,
@@ -47,7 +47,7 @@ import {
 import { setSessionOffRoster } from "./rosterStamp";
 import { justificationError, BREAK_GLASS_CODES } from "./reasonCodes";
 import { canManageStaff, isClinicAdmin } from "./permissions";
-import { evaluateAuthState, sessionAuthInput } from "./authState";
+import { evaluateAuthState } from "./authState";
 
 const SESSION_KEY = "labflow.actingStaff";
 
@@ -178,7 +178,8 @@ function withDerivedShift(staff: ActingStaff, cache: RosterCache, decision: Rost
 }
 
 export function StaffSessionProvider({ children }: { children: ReactNode }) {
-  const { user, role, clinicId, writeClinicId, shift, username, status } = useAuth();
+  const { user, role, clinicId, writeClinicId, shift, username } = useAuth();
+  const session = useSessionAuthInput();
   const pathname = usePathname() || "";
   const scopeClinic = writeClinicId || clinicId;
   const [roster, setRoster] = useState<CachedStaff[]>([]);
@@ -305,9 +306,7 @@ export function StaffSessionProvider({ children }: { children: ReactNode }) {
   }, [verifiedStaff?.uid, rosterCache, staffOnly]);
 
   const ownRow = roster.find((row) => row.uid === user?.uid) ?? null;
-  const skipPin = !evaluateAuthState(
-    sessionAuthInput({ user, role, status, clinicId, writeClinicId })
-  ).pinApplies;
+  const skipPin = !evaluateAuthState(session).pinApplies;
   const needsSetup = !skipPin && !!user && !ownRow?.pin;
   const idle = isIdleLocked(lastActivityAt, Date.now(), idleMinutes);
   const staffExempt =

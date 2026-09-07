@@ -12,6 +12,8 @@
  * results — totals must not become a clinical access path.
  */
 
+import { isTermsReadablePath } from "./legal/termsGate";
+
 export const ROLES = [
   "owner",
   "clinic_admin",
@@ -330,13 +332,14 @@ export function landingPathForRole(
  * them back to registration. Profile is identity only, not a patient table.
  */
 export function internAllowedPath(pathname: string): boolean {
+  if (isTermsReadablePath(pathname)) return true;
   if (pathname === "/register" || pathname === "/profile" || pathname === "/patients") return true;
   return pathname.startsWith("/patients/") && pathname.endsWith("/print");
 }
 
-/** Accounts officers: rollup page and identity only. No clinical lists. */
+/** Accounts officers: rollup page, identity, and legal documents. No clinical lists. */
 export function accountsAllowedPath(pathname: string): boolean {
-  return pathname === "/accounts" || pathname === "/profile";
+  return pathname === "/accounts" || pathname === "/profile" || isTermsReadablePath(pathname);
 }
 
 /** Capability redirect for roles that must not fall through ProtectedRoute. */

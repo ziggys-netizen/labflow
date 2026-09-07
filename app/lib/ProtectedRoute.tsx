@@ -1,7 +1,7 @@
 "use client";
 
-import { useAuth } from "./AuthContext";
-import { protectedRouteDestination, sessionAuthInput, type RouteRequire } from "./authState";
+import { useAuth, useSessionAuthInput } from "./AuthContext";
+import { protectedRouteDestination, type RouteRequire } from "./authState";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
 
@@ -19,19 +19,14 @@ export default function ProtectedRoute({
   children: React.ReactNode;
   require?: RouteRequire;
 }) {
-  const { user, loading, role, status, clinicId, writeClinicId } = useAuth();
+  const { user, loading, role } = useAuth();
+  const session = useSessionAuthInput();
   const router = useRouter();
   const pathname = usePathname();
   const hasRedirected = useRef(false);
   const lastDest = useRef<string | null | undefined>(undefined);
 
-  const dest = loading
-    ? null
-    : protectedRouteDestination(
-        sessionAuthInput({ user, role, status, clinicId, writeClinicId }),
-        pathname,
-        require
-      );
+  const dest = loading ? null : protectedRouteDestination(session, pathname, require);
 
   useEffect(() => {
     if (lastDest.current !== dest) {

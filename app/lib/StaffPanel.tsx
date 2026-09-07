@@ -50,6 +50,13 @@ import {
   type StaffDirectoryRow,
   type StaffDirectoryState,
 } from "./staffDirectory";
+import { loadClinicTermsAcceptances } from "./legal/termsAcceptanceStore";
+import type { TermsAcceptanceRecord } from "./legal/termsAcceptance";
+import {
+  acceptedVersionForUid,
+  staffTermsIndicator,
+  staffTermsIndicatorLabel,
+} from "./legal/termsGate";
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -231,6 +238,7 @@ export default function StaffPanel({
   const [usernameDraft, setUsernameDraft] = useState<Record<string, string>>({});
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [stateFilter, setStateFilter] = useState<"all" | StaffDirectoryState>("all");
+  const [termsAcceptances, setTermsAcceptances] = useState<TermsAcceptanceRecord[]>([]);
 
   const preApprovalClinicId = scopeClinicId || (!owner ? clinicId : null);
 
@@ -292,6 +300,27 @@ export default function StaffPanel({
       cancelled = true;
     };
   }, [canAccess, owner, role, clinicId, scopeClinicId, preApprovalClinicId, reloadToken]);
+
+  const termsClinicId = scopeClinicId || clinicId;
+
+  useEffect(() => {
+    if (!canAccess || !termsClinicId) {
+      setTermsAcceptances([]);
+      return;
+    }
+    let cancelled = false;
+    loadClinicTermsAcceptances(termsClinicId)
+      .then((rows) => {
+        if (!cancelled) setTermsAcceptances(rows);
+      })
+      .catch((err) => {
+        console.error(err);
+        if (!cancelled) setTermsAcceptances([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [canAccess, termsClinicId, reloadToken]);
 
   const directory = useMemo(
     () => buildIdentityDirectory(rows.map((r) => ({ uid: r.uid, email: r.email, username: r.username }))),
@@ -747,6 +776,7 @@ export default function StaffPanel({
                 <th className="py-2 pr-3 font-medium">State</th>
                 <th className="py-2 pr-3 font-medium">Shift</th>
                 <th className="py-2 pr-3 font-medium">Clinic</th>
+                <th className="py-2 pr-3 font-medium">Terms</th>
                 <th className="py-2 pr-3 font-medium">Detail</th>
                 <th className="py-2 font-medium">Actions</th>
               </tr>
@@ -768,6 +798,17 @@ export default function StaffPanel({
                     </td>
                     <td className="py-3 pr-3 text-gray-600">
                       {entry.clinicId ? clinicNames[entry.clinicId] || entry.clinicId : "—"}
+                    </td>
+                    <td className="py-3 pr-3 text-xs text-gray-500">
+                      {staffTermsIndicatorLabel(
+                        staffTermsIndicator({
+                          uid: entry.uid,
+                          state: entry.state,
+                          acceptedVersion: entry.uid
+                            ? acceptedVersionForUid(termsAcceptances, entry.uid)
+                            : null,
+                        })
+                      )}
                     </td>
                     <td className="py-3 pr-3 text-gray-600">
                       {entry.state === "pre-approved" && entry.expiresAt

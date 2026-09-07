@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
 import { auth, googleProvider, db } from "./firebase";
 import { doc, getDoc, setDoc, updateDoc, onSnapshot } from "firebase/firestore";
@@ -13,8 +13,12 @@ import {
   resolveIdentity,
 } from "./membership";
 import { writeClinicId as resolveWriteClinicId } from "./clinicScope";
+import { ACCEPTABLE_USE } from "./legal/acceptableUse";
+import { isOwnerExemptFromStaffTerms } from "./legal/termsGate";
+import { getNewestAcceptedTermsVersion } from "./legal/termsAcceptanceStore";
 import { logPermissionsMatrix } from "./permissions";
 import { forceTokenRefresh, syncCustomClaims } from "./authApi";
+import { sessionAuthInput, type AuthStateInput } from "./authState";
 
 if (process.env.NODE_ENV === "development") {
   logPermissionsMatrix();
@@ -71,6 +75,13 @@ interface AuthContextType {
   loading: boolean;
   popupBlocked: boolean;
   authError: string | null;
+  /**
+   * Newest accepted clinic-staff terms version for this user, or null if none.
+   * Not used for the owner (exempt).
+   */
+  acceptedTermsVersion: string | null;
+  /** Optimistic: current `ACCEPTABLE_USE.version` is accepted (offline-safe). */
+  acceptCurrentTerms: () => void;
   login: () => Promise<void>;
   logout: () => Promise<void>;
   setActiveClinic: (clinicId: string) => Promise<void>;
@@ -102,6 +113,8 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   popupBlocked: false,
   authError: null,
+  acceptedTermsVersion: null,
+  acceptCurrentTerms: () => {},
   login: async () => {},
   logout: async () => {},
   setActiveClinic: async () => {},
@@ -112,12 +125,23 @@ export function useAuth() {
   return useContext(AuthContext);
 }
 
+/** Auth machine input including the terms layer. PIN/roster stay omitted. */
+export function useSessionAuthInput(): AuthStateInput {
+  const { user, role, status, clinicId, writeClinicId, acceptedTermsVersion } = useAuth();
+  return useMemo(
+    () => sessionAuthInput({ user, role, status, clinicId, writeClinicId, acceptedTermsVersion }),
+    [user, role, status, clinicId, writeClinicId, acceptedTermsVersion]
+  );
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [identity, setIdentity] = useState<ResolvedIdentity>(EMPTY_IDENTITY);
   const [actingClinicId, setActingClinicIdState] = useState<string | null>(null);
   const [actingClinicNames, setActingClinicNames] = useState<Record<string, string>>({});
-  const [loading, setLoading] = useState(true);
+  const [identityLoading, setIdentityLoading] = useState(true);
+  const [acceptedTermsVersion, setAcceptedTermsVersion] = useState<string | null>(null);
+  const [termsChecked, setTermsChecked] = useState(false);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const unsubDocRef = useRef<(() => void) | null>(null);
@@ -137,12 +161,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(firebaseUser);
       if (!firebaseUser) {
         setIdentity(EMPTY_IDENTITY);
+        setAcceptedTermsVersion(null);
+        setTermsChecked(true);
         clearActingClinic();
-        setLoading(false);
+        setIdentityLoading(false);
         return;
       }
 
-      setLoading(true);
+      setIdentityLoading(true);
+      setTermsChecked(false);
       const userDocRef = doc(db, "users", firebaseUser.uid);
       try {
         const userDocSnap = await getDoc(userDocRef);
@@ -168,6 +195,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             reportFirestoreMetadata(snap.metadata);
             const next = resolveIdentity(snap.data());
             setIdentity(next);
+            if (isOwnerExemptFromStaffTerms(next.role) || next.status !== "approved" || !next.clinicId) {
+              setAcceptedTermsVersion(null);
+              setTermsChecked(true);
+            }
             if (next.role === "owner") {
               if (!actingHydratedRef.current) {
                 actingHydratedRef.current = true;
@@ -176,17 +207,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             } else {
               clearActingClinic();
             }
-            setLoading(false);
+            setIdentityLoading(false);
           },
           (err) => {
             // Without this the listener can fail silently and leave the app on "Loading...".
             console.error(err);
-            setLoading(false);
+            setIdentityLoading(false);
           }
         );
       } catch (err) {
         console.error(err);
-        setLoading(false);
+        setIdentityLoading(false);
       }
     });
     return () => {
@@ -272,7 +303,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setPopupBlocked(true);
       setAuthError(SIGN_IN_ERRORS[code] || "Sign-in failed. Click Continue with Google to try again.");
       // A failed popup never triggers onAuthStateChanged, so release the gate here.
-      setLoading(false);
+      setIdentityLoading(false);
+      setTermsChecked(true);
     }
   }
 
@@ -280,6 +312,50 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     clearActingClinic();
     await signOut(auth);
   }
+
+  useEffect(() => {
+    if (!user) {
+      setAcceptedTermsVersion(null);
+      setTermsChecked(true);
+      return;
+    }
+    if (isOwnerExemptFromStaffTerms(identity.role) || identity.status !== "approved" || !identity.clinicId) {
+      setAcceptedTermsVersion(null);
+      setTermsChecked(true);
+      return;
+    }
+    let cancelled = false;
+    setTermsChecked(false);
+    getNewestAcceptedTermsVersion(user.uid)
+      .then((version) => {
+        if (!cancelled) {
+          setAcceptedTermsVersion(version);
+          setTermsChecked(true);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setAcceptedTermsVersion(null);
+          setTermsChecked(true);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [user, identity.role, identity.status, identity.clinicId]);
+
+  const acceptCurrentTerms = useCallback(() => {
+    setAcceptedTermsVersion(ACCEPTABLE_USE.version);
+    setTermsChecked(true);
+  }, []);
+
+  const termsPending =
+    Boolean(user) &&
+    !isOwnerExemptFromStaffTerms(identity.role) &&
+    identity.status === "approved" &&
+    Boolean(identity.clinicId) &&
+    !termsChecked;
+  const loading = identityLoading || termsPending;
 
   const exposedActingClinicId = identity.role === "owner" ? actingClinicId : null;
 
@@ -299,6 +375,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         popupBlocked,
         authError,
+        acceptedTermsVersion,
+        acceptCurrentTerms,
         login,
         logout,
         setActiveClinic,

@@ -172,6 +172,59 @@ body {
   min-height: 44px;
 }
 
+/* Authenticated app footer — document flow, not sticky/fixed. */
+.lf-app-footer {
+  border-top: 1px solid var(--lf-line);
+  padding: 16px 18px;
+  background: var(--lf-surface);
+  display: flex;
+  justify-content: space-between;
+  gap: 10px 20px;
+  flex-wrap: wrap;
+}
+
+.lf-app-footer-zone {
+  display: flex;
+  align-items: center;
+}
+
+.lf-app-footer-left {
+  gap: 8px;
+  font-size: 12.5px;
+  color: var(--lf-ink-3);
+}
+
+.lf-app-footer-accent {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  background: var(--lf-accent);
+}
+
+.lf-app-footer-centre {
+  gap: 14px;
+  font-size: 12.5px;
+  color: var(--lf-accent);
+}
+
+.lf-app-footer-centre a:hover {
+  text-decoration: underline;
+}
+
+.lf-app-footer-right {
+  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-size: 11px;
+  color: var(--lf-ink-3);
+  text-transform: uppercase;
+}
+
+@media (max-width: 639px) {
+  .lf-app-footer {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+}
+
 @media print {
   .no-print {
     display: none !important;

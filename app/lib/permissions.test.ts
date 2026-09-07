@@ -518,19 +518,22 @@ describe("landingPathForRole", () => {
     expect(landingPathForRole(null)).toBe("/patients");
   });
 
-  it("intern may open register, profile, their patients, and a print page", () => {
+  it("intern may open register, profile, their patients, a print page, and legal documents", () => {
     expect(internAllowedPath("/register")).toBe(true);
     expect(internAllowedPath("/profile")).toBe(true);
     expect(internAllowedPath("/patients")).toBe(true);
     expect(internAllowedPath("/patients/abc/print")).toBe(true);
+    expect(internAllowedPath("/legal/acceptable-use")).toBe(true);
+    expect(internAllowedPath("/legal/privacy")).toBe(true);
     expect(internAllowedPath("/orders")).toBe(false);
     expect(internAllowedPath("/review")).toBe(false);
     expect(internAllowedPath("/owner/clinics/c1/audit")).toBe(false);
   });
 
-  it("accounts may open the rollup and profile only", () => {
+  it("accounts may open the rollup, profile, and legal documents", () => {
     expect(accountsAllowedPath("/accounts")).toBe(true);
     expect(accountsAllowedPath("/profile")).toBe(true);
+    expect(accountsAllowedPath("/legal/acceptable-use")).toBe(true);
     expect(accountsAllowedPath("/patients")).toBe(false);
     expect(accountsAllowedPath("/orders")).toBe(false);
     expect(accountsAllowedPath("/dashboard")).toBe(false);

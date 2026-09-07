@@ -4,6 +4,7 @@ import type { AuditActor } from "../auditTypes";
 import { db } from "../firebase";
 import { trackedSetDoc } from "../trackedWrites";
 import { ACCEPTABLE_USE } from "./acceptableUse";
+import { newestAcceptedVersion } from "./termsGate";
 import {
   TERMS_ACCEPTANCES,
   parseTermsAcceptance,
@@ -30,6 +31,41 @@ export async function hasAcceptedTerms(
   version: string = ACCEPTABLE_USE.version
 ): Promise<boolean> {
   return (await getTermsAcceptance(uid, documentId, version)) != null;
+}
+
+/** Own acceptances. Used to find an older version when the current doc is missing. */
+export async function loadUserTermsAcceptances(uid: string): Promise<TermsAcceptanceRecord[]> {
+  if (!uid) return [];
+  const snap = await getDocs(query(collection(db, TERMS_ACCEPTANCES), where("uid", "==", uid)));
+  const rows: TermsAcceptanceRecord[] = [];
+  for (const d of snap.docs) {
+    const row = parseTermsAcceptance(d.id, d.data() as Record<string, unknown>);
+    if (row) rows.push(row);
+  }
+  return rows;
+}
+
+/**
+ * Newest accepted version for this user and document.
+ * Prefers the current version doc (one get); falls back to the user's list.
+ */
+export async function getNewestAcceptedTermsVersion(
+  uid: string,
+  documentId: string = ACCEPTABLE_USE.id
+): Promise<string | null> {
+  if (!uid) return null;
+  try {
+    const current = await getTermsAcceptance(uid, documentId, ACCEPTABLE_USE.version);
+    if (current) return current.version;
+  } catch {
+    // Offline or cache miss — try the user's other acceptances.
+  }
+  try {
+    const rows = await loadUserTermsAcceptances(uid);
+    return newestAcceptedVersion(rows, documentId);
+  } catch {
+    return null;
+  }
 }
 
 /** Clinic-scoped list. Caller must be owner or that clinic's admin (rules). */
@@ -62,8 +98,16 @@ export async function recordTermsAcceptance(input: {
   const documentId = input.documentId ?? ACCEPTABLE_USE.id;
   const version = input.version ?? ACCEPTABLE_USE.version;
   const id = termsAcceptanceDocId(input.uid, documentId, version);
-  const existing = await getDoc(doc(db, TERMS_ACCEPTANCES, id));
-  if (existing.exists()) {
+  let alreadyExists = false;
+  try {
+    const existing = await getDoc(doc(db, TERMS_ACCEPTANCES, id));
+    alreadyExists = existing.exists();
+  } catch {
+    // Offline without a cached doc: queue the create. Duplicate id is a no-op
+    // once the device syncs (create-only rules + same document id).
+    alreadyExists = false;
+  }
+  if (alreadyExists) {
     return { id, created: false };
   }
 

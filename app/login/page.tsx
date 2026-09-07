@@ -3,15 +3,17 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { useAuth } from "../lib/AuthContext";
-import { continuePathAfterAuth, sessionAuthInput } from "../lib/authState";
+import { useAuth, useSessionAuthInput } from "../lib/AuthContext";
+import { continuePathAfterAuth } from "../lib/authState";
+import { consumeTermsDeclineNotice } from "../lib/legal/termsGate";
 
 export default function Login() {
-  const { user, role, status, clinicId, writeClinicId, login, loading, popupBlocked, authError } =
-    useAuth();
+  const { user, login, loading, popupBlocked, authError } = useAuth();
+  const session = useSessionAuthInput();
   const router = useRouter();
   const [error, setError] = useState("");
   const [signingIn, setSigningIn] = useState(false);
+  const [declineMessage, setDeclineMessage] = useState("");
 
   async function handleLogin() {
     setError("");
@@ -27,10 +29,13 @@ export default function Login() {
     }
   }
 
+  useEffect(() => {
+    const notice = consumeTermsDeclineNotice();
+    if (notice) setDeclineMessage(notice);
+  }, []);
+
   const failureMessage = authError || error;
-  const continueHref = continuePathAfterAuth(
-    sessionAuthInput({ user, role, status, clinicId, writeClinicId })
-  );
+  const continueHref = continuePathAfterAuth(session);
 
   useEffect(() => {
     if (loading || !user || continueHref === "/login") return;
@@ -65,6 +70,7 @@ export default function Login() {
         >
           {failureMessage || popupBlocked ? "Continue with Google" : "Sign in with Google"}
         </button>
+        {declineMessage && <p className="text-sm text-gray-700 mt-3">{declineMessage}</p>}
         {failureMessage && <p className="text-sm text-red-600 mt-3">{failureMessage}</p>}
       </div>
     </main>

@@ -2,13 +2,14 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useAuth } from "../lib/AuthContext";
+import { useAuth, useSessionAuthInput } from "../lib/AuthContext";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import { forceTokenRefresh, syncCustomClaims } from "../lib/authApi";
-import { continuePathAfterAuth, sessionAuthInput } from "../lib/authState";
+import { continuePathAfterAuth } from "../lib/authState";
 
 function PendingContent() {
-  const { user, role, status, clinicId, writeClinicId, logout } = useAuth();
+  const { user, status, logout } = useAuth();
+  const session = useSessionAuthInput();
   const router = useRouter();
   const refreshing = useRef(false);
   const rejected = status === "rejected";
@@ -25,13 +26,13 @@ function PendingContent() {
         console.error(err);
       }
       if (!cancelled) {
-        router.replace(continuePathAfterAuth(sessionAuthInput({ user, role, status, clinicId, writeClinicId })));
+        router.replace(continuePathAfterAuth(session));
       }
     })();
     return () => {
       cancelled = true;
     };
-  }, [status, user, role, clinicId, writeClinicId, router]);
+  }, [status, user, session, router]);
 
   return (
     <main className="min-h-screen bg-white flex items-center justify-center px-6">

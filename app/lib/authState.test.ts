@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { canViewPatients } from "./permissions";
+import { ACCEPTABLE_USE } from "./legal/acceptableUse";
+import { TERMS_PATH, isOwnerExemptFromStaffTerms } from "./legal/termsGate";
 import {
   AUTH_LAYERS,
   continuePathAfterAuth,
@@ -10,10 +12,14 @@ import {
 } from "./authState";
 
 /** Later-layer values that must be ignored until Google, approval, and membership pass. */
-const PIN_AND_ROSTER_READY: Pick<AuthStateInput, "hasPin" | "pinUnlocked" | "rosterAllowed"> = {
+const PIN_AND_ROSTER_READY: Pick<
+  AuthStateInput,
+  "hasPin" | "pinUnlocked" | "rosterAllowed" | "acceptedTermsVersion"
+> = {
   hasPin: true,
   pinUnlocked: true,
   rosterAllowed: false,
+  acceptedTermsVersion: ACCEPTABLE_USE.version,
 };
 
 function decide(overrides: Partial<AuthStateInput> = {}) {
@@ -29,8 +35,15 @@ function decide(overrides: Partial<AuthStateInput> = {}) {
 }
 
 describe("AUTH_LAYERS", () => {
-  it("is Google, approval, membership, PIN, then roster", () => {
-    expect(AUTH_LAYERS).toEqual(["google", "approval", "membership", "pin", "roster"]);
+  it("is Google, approval, membership, terms, PIN, then roster", () => {
+    expect(AUTH_LAYERS).toEqual([
+      "google",
+      "approval",
+      "membership",
+      "termsRequired",
+      "pin",
+      "roster",
+    ]);
   });
 });
 
@@ -93,6 +106,125 @@ describe("evaluateAuthState", () => {
       layer: "approval",
       pinApplies: false,
       rosterApplies: false,
+    });
+  });
+
+  it("owner is exempt from the terms gate — processor, not clinic staff", () => {
+    expect(isOwnerExemptFromStaffTerms("owner")).toBe(true);
+    expect(isOwnerExemptFromStaffTerms("technician")).toBe(false);
+    const decision = decide({
+      role: "owner",
+      status: "approved",
+      clinicId: null,
+      writeClinicId: null,
+      acceptedTermsVersion: null,
+      hasPin: false,
+      pinUnlocked: false,
+      rosterAllowed: false,
+    });
+    expect(decision.destination).not.toBe(TERMS_PATH);
+    expect(decision.layer).toBe("ok");
+    expect(decision.pinApplies).toBe(false);
+  });
+
+  it("owner acting in a clinic is still not asked for terms", () => {
+    const decision = decide({
+      role: "owner",
+      status: "approved",
+      clinicId: null,
+      writeClinicId: "c1",
+      acceptedTermsVersion: null,
+      hasPin: true,
+      pinUnlocked: true,
+      rosterAllowed: true,
+    });
+    expect(decision.destination).not.toBe(TERMS_PATH);
+    expect(decision.layer).toBe("ok");
+    expect(decision.pinApplies).toBe(true);
+  });
+
+  it("approved member without acceptance → /terms after membership, before PIN", () => {
+    const decision = decide({
+      role: "technician",
+      status: "approved",
+      clinicId: "c1",
+      writeClinicId: "c1",
+      acceptedTermsVersion: null,
+      hasPin: false,
+      pinUnlocked: false,
+      rosterAllowed: false,
+    });
+    expect(decision).toMatchObject({
+      destination: TERMS_PATH,
+      layer: "termsRequired",
+      pinApplies: false,
+      rosterApplies: false,
+      pinNeedsSetup: false,
+    });
+  });
+
+  it("older accepted version → termsRequired on the next session", () => {
+    const decision = decide({
+      role: "technician",
+      status: "approved",
+      clinicId: "c1",
+      writeClinicId: "c1",
+      acceptedTermsVersion: "0.9",
+      hasPin: true,
+      pinUnlocked: true,
+      rosterAllowed: true,
+    });
+    expect(decision).toMatchObject({
+      destination: TERMS_PATH,
+      layer: "termsRequired",
+      pinApplies: false,
+      rosterApplies: false,
+    });
+  });
+
+  it("unapproved / no clinic is not asked for terms", () => {
+    expect(
+      decide({
+        acceptedTermsVersion: null,
+        hasPin: true,
+        pinUnlocked: true,
+      })
+    ).toMatchObject({
+      destination: "/join",
+      layer: "membership",
+      pinApplies: false,
+    });
+    expect(
+      decide({
+        role: "technician",
+        status: "pending",
+        clinicId: "c1",
+        writeClinicId: "c1",
+        acceptedTermsVersion: null,
+      })
+    ).toMatchObject({
+      destination: "/pending",
+      layer: "approval",
+      pinApplies: false,
+    });
+  });
+
+  it("current terms accepted → PIN/roster proceed as before", () => {
+    const decision = decide({
+      role: "technician",
+      status: "approved",
+      clinicId: "c1",
+      writeClinicId: "c1",
+      acceptedTermsVersion: ACCEPTABLE_USE.version,
+      hasPin: true,
+      pinUnlocked: true,
+      rosterAllowed: true,
+    });
+    expect(decision).toMatchObject({
+      destination: null,
+      layer: "ok",
+      pinApplies: true,
+      rosterApplies: true,
     });
   });
 
@@ -299,6 +431,7 @@ describe("protectedRouteDestination", () => {
           status: "approved",
           clinicId: "c1",
           writeClinicId: "c1",
+          acceptedTermsVersion: ACCEPTABLE_USE.version,
           hasPin: true,
           pinUnlocked: true,
           rosterAllowed: true,
@@ -317,6 +450,7 @@ describe("protectedRouteDestination", () => {
           status: "approved",
           clinicId: "c1",
           writeClinicId: "c1",
+          acceptedTermsVersion: ACCEPTABLE_USE.version,
           hasPin: true,
           pinUnlocked: true,
           rosterAllowed: true,
@@ -332,6 +466,7 @@ describe("protectedRouteDestination", () => {
           status: "approved",
           clinicId: "c1",
           writeClinicId: "c1",
+          acceptedTermsVersion: ACCEPTABLE_USE.version,
           hasPin: true,
           pinUnlocked: true,
           rosterAllowed: true,
@@ -351,6 +486,7 @@ describe("protectedRouteDestination", () => {
           status: "approved",
           clinicId: "c1",
           writeClinicId: "c1",
+          acceptedTermsVersion: ACCEPTABLE_USE.version,
           hasPin: true,
           pinUnlocked: true,
           rosterAllowed: true,
@@ -359,6 +495,40 @@ describe("protectedRouteDestination", () => {
         canViewPatients
       )
     ).toBe("/inventory");
+  });
+
+  it("approved member without terms on patients → /terms, not patient data", () => {
+    expect(
+      protectedRouteDestination(
+        {
+          hasGoogleUser: true,
+          role: "technician",
+          status: "approved",
+          clinicId: "c1",
+          writeClinicId: "c1",
+          acceptedTermsVersion: null,
+          hasPin: true,
+          pinUnlocked: true,
+          rosterAllowed: true,
+        },
+        "/patients",
+        canViewPatients
+      )
+    ).toBe(TERMS_PATH);
+  });
+
+  it("termsRequired may stay on /terms and /legal/acceptable-use", () => {
+    const gated: AuthStateInput = {
+      hasGoogleUser: true,
+      role: "technician",
+      status: "approved",
+      clinicId: "c1",
+      writeClinicId: "c1",
+      acceptedTermsVersion: null,
+    };
+    expect(protectedRouteDestination(gated, TERMS_PATH)).toBeNull();
+    expect(protectedRouteDestination(gated, "/legal/acceptable-use")).toBeNull();
+    expect(protectedRouteDestination(gated, "/dashboard")).toBe(TERMS_PATH);
   });
 });
 
@@ -387,11 +557,25 @@ describe("continuePathAfterAuth", () => {
         status: "approved",
         clinicId: "c1",
         writeClinicId: "c1",
+        acceptedTermsVersion: ACCEPTABLE_USE.version,
         hasPin: true,
         pinUnlocked: true,
         rosterAllowed: true,
       })
     ).toBe("/patients");
+  });
+
+  it("approved technician without terms continues to /terms", () => {
+    expect(
+      continuePathAfterAuth({
+        hasGoogleUser: true,
+        role: "technician",
+        status: "approved",
+        clinicId: "c1",
+        writeClinicId: "c1",
+        acceptedTermsVersion: null,
+      })
+    ).toBe(TERMS_PATH);
   });
 
   it("owner continues to /owner", () => {

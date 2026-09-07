@@ -6,16 +6,34 @@
  * 1. Google session
  * 2. Approval status
  * 3. Clinic membership
- * 4. PIN
- * 5. Roster
+ * 4. Terms acceptance (`termsRequired`)
+ * 5. PIN
+ * 6. Roster
  *
- * `pending` with no clinic reaches `/join` before PIN or roster apply.
- * PIN is set after approval (PRD §4.2). PinGate must not render until layer 4.
+ * `pending` with no clinic reaches `/join` before terms, PIN, or roster apply.
+ * Terms refer to the PIN, so accepting first reads correctly.
+ * PIN is set after approval (PRD §4.2). PinGate must not render until pinApplies.
+ *
+ * The owner is exempt from the terms layer — processor, not clinic staff.
  */
 
+import { ACCEPTABLE_USE } from "./legal/acceptableUse";
+import {
+  TERMS_PATH,
+  isOwnerExemptFromStaffTerms,
+  isTermsReadablePath,
+  staffHasCurrentTerms,
+} from "./legal/termsGate";
 import { capabilityRedirect, landingPathForRole } from "./permissions";
 
-export const AUTH_LAYERS = ["google", "approval", "membership", "pin", "roster"] as const;
+export const AUTH_LAYERS = [
+  "google",
+  "approval",
+  "membership",
+  "termsRequired",
+  "pin",
+  "roster",
+] as const;
 export type AuthLayer = (typeof AUTH_LAYERS)[number];
 
 export type AuthStateInput = {
@@ -24,6 +42,12 @@ export type AuthStateInput = {
   status: string | null;
   clinicId: string | null;
   writeClinicId: string | null;
+  /**
+   * Newest accepted version of the clinic staff terms for this user.
+   * Ignored until the terms layer (after membership). The owner is exempt —
+   * this field is not read for owner. Omit/`null` means no current acceptance.
+   */
+  acceptedTermsVersion?: string | null;
   /**
    * PIN record exists for this account at the active clinic.
    * Ignored until the PIN layer. Omit when only routing is needed.
@@ -69,6 +93,7 @@ function clinicOf(input: AuthStateInput): string | null {
 /**
  * Map AuthContext fields into the machine. PIN/roster details are omitted so
  * routing callers cannot accidentally let those layers run early.
+ * Terms version is included because `termsRequired` is a routing destination.
  */
 export function sessionAuthInput(session: {
   user: { uid: string } | null;
@@ -76,6 +101,7 @@ export function sessionAuthInput(session: {
   status: string | null;
   clinicId: string | null;
   writeClinicId: string | null;
+  acceptedTermsVersion?: string | null;
 }): AuthStateInput {
   return {
     hasGoogleUser: Boolean(session.user),
@@ -83,6 +109,7 @@ export function sessionAuthInput(session: {
     status: session.status,
     clinicId: session.clinicId,
     writeClinicId: session.writeClinicId,
+    acceptedTermsVersion: session.acceptedTermsVersion,
   };
 }
 
@@ -138,21 +165,34 @@ function evaluatePinAndRoster(input: AuthStateInput): AuthStateDecision {
   };
 }
 
+function evaluateTermsThenPin(input: AuthStateInput): AuthStateDecision {
+  if (
+    !isOwnerExemptFromStaffTerms(input.role) &&
+    !staffHasCurrentTerms(input.acceptedTermsVersion, ACCEPTABLE_USE.version)
+  ) {
+    return beforePin(TERMS_PATH, "termsRequired");
+  }
+  return evaluatePinAndRoster(input);
+}
+
 /**
  * Route and gate decision for one auth snapshot. Pathname is not an input —
  * callers compare `destination` to the current path.
  *
- * PIN and roster fields on the input are read only after Google, approval, and
- * membership have passed. `pinApplies` / `rosterApplies` are the spec for
- * PinGate and the staff session: those overlays must not run when the flag is
- * false, even if a PIN record or roster decision exists.
+ * PIN and roster fields on the input are read only after Google, approval,
+ * membership, and terms have passed. `pinApplies` / `rosterApplies` are the
+ * spec for PinGate and the staff session: those overlays must not run when
+ * the flag is false, even if a PIN record or roster decision exists.
  */
 export function evaluateAuthState(input: AuthStateInput): AuthStateDecision {
   if (!input.hasGoogleUser) {
     return beforePin("/login", "google");
   }
 
-  if (input.role === "owner") {
+  if (isOwnerExemptFromStaffTerms(input.role)) {
+    // Decision: owner is the processor, not clinic staff. These terms do not
+    // apply. Exempt from the gate — not an oversight. (clinicId is null, so
+    // the owner also cannot create an acceptance.)
     return evaluatePinAndRoster(input);
   }
 
@@ -172,7 +212,7 @@ export function evaluateAuthState(input: AuthStateInput): AuthStateDecision {
     return beforePin("/join", "membership");
   }
 
-  return evaluatePinAndRoster(input);
+  return evaluateTermsThenPin(input);
 }
 
 /**
@@ -180,6 +220,9 @@ export function evaluateAuthState(input: AuthStateInput): AuthStateDecision {
  * capabilities — a pending user on `/patients` goes to `/join`, not the
  * patients landing. When `destination` is already the required onboarding
  * path, it is still returned so capability fallbacks cannot bounce them off it.
+ *
+ * During `termsRequired`, `/terms` and `/legal/*` document routes may stay
+ * so the footer Terms link is not a trap.
  */
 export function protectedRouteDestination(
   input: AuthStateInput,
@@ -187,7 +230,12 @@ export function protectedRouteDestination(
   require?: RouteRequire
 ): string | null {
   const decision = evaluateAuthState(input);
-  if (decision.destination) return decision.destination;
+  if (decision.destination) {
+    if (decision.layer === "termsRequired" && isTermsReadablePath(pathname)) {
+      return null;
+    }
+    return decision.destination;
+  }
   const locked = capabilityRedirect(input.role, pathname);
   if (locked) return locked;
   if (require && !require(input.role)) {
