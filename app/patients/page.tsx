@@ -43,6 +43,10 @@ import {
 } from "../lib/sampleCollection";
 import { OperationalChip } from "../lib/OperationalRow";
 import { operationalStripeClass } from "../lib/operationalFlag";
+import IconButton from "../lib/IconButton";
+import PrintIcon from "../lib/PrintIcon";
+import TrashIcon from "../lib/TrashIcon";
+import { ICON_ACTION_LABELS, actionPresentation } from "../lib/iconAction";
 import {
   canPerformPrimaryAction,
   formatSexAge,
@@ -142,18 +146,17 @@ function MoreMenu({
 
   return (
     <div ref={ref} className="relative shrink-0">
-      <button
-        type="button"
-        aria-label="More actions"
+      <IconButton
+        label={ICON_ACTION_LABELS.more}
         aria-expanded={open}
+        aria-haspopup="menu"
         onClick={(e) => {
           e.stopPropagation();
           onToggle();
         }}
-        className="lf-touch inline-flex items-center justify-center rounded-lf-md border border-lf-line bg-lf-surface text-lf-ink-2 hover:text-lf-ink"
       >
-        ⋯
-      </button>
+        <span aria-hidden="true">⋯</span>
+      </IconButton>
       {open && (
         <div
           role="menu"
@@ -464,26 +467,9 @@ function PatientsContent() {
 
   function renderMenu(patient: Patient) {
     const orders = ordersByPatient[patient.id] || [];
-    const action = patientPrimaryAction(orders);
     const released = orders.find((o) => isReleasedResultStatus(o.status));
     const items: ReactNode[] = [];
 
-    if (released && action.kind !== "print") {
-      items.push(
-        <Link
-          key="print"
-          role="menuitem"
-          href={`/patients/${patient.id}/print`}
-          className={menuItemClass()}
-          onClick={(e) => {
-            e.stopPropagation();
-            setOpenMenuId(null);
-          }}
-        >
-          Print
-        </Link>
-      );
-    }
     if (canAmend && released) {
       items.push(
         <Link
@@ -500,23 +486,7 @@ function PatientsContent() {
         </Link>
       );
     }
-    if (canDelete) {
-      items.push(
-        <button
-          key="delete"
-          type="button"
-          role="menuitem"
-          disabled={deletingId === patient.id}
-          className={menuItemClass(true)}
-          onClick={(e) => {
-            e.stopPropagation();
-            openDelete(patient.id, patient.name, patient.labId, patient.clinicId);
-          }}
-        >
-          {deletingId === patient.id ? "Removing..." : "Delete"}
-        </button>
-      );
-    }
+    // Patient history stays hidden until E3 — no safe destination without that route.
 
     if (items.length === 0) return null;
 
@@ -528,6 +498,45 @@ function PatientsContent() {
       >
         {items}
       </MoreMenu>
+    );
+  }
+
+  function renderExtras(patient: Patient) {
+    const orders = ordersByPatient[patient.id] || [];
+    const action = patientPrimaryAction(orders);
+    const released = orders.find((o) => isReleasedResultStatus(o.status));
+    const printSurface = action.kind === "print" ? "primary-next-step" : "secondary";
+    const showPrintIcon =
+      Boolean(released) && actionPresentation("print", printSurface) === "icon";
+    const menu = renderMenu(patient);
+    if (!showPrintIcon && !canDelete && !menu) return null;
+
+    return (
+      <div className="flex items-center gap-2">
+        {showPrintIcon ? (
+          <IconButton
+            label={ICON_ACTION_LABELS.print}
+            href={`/patients/${patient.id}/print`}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <PrintIcon />
+          </IconButton>
+        ) : null}
+        {canDelete ? (
+          <IconButton
+            label={ICON_ACTION_LABELS.delete}
+            danger
+            disabled={deletingId === patient.id}
+            onClick={(e) => {
+              e.stopPropagation();
+              openDelete(patient.id, patient.name, patient.labId, patient.clinicId);
+            }}
+          >
+            <TrashIcon />
+          </IconButton>
+        ) : null}
+        {menu}
+      </div>
     );
   }
 
@@ -619,7 +628,7 @@ function PatientsContent() {
                     </Link>
                     <div className="flex flex-col gap-2">
                       {renderPrimary(p)}
-                      {renderMenu(p)}
+                      {renderExtras(p)}
                     </div>
                   </li>
                 );
@@ -682,7 +691,7 @@ function PatientsContent() {
                         >
                           <div className="flex items-center justify-end gap-2">
                             {renderPrimary(p)}
-                            {renderMenu(p)}
+                            {renderExtras(p)}
                           </div>
                         </td>
                       </tr>

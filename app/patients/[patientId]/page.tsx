@@ -14,6 +14,9 @@ import { isPatientDeleted } from "../../lib/patientSoftDelete";
 import { canViewOwnRegisteredPatients, canViewPatients, roleLabel } from "../../lib/permissions";
 import { patientDisplayName } from "../../lib/patientDisplay";
 import { formatSexAge } from "../../lib/patientList";
+import IconButton from "../../lib/IconButton";
+import PrintIcon from "../../lib/PrintIcon";
+import { ICON_ACTION_LABELS } from "../../lib/iconAction";
 
 /**
  * Identity page for fields that left the patient list (E1).
@@ -115,10 +118,15 @@ function PatientRecordContent() {
         {!loading && notFound && <p className="text-lf-ink-2">Patient not found.</p>}
         {!loading && patient && (
           <div className="flex flex-col gap-6">
-            <div className="flex flex-col gap-2">
-              <p className="lf-num text-sm text-lf-ink-2">{patient.labId || "—"}</p>
-              <h1 className="text-2xl font-semibold text-lf-ink">{displayName}</h1>
-              <p className="text-sm text-lf-ink-2">{formatSexAge(patient)}</p>
+            <div className="flex items-start justify-between gap-3">
+              <div className="flex min-w-0 flex-col gap-2">
+                <p className="lf-num text-sm text-lf-ink-2">{patient.labId || "—"}</p>
+                <h1 className="text-2xl font-semibold text-lf-ink">{displayName}</h1>
+                <p className="text-sm text-lf-ink-2">{formatSexAge(patient)}</p>
+              </div>
+              <IconButton label={ICON_ACTION_LABELS.print} href={`/patients/${patientId}/print`}>
+                <PrintIcon />
+              </IconButton>
             </div>
             <div className="grid grid-cols-1 gap-4 rounded-lf-md border border-lf-line bg-lf-surface p-4 sm:grid-cols-2">
               <Field label="Phone" value={patient.phone} />
@@ -130,12 +138,6 @@ function PatientRecordContent() {
               <Field label="Registered" value={patient.createdAt ? new Date(patient.createdAt).toLocaleString() : "—"} />
               <Field label="Registered by" value={roleLabel(patient.createdByRole)} />
             </div>
-            <Link
-              href={`/patients/${patientId}/print`}
-              className="lf-touch inline-flex w-full items-center justify-center rounded-lf-md border border-lf-line bg-lf-surface text-sm font-medium text-lf-ink sm:w-auto"
-            >
-              Print
-            </Link>
           </div>
         )}
       </div>
