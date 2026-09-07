@@ -2,7 +2,7 @@
 
 import { displayRange, normalizeParameter, type TestParameter } from "./resultModel";
 import { parameterFlag, parameterHlSuppressionReason } from "./resultFlag";
-import ResultFlagMark from "./ResultFlagMark";
+import ClinicalFlagLetter from "./ClinicalFlagLetter";
 
 export default function ResultValueField({
   parameter,
@@ -76,7 +76,7 @@ export default function ResultValueField({
             className="border border-gray-300 rounded px-2 py-1 text-sm flex-1 disabled:bg-gray-50 disabled:text-gray-500"
           />
         )}
-        <ResultFlagMark flag={flag} />
+        <ClinicalFlagLetter flag={flag} />
       </div>
     </div>
   );

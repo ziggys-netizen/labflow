@@ -29,7 +29,7 @@ import {
   PROVISIONAL_NOTICE,
 } from "../../../lib/provisionalReport";
 import { canViewOwnRegisteredPatients, canViewPatients } from "../../../lib/permissions";
-import ResultFlagMark from "../../../lib/ResultFlagMark";
+import ClinicalFlagLetter from "../../../lib/ClinicalFlagLetter";
 import { interpretCollection, orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../../../lib/sampleCollection";
 import { orderDisplayLabel } from "../../../lib/orderLifecycle";
 import { useStaffSession, useWriteIdentity } from "../../../lib/pinSession";
@@ -497,12 +497,10 @@ function PatientPrintContent() {
                                 {p.name}
                               </td>
                               <td className="py-1 pr-3 text-gray-900">
-                                {value || "—"}
-                                {flag ? (
-                                  <span className="ml-1">
-                                    <ResultFlagMark flag={flag} />
-                                  </span>
-                                ) : null}
+                                <span className="inline-flex items-baseline gap-1">
+                                  <span>{value || "—"}</span>
+                                  {flag ? <ClinicalFlagLetter flag={flag} /> : null}
+                                </span>
                                 {hlReason ? ` — ${hlReason}` : ""}
                               </td>
                               <td className="py-1 pr-3 text-gray-600">{p.unit}</td>

@@ -10,7 +10,9 @@ import { canEnterResults, canOrderTests } from "../lib/permissions";
 import { isOrderForDeletedPatient } from "../lib/patientSoftDelete";
 import { patientsByIdFromDocs, resolvePatientNameById } from "../lib/patientDisplay";
 import { orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../lib/sampleCollection";
-import { orderDisplayLabel, orderDisplayToneClass } from "../lib/orderLifecycle";
+import { orderDisplayLabel } from "../lib/orderLifecycle";
+import OperationalRow from "../lib/OperationalRow";
+import { operationalFromOrderStage } from "../lib/operationalFlag";
 
 interface Order {
   id: string;
@@ -21,8 +23,8 @@ interface Order {
   createdAt: string;
   sampleCollectedAt?: string | null;
   sampleCollections?: SampleCollections | null;
+  recollectionOfOrderId: string | null;
   awaitingLabel: string;
-  awaitingTone: ReturnType<typeof orderDisplayLabel>["tone"];
   notYetSynced?: boolean;
 }
 
@@ -52,8 +54,9 @@ function OrdersContent() {
         createdAt: data.createdAt,
         sampleCollectedAt: parsed.sampleCollectedAt,
         sampleCollections: parsed.sampleCollections,
+        recollectionOfOrderId:
+          typeof data.recollectionOfOrderId === "string" ? data.recollectionOfOrderId : null,
         awaitingLabel: orderDisplayLabel(parsed).label,
-        awaitingTone: orderDisplayLabel(parsed).tone,
         notYetSynced: parsed.notYetSynced,
       };
     });
@@ -67,32 +70,37 @@ function OrdersContent() {
         {query.loading && <p className="text-gray-600">Loading...</p>}
         {!query.loading && orders.length === 0 && <p className="text-gray-600">No orders yet.</p>}
 
-        <div className="space-y-3">
-          {orders.map((o) => (
-            <Link
-              key={o.id}
-              href={`/orders/${o.id}`}
-              className="block min-h-11 border border-gray-200 rounded-lg p-4 hover:bg-gray-50 transition"
-            >
-              <div className="flex flex-col gap-2 mb-2 sm:flex-row sm:items-center sm:justify-between">
-                <span className="font-medium text-gray-900 inline-flex min-w-0 items-center gap-2">
-                  <span className="truncate">{o.patientName}</span>
-                  <NotYetSynced show={o.notYetSynced} />
-                </span>
-                <span
-                  className={`shrink-0 whitespace-nowrap text-xs font-medium tracking-wide border rounded px-2 py-0.5 ${orderDisplayToneClass(o.awaitingTone)}`}
+        <div className="flex flex-col gap-3">
+          {orders.map((o) => {
+            const operational = operationalFromOrderStage(o);
+            return (
+              <Link
+                key={o.id}
+                href={`/orders/${o.id}`}
+                className="block min-h-11"
+              >
+                <OperationalRow
+                  state={operational.state}
+                  label={operational.label}
+                  className="p-4 hover:bg-lf-surface-2"
                 >
-                  {o.awaitingLabel}
-                </span>
-              </div>
-              <p className="lf-num text-sm text-gray-500 mb-2 truncate" title={o.patientLabId}>
-                Lab ID: {o.patientLabId}
-              </p>
-              <p className="text-sm text-gray-700">
-                Tests: {o.tests.map((t) => t.name || t.code).join(", ")}
-              </p>
-            </Link>
-          ))}
+                  <div className="flex flex-col gap-2">
+                    <span className="inline-flex min-w-0 items-center gap-2 font-medium text-lf-ink">
+                      <span className="truncate">{o.patientName}</span>
+                      <NotYetSynced show={o.notYetSynced} />
+                    </span>
+                    <p className="lf-num truncate text-sm text-lf-ink-2" title={o.patientLabId}>
+                      Lab ID: {o.patientLabId}
+                    </p>
+                    <p className="text-sm text-lf-ink">
+                      Tests: {o.tests.map((t) => t.name || t.code).join(", ")}
+                    </p>
+                    <p className="text-sm text-lf-ink-3">{o.awaitingLabel}</p>
+                  </div>
+                </OperationalRow>
+              </Link>
+            );
+          })}
         </div>
       </div>
     </main>

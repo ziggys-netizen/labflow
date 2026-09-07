@@ -21,6 +21,8 @@ import {
   isWaitingOver24Hours,
   queueWaitStartedAt,
 } from "../lib/reviewQueue";
+import OperationalRow from "../lib/OperationalRow";
+import { operationalFromOrderStage } from "../lib/operationalFlag";
 
 type QueueTab = "results_entered" | "needs_correction";
 
@@ -176,48 +178,49 @@ function ReviewContent() {
               </p>
             )}
 
-            <div className="space-y-3">
-              {visible.map((order) => (
-                <Link
-                  key={order.id}
-                  href={`/orders/${order.id}`}
-                  className={`block rounded-lg p-4 transition ${
-                    order.stale
-                      ? "border border-amber-300 bg-amber-50 hover:bg-amber-100"
-                      : "border border-gray-200 hover:bg-gray-50"
-                  }`}
-                >
-                  <div className="flex items-start justify-between gap-4 mb-2">
-                    <span className="font-medium text-gray-900 inline-flex items-center gap-2">
-                      {order.patientName}
-                      <NotYetSynced show={order.notYetSynced} />
-                    </span>
-                    <span className="flex items-center gap-2 shrink-0">
-                      {order.abnormal && (
-                        <span className="text-xs font-semibold text-amber-700">Abnormal</span>
-                      )}
-                      {order.stale && (
-                        <span className="text-xs font-medium text-amber-900">Waiting over 24 h</span>
-                      )}
-                    </span>
-                  </div>
-                  <p className="text-sm text-gray-500 mb-1">Lab ID: {order.patientLabId}</p>
-                  <p className="text-sm text-gray-700 mb-1">
-                    Tests: {order.tests.map((test) => test.name || test.code).join(", ") || "—"}
-                  </p>
-                  <p className="text-sm text-gray-600">
-                    {order.resultsEnteredBy
-                      ? `Entered by ${order.resultsEnteredBy}${
-                          order.resultsEnteredAt
-                            ? ` at ${new Date(order.resultsEnteredAt).toLocaleString()}`
-                            : ""
-                        }`
-                      : "Entered by unknown"}
-                    {" · "}
-                    {formatHours(order.hoursSinceCollection)} since collection
-                  </p>
-                </Link>
-              ))}
+            <div className="flex flex-col gap-3">
+              {visible.map((order) => {
+                const operational = operationalFromOrderStage({ status: order.status });
+                return (
+                  <Link
+                    key={order.id}
+                    href={`/orders/${order.id}`}
+                    className="block min-h-11"
+                  >
+                    <OperationalRow
+                      state={operational.state}
+                      label={operational.label}
+                      className="p-4 hover:bg-lf-surface-2"
+                    >
+                      <div className="flex flex-col gap-2">
+                        <span className="inline-flex min-w-0 items-center gap-2 font-medium text-lf-ink">
+                          <span className="truncate">{order.patientName}</span>
+                          <NotYetSynced show={order.notYetSynced} />
+                        </span>
+                        <p className="lf-num truncate text-sm text-lf-ink-2" title={order.patientLabId}>
+                          Lab ID: {order.patientLabId}
+                        </p>
+                        <p className="text-sm text-lf-ink">
+                          Tests: {order.tests.map((test) => test.name || test.code).join(", ") || "—"}
+                          {order.abnormal ? " · Abnormal results" : ""}
+                        </p>
+                        <p className="text-sm text-lf-ink-2">
+                          {order.resultsEnteredBy
+                            ? `Entered by ${order.resultsEnteredBy}${
+                                order.resultsEnteredAt
+                                  ? ` at ${new Date(order.resultsEnteredAt).toLocaleString()}`
+                                  : ""
+                              }`
+                            : "Entered by unknown"}
+                          {" · "}
+                          {formatHours(order.hoursSinceCollection)} since collection
+                          {order.stale ? " · Waiting over 24 h" : ""}
+                        </p>
+                      </div>
+                    </OperationalRow>
+                  </Link>
+                );
+              })}
             </div>
           </>
         )}
