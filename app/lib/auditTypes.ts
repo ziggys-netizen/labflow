@@ -88,6 +88,7 @@ export const AUDIT_ACTIONS = [
   "roster.entryDelete",
   "roster.exceptionCreate",
   "roster.exceptionDelete",
+  "terms.accept",
 ] as const;
 
 export type AuditAction = (typeof AUDIT_ACTIONS)[number];

@@ -526,6 +526,48 @@ service cloud.firestore {
       allow read, write: if false;
     }
 
+    // ---------- terms acceptances ----------
+    // Create only. Never updated, never deleted, by anyone including the
+    // owner — same as auditLogs. Fields are UID + clinic + document version
+    // only; no name, no email. Document id is {uid}_{documentId}_{version}.
+    //
+    // Assumed document:
+    //   termsAcceptances/{uid}_{documentId}_{version}
+    //   uid, clinicId, documentId, version, acceptedAt (server), recordedAt (device)
+
+    function isValidTermsAcceptance(id, data) {
+      return data.keys().hasOnly(["uid", "clinicId", "documentId", "version", "acceptedAt", "recordedAt"])
+             && data.uid is string
+             && data.uid.size() > 0
+             && data.uid.size() <= 128
+             && data.documentId is string
+             && data.documentId.size() > 0
+             && data.documentId.size() <= 64
+             && data.version is string
+             && data.version.size() > 0
+             && data.version.size() <= 32
+             && data.acceptedAt is timestamp
+             && data.acceptedAt == request.time
+             && data.recordedAt is string
+             && data.recordedAt.size() > 0
+             && data.recordedAt.size() <= 40
+             && id == data.uid + "_" + data.documentId + "_" + data.version;
+    }
+
+    match /termsAcceptances/{id} {
+      allow get, list: if isOwner()
+                       || (isApproved() && resource.data.uid == request.auth.uid)
+                       || (isClinicAdmin()
+                           && userClinic() != null
+                           && resource.data.clinicId == userClinic());
+      allow create: if isApproved()
+                    && request.resource.data.uid == request.auth.uid
+                    && hasClinicId(request.resource.data)
+                    && request.resource.data.clinicId == userClinic()
+                    && isValidTermsAcceptance(id, request.resource.data);
+      allow update, delete: if false;
+    }
+
     // ---------- default deny ----------
 
     match /{document=**} {

@@ -7,7 +7,18 @@ import {
   initializeTestEnvironment,
   type RulesTestEnvironment,
 } from "@firebase/rules-unit-testing";
-import { deleteDoc, doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  serverTimestamp,
+  setDoc,
+  updateDoc,
+  where,
+} from "firebase/firestore";
 import { afterAll, beforeAll, describe, it } from "vitest";
 import firebaseJson from "../../firebase.json";
 
@@ -22,6 +33,13 @@ const UID = {
   adminMedicAid: "uid-medic-aid-admin",
   adminGreenAid: "uid-green-aid-admin",
   otherMedicAid: "uid-medic-aid-other",
+  pendingMedicAid: "uid-medic-aid-pending",
+  owner: "uid-owner",
+} as const;
+
+const TERMS = {
+  techMedic: "uid-medic-aid-tech_acceptable-use_1.0",
+  adminGreen: "uid-green-aid-admin_acceptable-use_1.0",
 } as const;
 
 const ENTRY_MEDIC = "roster-entry-medic-aid";
@@ -84,6 +102,32 @@ beforeAll(async () => {
       role: "technician",
       clinicId: MEDIC_AID,
       status: "approved",
+    });
+    await setDoc(doc(db, "users", UID.pendingMedicAid), {
+      role: "technician",
+      clinicId: MEDIC_AID,
+      status: "pending",
+    });
+    await setDoc(doc(db, "users", UID.owner), {
+      role: "owner",
+      clinicId: null,
+      status: "approved",
+    });
+    await setDoc(doc(db, "termsAcceptances", TERMS.techMedic), {
+      uid: UID.techMedicAid,
+      clinicId: MEDIC_AID,
+      documentId: "acceptable-use",
+      version: "1.0",
+      acceptedAt: new Date("2026-09-04T00:00:00.000Z"),
+      recordedAt: "2026-09-04T00:00:00.000Z",
+    });
+    await setDoc(doc(db, "termsAcceptances", TERMS.adminGreen), {
+      uid: UID.adminGreenAid,
+      clinicId: GREEN_AID,
+      documentId: "acceptable-use",
+      version: "1.0",
+      acceptedAt: new Date("2026-09-04T00:00:00.000Z"),
+      recordedAt: "2026-09-04T00:00:00.000Z",
     });
     await setDoc(doc(db, "rosterEntries", ENTRY_MEDIC), {
       clinicId: MEDIC_AID,
@@ -173,6 +217,102 @@ describe("firestore rules — founder seven", () => {
         clinicId: MEDIC_AID,
         clinicIds: [MEDIC_AID],
       })
+    );
+  });
+});
+
+function termsPayload(
+  uid: string,
+  clinicId: string,
+  version: string,
+  extra: Record<string, unknown> = {}
+) {
+  return {
+    uid,
+    clinicId,
+    documentId: "acceptable-use",
+    version,
+    acceptedAt: serverTimestamp(),
+    recordedAt: "2026-09-08T00:00:00.000Z",
+    ...extra,
+  };
+}
+
+describe("firestore rules — termsAcceptances", () => {
+  it("approved user can create own acceptance for own clinic", async () => {
+    const db = testEnv.authenticatedContext(UID.otherMedicAid).firestore();
+    const version = "t-own";
+    const id = `${UID.otherMedicAid}_acceptable-use_${version}`;
+    await assertSucceeds(setDoc(doc(db, "termsAcceptances", id), termsPayload(UID.otherMedicAid, MEDIC_AID, version)));
+  });
+
+  it("cannot create for another uid", async () => {
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    const version = "t-other-uid";
+    const id = `${UID.otherMedicAid}_acceptable-use_${version}`;
+    await assertFails(setDoc(doc(db, "termsAcceptances", id), termsPayload(UID.otherMedicAid, MEDIC_AID, version)));
+  });
+
+  it("clinic admin cannot accept on someone's behalf", async () => {
+    const db = testEnv.authenticatedContext(UID.adminMedicAid).firestore();
+    const version = "t-on-behalf";
+    const id = `${UID.otherMedicAid}_acceptable-use_${version}`;
+    await assertFails(setDoc(doc(db, "termsAcceptances", id), termsPayload(UID.otherMedicAid, MEDIC_AID, version)));
+  });
+
+  it("update is denied for the owner of the document and for the product owner", async () => {
+    const techDb = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(updateDoc(doc(techDb, "termsAcceptances", TERMS.techMedic), { version: "hacked" }));
+    const ownerDb = testEnv.authenticatedContext(UID.owner).firestore();
+    await assertFails(updateDoc(doc(ownerDb, "termsAcceptances", TERMS.techMedic), { version: "hacked" }));
+  });
+
+  it("delete is denied for everyone including owner", async () => {
+    const techDb = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(deleteDoc(doc(techDb, "termsAcceptances", TERMS.techMedic)));
+    const adminDb = testEnv.authenticatedContext(UID.adminMedicAid).firestore();
+    await assertFails(deleteDoc(doc(adminDb, "termsAcceptances", TERMS.techMedic)));
+    const ownerDb = testEnv.authenticatedContext(UID.owner).firestore();
+    await assertFails(deleteDoc(doc(ownerDb, "termsAcceptances", TERMS.techMedic)));
+  });
+
+  it("owner can read any clinic's acceptance", async () => {
+    const db = testEnv.authenticatedContext(UID.owner).firestore();
+    await assertSucceeds(getDoc(doc(db, "termsAcceptances", TERMS.techMedic)));
+    await assertSucceeds(getDoc(doc(db, "termsAcceptances", TERMS.adminGreen)));
+  });
+
+  it("clinic admin can list and read their clinic's acceptances", async () => {
+    const db = testEnv.authenticatedContext(UID.adminMedicAid).firestore();
+    await assertSucceeds(getDoc(doc(db, "termsAcceptances", TERMS.techMedic)));
+    await assertSucceeds(
+      getDocs(query(collection(db, "termsAcceptances"), where("clinicId", "==", MEDIC_AID)))
+    );
+    await assertFails(getDoc(doc(db, "termsAcceptances", TERMS.adminGreen)));
+  });
+
+  it("staff can read own and cannot read another person's", async () => {
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertSucceeds(getDoc(doc(db, "termsAcceptances", TERMS.techMedic)));
+    await assertFails(getDoc(doc(db, "termsAcceptances", TERMS.adminGreen)));
+  });
+
+  it("unapproved cannot create", async () => {
+    const db = testEnv.authenticatedContext(UID.pendingMedicAid).firestore();
+    const version = "t-pending";
+    const id = `${UID.pendingMedicAid}_acceptable-use_${version}`;
+    await assertFails(setDoc(doc(db, "termsAcceptances", id), termsPayload(UID.pendingMedicAid, MEDIC_AID, version)));
+  });
+
+  it("create with name or email fields is denied", async () => {
+    const db = testEnv.authenticatedContext(UID.otherMedicAid).firestore();
+    const version = "t-email";
+    const id = `${UID.otherMedicAid}_acceptable-use_${version}`;
+    await assertFails(
+      setDoc(
+        doc(db, "termsAcceptances", id),
+        termsPayload(UID.otherMedicAid, MEDIC_AID, version, { email: "tech@clinic.test", name: "A Tech" })
+      )
     );
   });
 });
