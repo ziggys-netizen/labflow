@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { useAuth, useSessionAuthInput } from "../lib/AuthContext";
 import { continuePathAfterAuth } from "../lib/authState";
+import LabFlowWordmark from "../lib/LabFlowWordmark";
 import { consumeTermsDeclineNotice } from "../lib/legal/termsGate";
 
 export default function Login() {
@@ -42,16 +43,22 @@ export default function Login() {
     router.replace(continueHref);
   }, [loading, user, continueHref, router]);
 
+  // Animation runs during auth resolve only — never blocks redirect above.
   if (loading && !failureMessage && !signingIn) {
-    return <main className="min-h-screen flex items-center justify-center text-gray-600">Loading...</main>;
+    return (
+      <main className="min-h-screen flex items-center justify-center bg-lf-ground px-6">
+        <LabFlowWordmark animate size="lg" />
+      </main>
+    );
   }
 
   if (user) {
     return (
-      <main className="min-h-screen bg-white flex items-center justify-center px-6">
-        <div className="max-w-sm w-full text-center">
-          <p className="text-gray-600 mb-4">Continuing as {user.email}…</p>
-          <Link href={continueHref} className="text-gray-900 underline font-medium">
+      <main className="min-h-screen bg-lf-ground flex items-center justify-center px-6">
+        <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
+          <LabFlowWordmark size="lg" />
+          <p className="text-lf-ink-2">Continuing as {user.email}…</p>
+          <Link href={continueHref} className="text-lf-ink underline font-medium">
             Continue
           </Link>
         </div>
@@ -60,18 +67,18 @@ export default function Login() {
   }
 
   return (
-    <main className="min-h-screen bg-white flex items-center justify-center px-6">
-      <div className="max-w-sm w-full text-center">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-2">LabFlow Staff Login</h1>
-        <p className="text-gray-600 mb-6">Sign in with your Google account to continue.</p>
+    <main className="min-h-screen bg-lf-ground flex items-center justify-center px-6">
+      <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
+        <LabFlowWordmark size="lg" />
+        <p className="text-lf-ink-2">Sign in with your Google account to continue.</p>
         <button
           onClick={handleLogin}
-          className="w-full bg-gray-900 text-white rounded-lg py-2 font-medium hover:bg-gray-800 transition"
+          className="w-full bg-lf-ink text-lf-surface rounded-lf-md py-2 font-medium hover:opacity-90 transition"
         >
           {failureMessage || popupBlocked ? "Continue with Google" : "Sign in with Google"}
         </button>
-        {declineMessage && <p className="text-sm text-gray-700 mt-3">{declineMessage}</p>}
-        {failureMessage && <p className="text-sm text-red-600 mt-3">{failureMessage}</p>}
+        {declineMessage && <p className="text-sm text-lf-ink-2">{declineMessage}</p>}
+        {failureMessage && <p className="text-sm text-lf-crit">{failureMessage}</p>}
       </div>
     </main>
   );

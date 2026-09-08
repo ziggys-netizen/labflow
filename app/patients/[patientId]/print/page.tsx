@@ -30,6 +30,7 @@ import {
 } from "../../../lib/provisionalReport";
 import { canViewOwnRegisteredPatients, canViewPatients } from "../../../lib/permissions";
 import ClinicalFlagLetter from "../../../lib/ClinicalFlagLetter";
+import LabFlowWordmark from "../../../lib/LabFlowWordmark";
 import { interpretCollection, orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../../../lib/sampleCollection";
 import { orderDisplayLabel } from "../../../lib/orderLifecycle";
 import { useStaffSession, useWriteIdentity } from "../../../lib/pinSession";
@@ -367,6 +368,9 @@ function PatientPrintContent() {
 
       <div className="print-sheet bg-white mx-auto w-[210mm] min-h-[297mm] p-[15mm] shadow-sm">
         <header className="border-b border-gray-300 pb-4 mb-6">
+          <div className="mb-3">
+            <LabFlowWordmark size="sm" />
+          </div>
           {orders.some((order) =>
             isProvisionalPrint({
               released: isReleasedResultStatus(order.status),

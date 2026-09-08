@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { formatFooterBuildLine } from "./appVersion";
 import { useAuth } from "./AuthContext";
 import { loadClinicNames } from "./clinicScope";
+import LabFlowWordmark from "./LabFlowWordmark";
 import { PRIVACY_PATH, SUPPORT_PATH, TERMS_READ_PATH } from "./legal/termsGate";
 
 function FooterLink({ href, children }: { href: string; children: string }) {
@@ -60,8 +61,8 @@ export default function AppFooter() {
   return (
     <footer className="lf-app-footer no-print">
       <div className="lf-app-footer-zone lf-app-footer-left">
-        <span className="lf-app-footer-accent" aria-hidden />
-        <span>© 2026 LabFlow. All rights reserved.</span>
+        <LabFlowWordmark size="sm" />
+        <span>© 2026. All rights reserved.</span>
       </div>
       <div className="lf-app-footer-zone lf-app-footer-centre">
         <FooterLink href={TERMS_READ_PATH}>Terms</FooterLink>

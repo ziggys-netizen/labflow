@@ -230,3 +230,69 @@ body {
     display: none !important;
   }
 }
+
+/* G3 — LabFlow wordmark. Closed = LabFlow. Animate only on sign-in. */
+.lf-wordmark {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--lf-ink);
+  white-space: nowrap;
+}
+
+.lf-wordmark-accent {
+  width: 8px;
+  height: 8px;
+  flex-shrink: 0;
+  background: var(--lf-accent);
+}
+
+.lf-wordmark-text {
+  display: inline-flex;
+  align-items: center;
+}
+
+.lf-wordmark-lab,
+.lf-wordmark-flow {
+  display: inline-block;
+}
+
+.lf-wordmark-bar {
+  display: inline-block;
+  width: 0;
+  height: 2px;
+  margin-inline: 0;
+  flex-shrink: 0;
+  vertical-align: middle;
+  background: var(--lf-accent);
+}
+
+/*
+  CSS-only close: bar starts at full width, contracts to zero; flex gap closes
+  so Lab and Flow meet as LabFlow. 600ms ease-out, once (forwards).
+*/
+.lf-wordmark--animate .lf-wordmark-bar {
+  animation: lf-wordmark-bar-close 600ms ease-out forwards;
+}
+
+@keyframes lf-wordmark-bar-close {
+  from {
+    width: 12px;
+    margin-inline: 4px;
+  }
+  to {
+    width: 0;
+    margin-inline: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lf-wordmark--animate .lf-wordmark-bar {
+    animation: none;
+    width: 0;
+    margin-inline: 0;
+  }
+}

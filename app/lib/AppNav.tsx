@@ -27,6 +27,7 @@ import { countResultsEntered } from "./reviewQueue";
 import { useStaffSession } from "./pinSession";
 import RetentionBanner from "./RetentionBanner";
 import { formatHeaderIdentity, isNavActive } from "./headerIdentity";
+import LabFlowWordmark from "./LabFlowWordmark";
 
 type NavItem = {
   href: string;
@@ -280,12 +281,8 @@ export default function AppNav() {
     <nav className="border-b border-lf-line bg-lf-ground">
       <div className="px-0 py-4">
         <div className="lf-shell flex items-center gap-4 min-w-0">
-          <Link
-            href={homeHref}
-            className="lf-touch inline-flex shrink-0 items-center gap-2 text-lf-ink"
-          >
-            <span className="size-2 rounded-full bg-lf-accent" aria-hidden />
-            <span className="text-lg font-semibold">LabFlow</span>
+          <Link href={homeHref} className="lf-touch inline-flex shrink-0 items-center text-lf-ink">
+            <LabFlowWordmark size="md" />
           </Link>
 
           <div className="hidden min-w-0 flex-1 lg:flex justify-center">{navLinks("row")}</div>
