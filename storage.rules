@@ -3,7 +3,9 @@ rules_version = '2';
 // Clinic SOP files. LabFlow stores them; they remain the clinic's files.
 // Path: clinics/{clinicId}/sops/{testCode}/{fileName}
 // Identity matches firestore.rules users/{uid} (approved + clinic, or owner).
-// Write is catalogue editors only (owner, lab_manager, lab_supervisor).
+// Write is catalogue editors only (owner, lab_manager) — matches
+// canEditTestCatalogue / canEditTestCatalogueRole. lab_supervisor releases
+// results and cannot reach Clinic Settings or SOP uploads.
 // preApprovals are unrelated and unchanged.
 
 service firebase.storage {
@@ -46,9 +48,7 @@ service firebase.storage {
 
     function canEditCatalogue() {
       return isOwner()
-             || (isApproved()
-                 && (userDoc().get("role", "") == "lab_manager"
-                     || userDoc().get("role", "") == "lab_supervisor"));
+             || (isApproved() && userDoc().get("role", "") == "lab_manager");
     }
 
     function allowedSopType() {
