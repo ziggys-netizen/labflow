@@ -251,27 +251,135 @@ service cloud.firestore {
       return clinicalUpdate() && !isAccountsOfficer();
     }
 
+    // ---------- role gates (align with app/lib/permissions.ts) ----------
+    // Identity is still users/{uid}.role via get() — same as daily rollups.
+    // These close SDK bypasses the UI already hides behind canEditTestCatalogue,
+    // canApproveResults / canAmendResult, and canDeletePatient.
+
+    function callerRole() {
+      return userExists() ? userDoc().get("role", "") : "";
+    }
+
+    // canEditTestCatalogue: owner, lab_manager (lab_supervisor cannot access Clinic Settings)
+    function canEditTestCatalogueRole() {
+      return isOwner()
+             || (isApproved() && callerRole() in ["lab_manager"]);
+    }
+
+    // canApproveResults / canAmendResult: owner, lab_manager, lab_supervisor
+    function canApproveResultsRole() {
+      return isOwner()
+             || (isApproved() && callerRole() in ["lab_manager", "lab_supervisor"]);
+    }
+
+    // canDeletePatient: owner, clinic_admin, lab_manager
+    function canDeletePatientRole() {
+      return isOwner()
+             || (isApproved() && callerRole() in ["clinic_admin", "lab_manager"]);
+    }
+
+    // Order status machine uses "approved" / "amended" for released results.
+    // There is no literal status string "released" in orderLifecycle.
+    function isReleasedOrderStatus(status) {
+      return status == "approved" || status == "amended";
+    }
+
+    function transitioningIntoApproved() {
+      return request.resource.data.get("status", "") == "approved"
+             && resource.data.get("status", "") != "approved";
+    }
+
+    function transitioningIntoAmended() {
+      return request.resource.data.get("status", "") == "amended"
+             && resource.data.get("status", "") != "amended";
+    }
+
+    // Amendment path: tech must not rewrite results / versions / pending
+    // amendment on an already-released order without changing status.
+    function touchingReleasedAmendmentFields() {
+      return changedKeys().hasAny([
+        "results",
+        "resultVersions",
+        "currentResultVersion",
+        "pendingAmendment",
+        "pendingAmendmentAt",
+        "lastAmendedAt",
+        "lastAmendedBy",
+        "lastAmendedByUid",
+        "lastAmendedByRole",
+        "lastAmendedByShift",
+        "amendmentConfirmedBy",
+        "amendmentConfirmedByUid"
+      ]);
+    }
+
+    function releasedResultMutationRequiresApprover() {
+      return isReleasedOrderStatus(resource.data.get("status", ""))
+             && touchingReleasedAmendmentFields();
+    }
+
+    // Leaving approved/amended (e.g. to pending) touches no amendment fields, so
+    // releasedResultMutationRequiresApprover alone would not catch it.
+    function leavingReleasedStatus() {
+      return isReleasedOrderStatus(resource.data.get("status", ""))
+             && !isReleasedOrderStatus(request.resource.data.get("status", ""));
+    }
+
+    function orderStatusGateOk() {
+      return (
+               !transitioningIntoApproved()
+               && !transitioningIntoAmended()
+               && !releasedResultMutationRequiresApprover()
+               && !leavingReleasedStatus()
+             )
+             || canApproveResultsRole();
+    }
+
+    function orderCreateStatusOk() {
+      return !isReleasedOrderStatus(request.resource.data.get("status", "pending"))
+             || canApproveResultsRole();
+    }
+
+    function orderPatientDeletedGateOk() {
+      return request.resource.data.get("patientDeleted", false)
+             == resource.data.get("patientDeleted", false)
+             || canDeletePatientRole();
+    }
+
+    function patientDeletedGateOk() {
+      return request.resource.data.get("deleted", false)
+             == resource.data.get("deleted", false)
+             || canDeletePatientRole();
+    }
+
+    function patientCreateDeletedOk() {
+      return request.resource.data.get("deleted", false) != true
+             || canDeletePatientRole();
+    }
+
     match /patients/{id} {
       allow get: if patientDataGet();
       allow list: if patientDataGet();
-      allow create: if patientDataCreate();
-      allow update: if patientDataUpdate();
+      allow create: if patientDataCreate() && patientCreateDeletedOk();
+      allow update: if patientDataUpdate() && patientDeletedGateOk();
       allow delete: if false;
     }
 
     match /orders/{id} {
       allow get: if patientDataGet();
       allow list: if patientDataGet();
-      allow create: if patientDataCreate();
-      allow update: if patientDataUpdate();
+      allow create: if patientDataCreate() && orderCreateStatusOk();
+      allow update: if patientDataUpdate()
+                     && orderStatusGateOk()
+                     && orderPatientDeletedGateOk();
       allow delete: if false;
     }
 
     match /testCatalog/{id} {
       allow get: if patientDataGet();
       allow list: if patientDataGet();
-      allow create: if patientDataCreate();
-      allow update: if patientDataUpdate();
+      allow create: if patientDataCreate() && canEditTestCatalogueRole();
+      allow update: if patientDataUpdate() && canEditTestCatalogueRole();
       allow delete: if false;
     }
 
@@ -392,7 +500,11 @@ service cloud.firestore {
                            && resource.data.clinicId == userClinic());
 
       // CHANGED FROM U1 — approved gate via clinicScopedWrite().
-      allow create: if hasClinicId(request.resource.data) && clinicScopedWrite();
+      // actorUid must match the signed-in caller so an approved user cannot
+      // plant an entry naming a colleague.
+      allow create: if hasClinicId(request.resource.data)
+                    && clinicScopedWrite()
+                    && request.resource.data.get("actorUid", "") == request.auth.uid;
 
       allow update, delete: if false;
     }

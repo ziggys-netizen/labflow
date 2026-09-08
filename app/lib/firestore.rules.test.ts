@@ -30,11 +30,19 @@ const GREEN_AID = "clinic-green-aid";
 
 const UID = {
   techMedicAid: "uid-medic-aid-tech",
+  managerMedicAid: "uid-medic-aid-manager",
   adminMedicAid: "uid-medic-aid-admin",
   adminGreenAid: "uid-green-aid-admin",
   otherMedicAid: "uid-medic-aid-other",
   pendingMedicAid: "uid-medic-aid-pending",
   owner: "uid-owner",
+} as const;
+
+const FIXTURE = {
+  catalog: "catalog-medic-fbc",
+  orderPending: "order-medic-pending",
+  orderReady: "order-medic-ready",
+  patient: "patient-medic-active",
 } as const;
 
 const TERMS = {
@@ -85,6 +93,11 @@ beforeAll(async () => {
     });
     await setDoc(doc(db, "users", UID.techMedicAid), {
       role: "technician",
+      clinicId: MEDIC_AID,
+      status: "approved",
+    });
+    await setDoc(doc(db, "users", UID.managerMedicAid), {
+      role: "lab_manager",
       clinicId: MEDIC_AID,
       status: "approved",
     });
@@ -158,6 +171,30 @@ beforeAll(async () => {
       type: "leave",
       startsAt: "2026-08-23T00:00:00.000Z",
       endsAt: "2026-08-25T00:00:00.000Z",
+    });
+    await setDoc(doc(db, "testCatalog", FIXTURE.catalog), {
+      clinicId: MEDIC_AID,
+      code: "FBC",
+      name: "Full Blood Count",
+      price: 10,
+    });
+    await setDoc(doc(db, "orders", FIXTURE.orderPending), {
+      clinicId: MEDIC_AID,
+      patientId: FIXTURE.patient,
+      status: "pending",
+      results: {},
+    });
+    await setDoc(doc(db, "orders", FIXTURE.orderReady), {
+      clinicId: MEDIC_AID,
+      patientId: FIXTURE.patient,
+      status: "results_entered",
+      results: { FBC: { Hb: "12" } },
+    });
+    await setDoc(doc(db, "patients", FIXTURE.patient), {
+      clinicId: MEDIC_AID,
+      name: "Ada Patient",
+      labId: "LF-ADA",
+      deleted: false,
     });
   });
 }, 30_000);
@@ -313,6 +350,197 @@ describe("firestore rules — termsAcceptances", () => {
         doc(db, "termsAcceptances", id),
         termsPayload(UID.otherMedicAid, MEDIC_AID, version, { email: "tech@clinic.test", name: "A Tech" })
       )
+    );
+  });
+});
+
+describe("firestore rules — J1 role gates", () => {
+  it("technician cannot write testCatalog", async () => {
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(updateDoc(doc(db, "testCatalog", FIXTURE.catalog), { price: 99 }));
+    await assertFails(
+      setDoc(doc(db, "testCatalog", "catalog-medic-tech-create"), {
+        clinicId: MEDIC_AID,
+        code: "HBA1C",
+        name: "HbA1c",
+        price: 20,
+      })
+    );
+  });
+
+  it("lab_manager can write testCatalog", async () => {
+    const db = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertSucceeds(updateDoc(doc(db, "testCatalog", FIXTURE.catalog), { price: 12 }));
+    await assertSucceeds(
+      setDoc(doc(db, "testCatalog", "catalog-medic-mgr-create"), {
+        clinicId: MEDIC_AID,
+        code: "LFT",
+        name: "Liver Function",
+        price: 25,
+      })
+    );
+  });
+
+  it("technician can enter results but cannot transition into approved", async () => {
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, "orders", FIXTURE.orderPending), {
+        status: "results_entered",
+        results: { FBC: { Hb: "11.5" } },
+      })
+    );
+    await assertFails(updateDoc(doc(db, "orders", FIXTURE.orderReady), { status: "approved" }));
+  });
+
+  it("lab_manager can transition order into approved", async () => {
+    const db = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, "orders", FIXTURE.orderReady), {
+        status: "approved",
+        reviewedBy: "manager@clinic.test",
+      })
+    );
+  });
+
+  it("technician cannot soft-delete a patient", async () => {
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(
+      updateDoc(doc(db, "patients", FIXTURE.patient), {
+        deleted: true,
+        deletedAt: "2026-09-08T00:00:00.000Z",
+        deletionReason: "duplicate",
+      })
+    );
+  });
+
+  it("lab_manager can soft-delete a patient", async () => {
+    const db = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, "patients", FIXTURE.patient), {
+        deleted: true,
+        deletedAt: "2026-09-08T00:00:00.000Z",
+        deletedBy: "manager@clinic.test",
+        deletionReason: "duplicate",
+      })
+    );
+  });
+
+  it("technician cannot amend released results via SDK field rewrite", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "orders", "order-medic-released"), {
+        clinicId: MEDIC_AID,
+        patientId: FIXTURE.patient,
+        status: "approved",
+        results: { FBC: { Hb: "12" } },
+        resultVersions: [{ version: 1, values: { FBC: { Hb: "12" } } }],
+      });
+    });
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(
+      updateDoc(doc(db, "orders", "order-medic-released"), {
+        status: "amended",
+        results: { FBC: { Hb: "9" } },
+      })
+    );
+    await assertFails(
+      updateDoc(doc(db, "orders", "order-medic-released"), {
+        results: { FBC: { Hb: "9" } },
+      })
+    );
+  });
+
+  it("lab_manager can amend released results", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "orders", "order-medic-released-mgr"), {
+        clinicId: MEDIC_AID,
+        patientId: FIXTURE.patient,
+        status: "approved",
+        results: { FBC: { Hb: "12" } },
+        resultVersions: [{ version: 1, values: { FBC: { Hb: "12" } } }],
+      });
+    });
+    const db = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, "orders", "order-medic-released-mgr"), {
+        status: "amended",
+        results: { FBC: { Hb: "9" } },
+        resultVersions: [
+          { version: 1, values: { FBC: { Hb: "12" } } },
+          { version: 2, values: { FBC: { Hb: "9" } } },
+        ],
+      })
+    );
+  });
+
+  // leavingReleasedStatus: tech must not open a released order by dropping to pending.
+  it("technician cannot leave released status for pending", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "orders", "order-medic-unrelease-tech"), {
+        clinicId: MEDIC_AID,
+        patientId: FIXTURE.patient,
+        status: "approved",
+        results: { FBC: { Hb: "12" } },
+      });
+      await setDoc(doc(context.firestore(), "orders", "order-medic-unrelease-amended-tech"), {
+        clinicId: MEDIC_AID,
+        patientId: FIXTURE.patient,
+        status: "amended",
+        results: { FBC: { Hb: "11" } },
+      });
+    });
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(updateDoc(doc(db, "orders", "order-medic-unrelease-tech"), { status: "pending" }));
+    await assertFails(
+      updateDoc(doc(db, "orders", "order-medic-unrelease-amended-tech"), { status: "needs_correction" })
+    );
+  });
+
+  // No app path un-releases approved/amended today; canApproveResultsRole still allows it.
+  it("lab_manager can leave released status", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "orders", "order-medic-unrelease-mgr"), {
+        clinicId: MEDIC_AID,
+        patientId: FIXTURE.patient,
+        status: "approved",
+        results: { FBC: { Hb: "12" } },
+      });
+    });
+    const db = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, "orders", "order-medic-unrelease-mgr"), { status: "needs_correction" })
+    );
+  });
+});
+
+function auditPayload(actorUid: string, extra: Record<string, unknown> = {}) {
+  return {
+    clinicId: MEDIC_AID,
+    actorUid,
+    actorEmail: "tech@clinic.test",
+    actorRole: "technician",
+    actorShift: "day",
+    actingAsOwner: false,
+    action: "order.resultsEntered",
+    targetCollection: "orders",
+    targetId: FIXTURE.orderPending,
+    targetLabel: "LF-ADA",
+    at: "2026-09-08T12:00:00.000Z",
+    ...extra,
+  };
+}
+
+describe("firestore rules — auditLogs actor binding", () => {
+  it("create is denied when actorUid is not the signed-in user", async () => {
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(
+      setDoc(doc(db, "auditLogs", "audit-spoof-colleague"), auditPayload(UID.otherMedicAid))
+    );
+  });
+
+  it("create is allowed when actorUid matches the signed-in user", async () => {
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertSucceeds(
+      setDoc(doc(db, "auditLogs", "audit-self-actor"), auditPayload(UID.techMedicAid))
     );
   });
 });
