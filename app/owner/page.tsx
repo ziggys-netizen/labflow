@@ -16,8 +16,18 @@ import {
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import StaffPanel from "../lib/StaffPanel";
+import { requireSurface } from "../lib/surfaces";
 import { resolveIdentity } from "../lib/membership";
 import { seedClinicCatalog, backfillEmptyClinicCatalogs } from "../lib/catalogSeed";
+import { seedAdultFlaggingFixtures } from "../lib/adultFlaggingSeed";
+import {
+  GREEN_AID_CLINIC_ID,
+  GREEN_AID_CLINIC_NAME,
+} from "../lib/greenAidIsolationFixtures";
+import {
+  formatGreenAidSeedSuccess,
+  seedGreenAidIsolationFixtures,
+} from "../lib/greenAidIsolationSeed";
 import { actorFromAuth, safeLogAudit } from "../lib/audit";
 import {
   ClinicRecord,
@@ -38,7 +48,7 @@ import {
 import RetentionPolicyFields from "../lib/RetentionPolicyFields";
 
 function OwnerContent() {
-  const { user, role, username, shift } = useAuth();
+  const { user, role, username, shift, actingClinicId, actingClinicName } = useAuth();
   const canAccess = role === "owner";
 
   const [clinics, setClinics] = useState<ClinicRecord[]>([]);
@@ -64,6 +74,8 @@ function OwnerContent() {
   const [adminClinicId, setAdminClinicId] = useState("");
   const [assigning, setAssigning] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
+  const [seedingAdults, setSeedingAdults] = useState(false);
+  const [seedingGreenAid, setSeedingGreenAid] = useState(false);
 
   async function loadClinics() {
     try {
@@ -295,6 +307,65 @@ function OwnerContent() {
     }
   }
 
+  async function handleSeedAdultFixtures() {
+    if (!user || role !== "owner") return;
+    if (!actingClinicId) {
+      setStatus("Select an acting clinic in the header, then seed adult H/L fixtures.");
+      return;
+    }
+    const actor = actorFromAuth(user, role, shift);
+    if (!actor) return;
+    setSeedingAdults(true);
+    setStatus(`Seeding adult H/L fixtures into ${actingClinicName || actingClinicId}...`);
+    try {
+      const result = await seedAdultFlaggingFixtures(actingClinicId, { actor });
+      if (result.createdPatients === 0 && result.createdOrders === 0) {
+        setStatus("Adult H/L fixtures already present for this clinic.");
+      } else {
+        setStatus(
+          `Seeded ${result.createdPatients} adult patient(s) and ${result.createdOrders} released FBC order(s) into ${actingClinicName || actingClinicId}.`
+        );
+      }
+      await loadClinics();
+    } catch (err) {
+      console.error(err);
+      setStatus("Failed to seed adult H/L fixtures.");
+    } finally {
+      setSeedingAdults(false);
+    }
+  }
+
+  async function handleSeedGreenAidIsolation() {
+    if (!user || role !== "owner") return;
+    const confirmed = window.confirm(
+      `Seed synthetic isolation data into ${GREEN_AID_CLINIC_NAME} (${GREEN_AID_CLINIC_ID})?\n\n` +
+        "Writes catalogue (including HB and SICKLE), three invented patients, and four orders. " +
+        "Refuses if Green Aid already has any patients."
+    );
+    if (!confirmed) {
+      setStatus("Green Aid isolation seed cancelled.");
+      return;
+    }
+    const actor = actorFromAuth(user, role, shift);
+    if (!actor) return;
+    setSeedingGreenAid(true);
+    setStatus(`Seeding ${GREEN_AID_CLINIC_NAME} isolation fixtures...`);
+    try {
+      const result = await seedGreenAidIsolationFixtures({ actor });
+      if (!result.ok) {
+        setStatus(result.message);
+        return;
+      }
+      setStatus(formatGreenAidSeedSuccess(result));
+      await loadClinics();
+    } catch (err) {
+      console.error(err);
+      setStatus("Failed to seed Green Aid isolation fixtures.");
+    } finally {
+      setSeedingGreenAid(false);
+    }
+  }
+
   const filteredClinics = useMemo(() => {
     const q = clinicQuery.trim().toLowerCase();
     if (!q) return clinics;
@@ -305,7 +376,7 @@ function OwnerContent() {
 
   if (!canAccess) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen bg-lf-ground">
         <AppNav />
         <div className="max-w-sm mx-auto px-6 py-16 text-center">
           <p className="text-gray-600 mb-4">You do not have access to this page.</p>
@@ -318,7 +389,7 @@ function OwnerContent() {
   }
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen bg-lf-ground">
       <AppNav />
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Owner</h1>
@@ -326,7 +397,9 @@ function OwnerContent() {
           Create clinics, issue join codes, assign the first clinic administrator, and onboard data.
           Open a clinic to manage its staff. Pending approvals stay here so they are not buried.
         </p>
-        {status && <p className="text-sm text-gray-600 mb-4">{status}</p>}
+        {status && (
+          <p className="text-sm text-gray-600 mb-4 whitespace-pre-wrap break-words">{status}</p>
+        )}
         {createdClinicId && (
           <Link
             href={`/owner/clinics/${createdClinicId}`}
@@ -489,6 +562,46 @@ function OwnerContent() {
         </section>
 
         <section className="border border-gray-200 rounded-lg p-4 mb-6">
+          <h2 className="font-medium text-gray-900 mb-2">Seed adult H/L flagging fixtures</h2>
+          <p className="text-sm text-gray-600 mb-3">
+            Adds a synthetic adult male and adult female (real DOBs) with a released FBC each that
+            shows both H and L. Uses the acting clinic selected in the header. Idempotent.
+          </p>
+          <button
+            type="button"
+            onClick={handleSeedAdultFixtures}
+            disabled={seedingAdults || !actingClinicId}
+            className="bg-gray-900 text-white text-sm rounded-lg px-4 py-2 disabled:opacity-50"
+          >
+            {seedingAdults
+              ? "Seeding..."
+              : actingClinicId
+                ? `Seed into ${actingClinicName || actingClinicId}`
+                : "Select acting clinic first"}
+          </button>
+        </section>
+
+        <section className="border border-gray-200 rounded-lg p-4 mb-6">
+          <h2 className="font-medium text-gray-900 mb-2">Seed Green Aid isolation fixtures</h2>
+          <p className="text-sm text-gray-600 mb-3">
+            One-shot synthetic data for {GREEN_AID_CLINIC_NAME} only ({GREEN_AID_CLINIC_ID}):
+            catalogue including HB and SICKLE, three invented patients, four orders spanning
+            awaiting sample through released (one multi-specimen). Runs in the browser as owner
+            via the client SDK. Refuses if Green Aid already has patients.
+          </p>
+          <button
+            type="button"
+            onClick={handleSeedGreenAidIsolation}
+            disabled={seedingGreenAid}
+            className="bg-gray-900 text-white text-sm rounded-lg px-4 py-2 disabled:opacity-50"
+          >
+            {seedingGreenAid
+              ? "Seeding..."
+              : `Seed ${GREEN_AID_CLINIC_NAME} isolation fixtures`}
+          </button>
+        </section>
+
+        <section className="border border-gray-200 rounded-lg p-4 mb-6">
           <h2 className="font-medium text-gray-900 mb-3">Set clinic administrator</h2>
           <form onSubmit={handleAssignAdmin} className="space-y-3">
             <input
@@ -527,7 +640,7 @@ function OwnerContent() {
 
 export default function Owner() {
   return (
-    <ProtectedRoute require={(role) => role === "owner"}>
+    <ProtectedRoute require={requireSurface("owner")}>
       <OwnerContent />
     </ProtectedRoute>
   );

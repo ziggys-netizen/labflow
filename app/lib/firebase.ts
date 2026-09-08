@@ -76,7 +76,11 @@ export const auth = getAuth(app);
 export const storage = getStorage(app);
 export const googleProvider = new GoogleAuthProvider();
 
-/** Browser isolation probes (Medic Aid vs Green Aid) reuse this Firestore client. */
+/**
+ * Browser isolation probes (Medic Aid vs Green Aid) reuse this Firestore client.
+ * After Owner console “Seed Green Aid isolation fixtures”, the success report prints
+ * greenAidPatientId for the Medic Aid staff getDoc probe (expect permission-denied).
+ */
 if (typeof window !== "undefined") {
   (window as Window & { __labflowDb?: Firestore }).__labflowDb = db;
 }
