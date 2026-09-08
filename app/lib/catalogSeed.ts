@@ -24,6 +24,7 @@ export function catalogSeedPayload(clinicId: string, test: LabTest, seededAt: st
     name: test.name,
     category: test.category,
     specimenType: test.specimenType,
+    ...(test.specimenCap ? { specimenCap: test.specimenCap } : {}),
     parameters: test.parameters,
     price: test.price || 0,
     clinicId,

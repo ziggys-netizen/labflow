@@ -17,9 +17,11 @@ import {
   type TestParameter,
 } from "./resultModel";
 import type { SopReference } from "./sopReference";
+import type { SpecimenCap } from "./specimenCap";
 
 export type { TestParameter, ClinicTier } from "./resultModel";
 export { CLINIC_TIERS, CLINIC_TIER_LABELS, isClinicTier, parseClinicTier } from "./resultModel";
+export type { SpecimenCap } from "./specimenCap";
 
 export const SPECIMEN_TYPES = [
   "blood",
@@ -64,6 +66,11 @@ export interface LabTest {
   name: string;
   category: string;
   specimenType: SpecimenType;
+  /**
+   * Tube-cap colour for collection / worklist dots (D6). Optional and
+   * independent of `specimenType` (body fluid). Absent → no cap dot.
+   */
+  specimenCap?: SpecimenCap | null;
   parameters: TestParameter[];
   price?: number;
   /**
@@ -162,6 +169,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Haemoglobin estimation",
     category: "Haematology",
     specimenType: "blood",
+    specimenCap: "lavender",
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [numericParam("Haemoglobin (Hb)", "g/dL", "M: 13-18, F: 12-16")],
@@ -171,6 +179,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Blood glucose",
     category: "Clinical Chemistry",
     specimenType: "blood",
+    specimenCap: "grey",
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [numericParam("Glucose", "mmol/L", "3.9-5.6")],
@@ -201,6 +210,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "HIV Rapid Test",
     category: "Serology",
     specimenType: "blood",
+    specimenCap: "gold",
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [
@@ -213,6 +223,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Hepatitis B Surface Antigen (HBsAg)",
     category: "Serology",
     specimenType: "blood",
+    specimenCap: "gold",
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive")],
@@ -222,6 +233,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Hepatitis C Antibody",
     category: "Serology",
     specimenType: "blood",
+    specimenCap: "gold",
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive")],
@@ -240,6 +252,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Syphilis Test (VDRL/RPR)",
     category: "Serology",
     specimenType: "blood",
+    specimenCap: "gold",
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [
@@ -252,6 +265,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Full Blood Count (FBC)",
     category: "Haematology",
     specimenType: "blood",
+    specimenCap: "lavender",
     tiers: SECONDARY,
     onNationalMenu: true,
     parameters: [
@@ -272,6 +286,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Blood Group & Rhesus Factor",
     category: "Haematology",
     specimenType: "blood",
+    specimenCap: "red",
     tiers: SECONDARY,
     onNationalMenu: true,
     parameters: [
@@ -284,6 +299,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Renal Function Test (U&E)",
     category: "Clinical Chemistry",
     specimenType: "blood",
+    specimenCap: "gold",
     tiers: SECONDARY,
     onNationalMenu: true,
     parameters: [
@@ -299,6 +315,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Liver Function Test (LFT)",
     category: "Clinical Chemistry",
     specimenType: "blood",
+    specimenCap: "gold",
     tiers: SECONDARY,
     onNationalMenu: true,
     parameters: [
@@ -315,6 +332,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Lipid Profile",
     category: "Clinical Chemistry",
     specimenType: "blood",
+    specimenCap: "gold",
     tiers: SECONDARY,
     onNationalMenu: true,
     parameters: [
@@ -329,6 +347,7 @@ export const TEST_CATALOG: LabTest[] = [
     name: "Widal Test",
     category: "Serology",
     specimenType: "blood",
+    specimenCap: "gold",
     tiers: SECONDARY,
     onNationalMenu: false,
     parameters: [

@@ -9,6 +9,7 @@ import {
   dashboardQueueTileTone,
   dashboardQueueWaitStartedAt,
   filterDashboardQueue,
+  formatDashboardQueueTestItems,
   formatDashboardQueueTestLabel,
   orderMatchesDashboardQueue,
   parseDashboardQueueSlug,
@@ -88,6 +89,12 @@ describe("dashboardQueue", () => {
     expect(dashboardQueueWaitStartedAt(row, "returned-for-correction")).toBe("2026-09-03T00:00:00.000Z");
     expect(dashboardQueueWaitStartedAt(row, "pending-final-reprints")).toBe("2026-09-04T00:00:00.000Z");
     expect(formatDashboardQueueTestLabel(row.tests)).toBe("Full blood count");
+    expect(formatDashboardQueueTestItems(row.tests)).toEqual([
+      { label: "Full blood count", cap: "lavender" },
+    ]);
+    expect(formatDashboardQueueTestItems([{ code: "UA", name: "Urinalysis" }])).toEqual([
+      { label: "Urinalysis", cap: null },
+    ]);
   });
 
   it("counts every slug from one shared path", () => {

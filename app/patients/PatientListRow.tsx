@@ -6,8 +6,15 @@ import NotYetSynced from "../lib/NotYetSynced";
 import { OperationalChip } from "../lib/OperationalRow";
 import { operationalStripeClass, type OperationalFlagInput } from "../lib/operationalFlag";
 import { patientRecordHref } from "../lib/patientList";
+import SpecimenCapDot from "../lib/SpecimenCapDot";
+import type { SpecimenCap } from "../lib/specimenCap";
 
 export type PatientListRowMode = "patients" | "queue";
+
+export type PatientListTestItem = {
+  label: string;
+  cap: SpecimenCap | null;
+};
 
 export type PatientListRowData = {
   id: string;
@@ -18,14 +25,38 @@ export type PatientListRowData = {
   notYetSynced?: boolean;
   /** E1 patients list */
   activity?: string;
-  /** G1 queue list */
+  /** G1 queue list — plain string fallback */
   testLabel?: string;
+  /** G1/D6 queue list — per-test labels with optional cap dots */
+  testItems?: PatientListTestItem[];
   timeInState?: string;
 };
 
 function stripeClass(chip: OperationalFlagInput | null | undefined) {
   if (!chip) return "";
   return operationalStripeClass(chip.state, chip.elapsedMinutes);
+}
+
+function QueueTestLabel({
+  items,
+  fallback,
+}: {
+  items?: PatientListTestItem[];
+  fallback?: string;
+}) {
+  if (items && items.length > 0) {
+    return (
+      <span className="inline-flex flex-wrap items-center gap-x-3 gap-y-1">
+        {items.map((item, index) => (
+          <span key={`${item.label}-${index}`} className="inline-flex items-center gap-1.5">
+            <SpecimenCapDot cap={item.cap} />
+            <span>{item.label}</span>
+          </span>
+        ))}
+      </span>
+    );
+  }
+  return <>{fallback || "—"}</>;
 }
 
 export function PatientListTableHeader({ mode }: { mode: PatientListRowMode }) {
@@ -81,7 +112,9 @@ export function PatientListMobileCard({
         <span className="text-sm text-lf-ink-2">{row.sexAge}</span>
         {mode === "queue" ? (
           <>
-            <span className="text-sm text-lf-ink-2">{row.testLabel || "—"}</span>
+            <span className="text-sm text-lf-ink-2">
+              <QueueTestLabel items={row.testItems} fallback={row.testLabel} />
+            </span>
             <span className="lf-num text-sm text-lf-ink-2">{row.timeInState || "—"}</span>
           </>
         ) : (
@@ -135,7 +168,9 @@ export function PatientListTableRow({
       <td className="whitespace-nowrap py-2 pr-3 align-middle text-lf-ink-2">{row.sexAge}</td>
       {mode === "queue" ? (
         <>
-          <td className="py-2 pr-3 align-middle text-lf-ink-2">{row.testLabel || "—"}</td>
+          <td className="py-2 pr-3 align-middle text-lf-ink-2">
+            <QueueTestLabel items={row.testItems} fallback={row.testLabel} />
+          </td>
           <td className="lf-num whitespace-nowrap py-2 pr-3 align-middle text-lf-ink-2">
             {row.timeInState || "—"}
           </td>

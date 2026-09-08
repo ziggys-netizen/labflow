@@ -16,6 +16,7 @@ import {
   dashboardQueueTileTone,
   filterDashboardQueue,
   formatDashboardQueueTestLabel,
+  formatDashboardQueueTestItems,
   parseDashboardQueueSlug,
   type DashboardQueueOrder,
   type DashboardQueueSlug,
@@ -182,6 +183,7 @@ function primaryDisabledTitle(
 export function CurrentQueueList({
   rows,
   patientsById,
+  catalog = [],
   emptyLabel = "Nothing pending",
 }: {
   rows: Array<
@@ -191,6 +193,7 @@ export function CurrentQueueList({
     }
   >;
   patientsById: Map<string, QueuePatient>;
+  catalog?: LabTest[];
   emptyLabel?: string;
 }) {
   const router = useRouter();
@@ -211,6 +214,8 @@ export function CurrentQueueList({
   ): { patientId: string; data: PatientListRowData; listOrders: PatientListOrder[] } {
     const patientId = order.patientId || "";
     const patient = patientsById.get(patientId);
+    const testItems = formatDashboardQueueTestItems(order.tests, catalog);
+    const testLabel = formatDashboardQueueTestLabel(order.tests);
     if (!patient) {
       return {
         patientId: patientId || order.id,
@@ -222,7 +227,8 @@ export function CurrentQueueList({
           sexAge: formatSexAge({ sex: order.patientSex }),
           chip: patientListChip([toPatientListOrder(order)]),
           notYetSynced: order.notYetSynced,
-          testLabel: formatDashboardQueueTestLabel(order.tests),
+          testLabel,
+          testItems,
           timeInState: order.timeInState,
         },
       };
@@ -238,7 +244,8 @@ export function CurrentQueueList({
         sexAge: formatSexAge(patient),
         chip: patientListChip(listOrders),
         notYetSynced: order.notYetSynced,
-        testLabel: formatDashboardQueueTestLabel(order.tests),
+        testLabel,
+        testItems,
         timeInState: order.timeInState,
       },
     };
@@ -508,7 +515,7 @@ export default function CurrentQueue({ className = "" }: { className?: string })
           {loading ? (
             <p className="text-sm text-lf-ink-2">Loading…</p>
           ) : (
-            <CurrentQueueList rows={panelRows} patientsById={patientsById} />
+            <CurrentQueueList rows={panelRows} patientsById={patientsById} catalog={catalog} />
           )}
           {!loading && openCount > DASHBOARD_QUEUE_PANEL_LIMIT ? (
             <Link

@@ -16,6 +16,7 @@ import {
   type OrderTestRef,
 } from "./sampleCollection";
 import type { LabTest } from "./testCatalog";
+import { resolveSpecimenCap, type SpecimenCap } from "./specimenCap";
 
 export const DASHBOARD_QUEUE_SLUGS = [
   "pending-tests",
@@ -230,6 +231,27 @@ export function formatDashboardQueueWait(iso: string | null | undefined, nowMs: 
 export function formatDashboardQueueTestLabel(tests: OrderTestRef[]): string {
   if (!tests.length) return "—";
   return tests.map((test) => test.name || test.code || "—").filter(Boolean).join(", ");
+}
+
+export type DashboardQueueTestItem = {
+  label: string;
+  cap: SpecimenCap | null;
+};
+
+/** Per-test labels with D6 tube-cap colours for the expanded queue panel. */
+export function formatDashboardQueueTestItems(
+  tests: OrderTestRef[],
+  catalog: { code: string; specimenCap?: unknown }[] = []
+): DashboardQueueTestItem[] {
+  if (!tests.length) return [{ label: "—", cap: null }];
+  return tests.map((test) => ({
+    label: test.name || test.code || "—",
+    cap: resolveSpecimenCap(
+      (test as { specimenCap?: unknown }).specimenCap,
+      test.code,
+      catalog
+    ),
+  }));
 }
 
 export function filterDashboardQueue(

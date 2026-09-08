@@ -145,7 +145,7 @@ function QueueAllContent() {
         {loading ? (
           <p className="text-sm text-lf-ink-2">Loading…</p>
         ) : (
-          <CurrentQueueList rows={rows} patientsById={patientsById} />
+          <CurrentQueueList rows={rows} patientsById={patientsById} catalog={catalog} />
         )}
       </div>
     </main>
