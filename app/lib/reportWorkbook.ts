@@ -11,6 +11,18 @@ import {
   type ReportType,
 } from "./reportExport";
 
+/**
+ * Neutralise spreadsheet formula injection at export time only.
+ * Does not alter stored clinical values — only the cell written to the workbook.
+ */
+export function escapeForSpreadsheet(value: string): string {
+  return /^[=+\-@\t\r]/.test(value) ? `'${value}` : value;
+}
+
+function escapeExportCell(value: unknown): unknown {
+  return typeof value === "string" ? escapeForSpreadsheet(value) : value;
+}
+
 function dateNumberFormat(value: Date): string {
   const dateOnly =
     value.getUTCHours() === 0 &&
@@ -21,12 +33,14 @@ function dateNumberFormat(value: Date): string {
 }
 
 export function workbookToBuffer(sheetName: string, headers: string[], rows: unknown[][]): Buffer {
-  const ws = XLSX.utils.aoa_to_sheet([headers, ...rows], { cellDates: true });
+  const safeHeaders = headers.map(escapeForSpreadsheet);
+  const safeRows = rows.map((row) => row.map(escapeExportCell));
+  const ws = XLSX.utils.aoa_to_sheet([safeHeaders, ...safeRows], { cellDates: true });
   const ref = ws["!ref"] || "A1";
   const range = XLSX.utils.decode_range(ref);
-  ws["!cols"] = headers.map((header, index) => {
+  ws["!cols"] = safeHeaders.map((header, index) => {
     let width = header.length;
-    for (const row of rows) {
+    for (const row of safeRows) {
       const cell = row[index];
       const len = cell instanceof Date ? 19 : String(cell ?? "").length;
       if (len > width) width = len;

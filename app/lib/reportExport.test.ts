@@ -10,8 +10,31 @@ import {
   parseYmd,
   toExcelDate,
 } from "./reportExport";
-import { buildReportWorkbook, workbookToBuffer } from "./reportWorkbook";
+import { buildReportWorkbook, escapeForSpreadsheet, workbookToBuffer } from "./reportWorkbook";
 import { canExportData } from "./permissions";
+
+describe("escapeForSpreadsheet", () => {
+  it("prefixes formula-leading characters and leaves clinical / normal text alone", () => {
+    expect(escapeForSpreadsheet("=HYPERLINK(\"http://evil\")")).toBe("'=HYPERLINK(\"http://evil\")");
+    expect(escapeForSpreadsheet("+1+1")).toBe("'+1+1");
+    expect(escapeForSpreadsheet("-2")).toBe("'-2");
+    expect(escapeForSpreadsheet("@SUM(A1)")).toBe("'@SUM(A1)");
+    expect(escapeForSpreadsheet("\tcmd")).toBe("'\tcmd");
+    expect(escapeForSpreadsheet("\rcmd")).toBe("'\rcmd");
+    expect(escapeForSpreadsheet("<0.5")).toBe("<0.5");
+    expect(escapeForSpreadsheet("glucose")).toBe("glucose");
+  });
+
+  it("applies escaping at workbook write time without touching source row values", () => {
+    const source = [["=1+1", "<0.5", "ok"]];
+    const buffer = workbookToBuffer("Results", ["A", "B", "C"], source);
+    expect(source[0]).toEqual(["=1+1", "<0.5", "ok"]);
+    const wb = XLSX.read(buffer, { type: "buffer" });
+    expect(wb.Sheets.Results.A2.v).toBe("'=1+1");
+    expect(wb.Sheets.Results.B2.v).toBe("<0.5");
+    expect(wb.Sheets.Results.C2.v).toBe("ok");
+  });
+});
 
 describe("parseYmd", () => {
   it("accepts calendar dates and rejects impossible days", () => {
