@@ -11,6 +11,9 @@ import {
   countAllDashboardQueues,
   dashboardQueueAllHref,
   dashboardQueueTile,
+  dashboardQueueTileCountClass,
+  dashboardQueueTileStripeClass,
+  dashboardQueueTileTone,
   filterDashboardQueue,
   formatDashboardQueueTestLabel,
   parseDashboardQueueSlug,
@@ -459,6 +462,7 @@ export default function CurrentQueue({ className = "" }: { className?: string })
           const count = counts[tile.slug];
           const selected = openSlug === tile.slug;
           const clickable = count > 0;
+          const tone = loading ? "idle" : dashboardQueueTileTone(tile.slug, count);
           return (
             <button
               key={tile.slug}
@@ -469,6 +473,7 @@ export default function CurrentQueue({ className = "" }: { className?: string })
               onClick={() => onTileClick(tile.slug, count)}
               className={[
                 "rounded-lf-md border border-lf-line bg-lf-surface p-4 text-left",
+                dashboardQueueTileStripeClass(tone),
                 clickable || selected ? "cursor-pointer" : "cursor-default",
                 selected ? "ring-1 ring-lf-accent" : "",
               ]
@@ -476,7 +481,7 @@ export default function CurrentQueue({ className = "" }: { className?: string })
                 .join(" ")}
             >
               <p className="text-sm text-lf-ink-2">{tile.label}</p>
-              <p className="lf-num mt-1 text-2xl font-semibold text-lf-ink">
+              <p className={`mt-1 ${dashboardQueueTileCountClass(tone)}`}>
                 {loading ? "…" : String(count)}
               </p>
               <p className="mt-1 text-xs text-lf-ink-3">{tile.hint}</p>

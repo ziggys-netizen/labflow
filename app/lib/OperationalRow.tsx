@@ -17,7 +17,11 @@ export function OperationalChip({
 }) {
   const text = formatOperationalChipLabel({ state, label, elapsedMinutes });
   return (
-    <span data-lf-role="operational-chip" data-lf-state={state} className={operationalChipClass(state)}>
+    <span
+      data-lf-role="operational-chip"
+      data-lf-state={state}
+      className={operationalChipClass(state, elapsedMinutes)}
+    >
       {text}
     </span>
   );
@@ -46,7 +50,7 @@ export default function OperationalRow({
       data-lf-state={state}
       className={[
         "flex items-start gap-3 rounded-lf-md border border-lf-line",
-        operationalStripeClass(state),
+        operationalStripeClass(state, elapsedMinutes),
         className,
       ]
         .filter(Boolean)

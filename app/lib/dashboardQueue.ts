@@ -101,6 +101,60 @@ export function dashboardQueueTile(slug: DashboardQueueSlug): DashboardQueueTile
   return DASHBOARD_QUEUE_TILES.find((tile) => tile.slug === slug)!;
 }
 
+/**
+ * G2 — tile colour when there is work. Zero stays grey (idle).
+ * Neutral = line-strong edge + ink number; warn/crit colour both edge and count.
+ */
+export type DashboardQueueTileTone = "idle" | "neutral" | "warn" | "crit";
+
+export function dashboardQueueTileTone(
+  slug: DashboardQueueSlug,
+  count: number
+): DashboardQueueTileTone {
+  if (count <= 0) return "idle";
+  switch (slug) {
+    case "critical-awaiting-communication":
+      return "crit";
+    case "awaiting-review":
+    case "returned-for-correction":
+    case "awaiting-sample":
+      return "warn";
+    case "pending-tests":
+    case "pending-final-reprints":
+      return "neutral";
+    default:
+      return "idle";
+  }
+}
+
+/** 3px left edge — only when count > 0. No filled backgrounds. */
+export function dashboardQueueTileStripeClass(tone: DashboardQueueTileTone): string {
+  switch (tone) {
+    case "crit":
+      return "lf-op-stripe border-lf-crit";
+    case "warn":
+      return "lf-op-stripe border-lf-warn";
+    case "neutral":
+      return "lf-op-stripe border-lf-line-strong";
+    default:
+      return "";
+  }
+}
+
+/** Count colour at 24px mono / 600 — grey when idle. */
+export function dashboardQueueTileCountClass(tone: DashboardQueueTileTone): string {
+  switch (tone) {
+    case "crit":
+      return "lf-num text-[24px] font-semibold text-lf-crit";
+    case "warn":
+      return "lf-num text-[24px] font-semibold text-lf-warn";
+    case "neutral":
+      return "lf-num text-[24px] font-semibold text-lf-ink";
+    default:
+      return "lf-num text-[24px] font-semibold text-lf-ink-3";
+  }
+}
+
 export function dashboardQueuePanelHref(slug: DashboardQueueSlug): string {
   return `/dashboard?queue=${slug}`;
 }

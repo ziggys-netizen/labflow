@@ -25,7 +25,7 @@ export type PatientListRowData = {
 
 function stripeClass(chip: OperationalFlagInput | null | undefined) {
   if (!chip) return "";
-  return operationalStripeClass(chip.state);
+  return operationalStripeClass(chip.state, chip.elapsedMinutes);
 }
 
 export function PatientListTableHeader({ mode }: { mode: PatientListRowMode }) {

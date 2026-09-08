@@ -4,12 +4,16 @@ import {
   countAllDashboardQueues,
   dashboardQueueAllHref,
   dashboardQueuePanelHref,
+  dashboardQueueTileCountClass,
+  dashboardQueueTileStripeClass,
+  dashboardQueueTileTone,
   dashboardQueueWaitStartedAt,
   filterDashboardQueue,
   formatDashboardQueueTestLabel,
   orderMatchesDashboardQueue,
   parseDashboardQueueSlug,
   type DashboardQueueOrder,
+  type DashboardQueueSlug,
 } from "./dashboardQueue";
 
 function order(partial: Partial<DashboardQueueOrder> & Pick<DashboardQueueOrder, "id">): DashboardQueueOrder {
@@ -109,5 +113,28 @@ describe("dashboardQueue", () => {
         { waitStartedAt: "2026-09-01T00:00:00.000Z", id: "a" }
       )
     ).toBeGreaterThan(0);
+  });
+
+  it("colours tiles only when count is above zero", () => {
+    const cases: Array<[DashboardQueueSlug, "neutral" | "warn" | "crit"]> = [
+      ["pending-tests", "neutral"],
+      ["awaiting-review", "warn"],
+      ["returned-for-correction", "warn"],
+      ["awaiting-sample", "warn"],
+      ["critical-awaiting-communication", "crit"],
+      ["pending-final-reprints", "neutral"],
+    ];
+    for (const [slug, active] of cases) {
+      expect(dashboardQueueTileTone(slug, 0)).toBe("idle");
+      expect(dashboardQueueTileTone(slug, 1)).toBe(active);
+    }
+    expect(dashboardQueueTileStripeClass("idle")).toBe("");
+    expect(dashboardQueueTileCountClass("idle")).toContain("text-lf-ink-3");
+    expect(dashboardQueueTileStripeClass("crit")).toContain("border-lf-crit");
+    expect(dashboardQueueTileCountClass("crit")).toContain("text-lf-crit");
+    expect(dashboardQueueTileStripeClass("warn")).toContain("border-lf-warn");
+    expect(dashboardQueueTileCountClass("warn")).toContain("text-lf-warn");
+    expect(dashboardQueueTileStripeClass("neutral")).toContain("border-lf-line-strong");
+    expect(dashboardQueueTileCountClass("neutral")).toContain("text-lf-ink");
   });
 });
