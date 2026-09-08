@@ -18,6 +18,7 @@ import {
   accountsAllowedPath,
   landingPathForRole,
   isManagerBoardRole,
+  isStorekeeperBoardRole,
   isTechnicianBoardRole,
   type Role,
 } from "./permissions";
@@ -534,6 +535,13 @@ describe("landingPathForRole", () => {
     expect(isManagerBoardRole("clinic_admin")).toBe(false);
     expect(isManagerBoardRole("technician")).toBe(false);
     expect(isManagerBoardRole("storekeeper")).toBe(false);
+  });
+
+
+  it("turns the storekeeper landing into the store board", () => {
+    expect(isStorekeeperBoardRole("storekeeper")).toBe(true);
+    expect(isStorekeeperBoardRole("lab_manager")).toBe(false);
+    expect(isStorekeeperBoardRole("technician")).toBe(false);
   });
 
   it("intern may open register, profile, their patients, a print page, and legal documents", () => {

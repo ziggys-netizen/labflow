@@ -139,6 +139,11 @@ export function isManagerBoardRole(role: string | null | undefined) {
   return allows(role, "lab_manager", "lab_supervisor");
 }
 
+/** Storekeeper landing on /inventory is the store board, not the full filter desk. */
+export function isStorekeeperBoardRole(role: string | null | undefined) {
+  return allows(role, "storekeeper");
+}
+
 export function canOrderTests(role: string | null | undefined) {
   // technician_assistant is excluded — collection only, no ordering.
   return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");

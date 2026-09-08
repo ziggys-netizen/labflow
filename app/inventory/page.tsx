@@ -13,7 +13,9 @@ import {
   canRecordSpecimenMovement,
   canRecordStockMovement,
   canViewInventory,
+  isStorekeeperBoardRole,
 } from "../lib/permissions";
+import StorekeeperBoard from "./StorekeeperBoard";
 import {
   BATCH_STATE_CLASSES,
   BATCH_STATE_LABELS,
@@ -828,10 +830,16 @@ function InventoryContent() {
   );
 }
 
+function InventoryGate() {
+  const { role } = useAuth();
+  if (isStorekeeperBoardRole(role)) return <StorekeeperBoard />;
+  return <InventoryContent />;
+}
+
 export default function Inventory() {
   return (
     <ProtectedRoute require={canViewInventory}>
-      <InventoryContent />
+      <InventoryGate />
     </ProtectedRoute>
   );
 }
