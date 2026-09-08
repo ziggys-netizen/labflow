@@ -8,7 +8,8 @@ import AppNav from "../lib/AppNav";
 import ActingClinicPrompt from "../lib/ActingClinicPrompt";
 import { useAuth } from "../lib/AuthContext";
 import { clinicCollectionQuery, isOwner } from "../lib/clinicScope";
-import { canRegisterPatient, canViewPatients } from "../lib/permissions";
+import { canRegisterPatient, canViewPatients, isReceptionBoardRole } from "../lib/permissions";
+import ReceptionBoard from "./ReceptionBoard";
 import { isPatientDeleted } from "../lib/patientSoftDelete";
 import { trackedAddDoc, writeActorFromUser } from "../lib/trackedWrites";
 import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../lib/audit";
@@ -404,12 +405,8 @@ export default function Register() {
     }
   };
 
-  return (
-    <ProtectedRoute require={canRegisterPatient}>
-    <main className="min-h-screen bg-white">
-      <AppNav />
-      <div className="max-w-md mx-auto px-6 py-16">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-6">Register a patient</h1>
+  const formBody = (
+      <>
         {isOwner(role) && !writeClinicId && <ActingClinicPrompt />}
         <form onSubmit={handleSubmit} className="space-y-4" noValidate>
           <div>
@@ -643,8 +640,26 @@ export default function Register() {
             </p>
           )}
         </form>
-      </div>
-    </main>
+      </>
+  );
+
+  if (isReceptionBoardRole(role)) {
+    return (
+      <ProtectedRoute require={canRegisterPatient}>
+        <ReceptionBoard>{formBody}</ReceptionBoard>
+      </ProtectedRoute>
+    );
+  }
+
+  return (
+    <ProtectedRoute require={canRegisterPatient}>
+      <main className="min-h-screen bg-white">
+        <AppNav />
+        <div className="max-w-md mx-auto px-6 py-16">
+          <h1 className="text-2xl font-semibold text-gray-900 mb-6">Register a patient</h1>
+          {formBody}
+        </div>
+      </main>
     </ProtectedRoute>
   );
 }

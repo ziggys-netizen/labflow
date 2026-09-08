@@ -1,12 +1,13 @@
 /**
- * Role capabilities — single source of truth.
+ * Role capabilities — single source of truth for actions.
  *
- * Pages must call these predicates. Do not compare role strings in UI except
- * `role === "owner"` for the Owner nav link. `admin` is not a role.
+ * Surface visibility (nav + route entry) lives in `surfaces.ts` and must stay
+ * aligned with these predicates. Do not compare role strings in UI except
+ * `role === "owner"` where a predicate is not enough. `admin` is not a role.
  *
  * `technician_assistant` is not a technician: register patients, view patients,
- * record sample collection, record specimen movement, view inventory. They do
- * not order tests, enter results, approve, or manage catalogue/staff/stock.
+ * see/collect on orders. They do not create orders, enter results, approve,
+ * manage catalogue/staff/stock, or open Store.
  *
  * `accounts` reads daily test-value rollups only. Never patients, orders, or
  * results — totals must not become a clinical access path.
@@ -144,6 +145,24 @@ export function isStorekeeperBoardRole(role: string | null | undefined) {
   return allows(role, "storekeeper");
 }
 
+/** Intern landing on /register is the reception board; register stays primary. */
+export function isReceptionBoardRole(role: string | null | undefined) {
+  return allows(role, "intern");
+}
+
+/** Accounts landing / own-work dashboard is the rollup hand-off, not clinic stats. */
+export function isAccountsBoardRole(role: string | null | undefined) {
+  return allows(role, "accounts");
+}
+
+/**
+ * Manager queue deep-links under /dashboard/queues/*. Clinic-stats dashboard
+ * roles (owner, clinic_admin) share these URLs with the line board.
+ */
+export function canViewClinicQueuePages(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
+}
+
 export function canOrderTests(role: string | null | undefined) {
   // technician_assistant is excluded — collection only, no ordering.
   return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");
@@ -175,11 +194,48 @@ export function canSendBackForCorrection(role: string | null | undefined) {
 }
 
 export function canEditTestCatalogue(role: string | null | undefined) {
-  return allows(role, "owner", "lab_manager", "lab_supervisor");
+  // Clinic Settings surface is ◐ for lab_manager (catalogue only) and – for
+  // lab_supervisor. Catalogue writes follow that surface, not Review.
+  return allows(role, "owner", "lab_manager");
 }
 
+/**
+ * Own-work / role dashboard. Every clinic role gets the Dashboard surface;
+ * what they see on it is role-specific (line board, tech board, clinic stats).
+ */
 export function canViewDashboard(role: string | null | undefined) {
-  return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
+  return allows(
+    role,
+    "owner",
+    "clinic_admin",
+    "lab_manager",
+    "lab_supervisor",
+    "technician",
+    "technician_assistant",
+    "intern",
+    "storekeeper",
+    "accounts"
+  );
+}
+
+/** Orders list / open-order surface. tech_assistant is ◐ (see + collect only). */
+export function canViewOrders(role: string | null | undefined) {
+  return allows(
+    role,
+    "owner",
+    "lab_manager",
+    "lab_supervisor",
+    "technician",
+    "technician_assistant"
+  );
+}
+
+/**
+ * Clinic Settings surface. lab_manager is ◐ (catalogue/ranges/prices).
+ * Staff and clinic-profile controls stay with owner / clinic_admin predicates.
+ */
+export function canAccessClinicSettings(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin", "lab_manager");
 }
 
 /**
@@ -288,20 +344,12 @@ export function canRecordCriticalNotification(role: string | null | undefined) {
 }
 
 export function canViewInventory(role: string | null | undefined) {
-  return allows(
-    role,
-    "owner",
-    "clinic_admin",
-    "lab_manager",
-    "lab_supervisor",
-    "technician",
-    "technician_assistant",
-    "storekeeper"
-  );
+  // Store surface: technician / tech_assistant / lab_supervisor are –.
+  return allows(role, "owner", "clinic_admin", "lab_manager", "storekeeper");
 }
 
 export function canRecordStockMovement(role: string | null | undefined) {
-  return allows(role, "owner", "lab_manager", "lab_supervisor", "storekeeper");
+  return allows(role, "owner", "lab_manager", "storekeeper");
 }
 
 export function canManageInventoryItems(role: string | null | undefined) {
@@ -334,7 +382,7 @@ export function landingPathForRole(
       return "/dashboard";
     case "technician":
     case "technician_assistant":
-      return "/patients";
+      return "/dashboard";
     case "intern":
       return "/register";
     case "storekeeper":
@@ -352,13 +400,25 @@ export function landingPathForRole(
  */
 export function internAllowedPath(pathname: string): boolean {
   if (isTermsReadablePath(pathname)) return true;
-  if (pathname === "/register" || pathname === "/profile" || pathname === "/patients") return true;
+  if (
+    pathname === "/register" ||
+    pathname === "/profile" ||
+    pathname === "/patients" ||
+    pathname === "/dashboard"
+  ) {
+    return true;
+  }
   return pathname.startsWith("/patients/") && pathname.endsWith("/print");
 }
 
-/** Accounts officers: rollup page, identity, and legal documents. No clinical lists. */
+/** Accounts officers: rollup page, own-work dashboard, identity, and legal documents. No clinical lists. */
 export function accountsAllowedPath(pathname: string): boolean {
-  return pathname === "/accounts" || pathname === "/profile" || isTermsReadablePath(pathname);
+  return (
+    pathname === "/accounts" ||
+    pathname === "/dashboard" ||
+    pathname === "/profile" ||
+    isTermsReadablePath(pathname)
+  );
 }
 
 /** Capability redirect for roles that must not fall through ProtectedRoute. */
@@ -392,6 +452,8 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
   canRecordCriticalNotification,
   canEditTestCatalogue,
   canViewDashboard,
+  canViewOrders,
+  canAccessClinicSettings,
   canViewTestValueRollup,
   canExportData,
   canManageStaff,
