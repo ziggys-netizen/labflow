@@ -1,0 +1,10 @@
+---
+description: Standing LabFlow work order — always read and follow
+alwaysApply: true
+---
+
+# LabFlow standing work order
+
+Read and follow `LabFlow-work-order.md` at the repository root before every task. Its standing rules apply whether or not the prompt repeats them.
+
+This Cursor rule keeps the pointer durable if Next.js regenerates `AGENTS.md`. `CLAUDE.md` also references `@LabFlow-work-order.md`.

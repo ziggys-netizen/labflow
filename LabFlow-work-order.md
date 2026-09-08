@@ -48,15 +48,19 @@ Around one man in twelve has red–green colour vision deficiency. Every state t
 
 ---
 
-## Where things stand — 8 September 2026
+## Where things stand — end of 8 September 2026
 
-**Published and live:** interim Firestore rules with the approval gate · roster collections · the two cross-tenant patches (`staffUserUpdateOk`, `clinicPins` delete) · seven emulator rules tests guarding them.
+**Gate B is closed.** `https://labflow-six.vercel.app/api/health` returns `{"ok":true}`. Vercel OIDC federates to Google with no service-account key. Join-by-code, staff pre-approvals, custom claims and Excel export are all live for the first time.
 
-**Written, not yet published:** the J1 role-gate ruleset — catalogue writes, order status transitions, soft-delete. **The release gate is still enforced only in the browser until this is pasted into the Console.**
+*What had been wrong for three weeks: the pool, provider, project number and principal string were all correct — there was simply no service account for the pool to impersonate. Everything downstream was built correctly and pointing at nothing.*
 
-**Built this week:** D1–D3 and D6 design tokens, mobile layout, the two flag systems, specimen caps · E1–E3 patient list, icons, patient history with cumulative view · F footer and terms acceptance · G1–G3 expanding queue, dashboard colour, wordmark · H1–H5 real operational states, currency, header, row controls, adult fixtures · I1 access audit · K1 tinted grounds.
+**Published and live in Firestore:** the approval gate · roster collections · the two cross-tenant patches (`staffUserUpdateOk`, `clinicPins` delete) · the **J1 role gates** — catalogue writes, order status transitions into approved/amended, soft-delete · **un-release blocked** (`leavingReleasedStatus`) · **audit entries bound to their author** (`actorUid == request.auth.uid`).
 
-**Blocked on me, not you:** publishing J1 · Vercel OIDC (Gate B) · the signed-in browser pass · Green Aid population and the two-clinic isolation test · the pilot clinic's catalogue · counsel on data residency.
+**The repo and the live ruleset agree.** `20a3eb3` closed a period where `main` held a weaker ruleset than production. Never let that recur — see rule 7.
+
+**Built 2–8 September:** D1–D3, D6 design tokens, mobile layout, the two flag systems, specimen caps · E1–E3 patient list, icons, patient history with cumulative view · F footer and terms acceptance · G1–G3 expanding queue, dashboard colour, wordmark · H1–H5 operational states, currency, header, row controls, adult fixtures · I1 access audit · J1 role gates and follow-ups · K1 tinted grounds · `f99a8c5` H1 mapping, tiles and chips now share `operationalFromOrder`.
+
+**Blocked on me, not you:** the signed-in browser pass · Green Aid population and the two-clinic isolation test · the pilot clinic's catalogue · counsel on data residency.
 
 **Firestore region is `nam7` (United States).** Decision of 23 August: stay pending legal advice. Do not change hosting configuration. Tripwires are in the transfer assessment, §7.
 
@@ -64,21 +68,21 @@ Around one man in twelve has red–green colour vision deficiency. Every state t
 
 ## Open items, in order
 
-**1. E3R** — patient history remediation. Page `n of m` is currently a lie; cumulative rows split a trend across test codes; the disclosure log names Firestore document IDs rather than Lab IDs.
+**1. E3R** — patient history remediation. Page `n of m` is currently a lie — `m` counts chunks, not sheets, so two physical pages can carry the same stamp. Cumulative rows split a trend across test codes because there is no stable `analyteId`. The disclosure log names Firestore document IDs rather than Lab IDs.
 
-**2. J1 follow-ups** — a technician can un-release an approved result by setting status to `pending`; `auditLogs` does not bind an entry to its author.
+**2. I2 / I3** — the surface registry and the role matrix, once I confirm the four rows I flagged.
 
-**3. I2 / I3** — the surface registry and the role matrix, once I confirm the four rows I flagged.
+**3. D4 / D5** — role dashboards. D4 needs `tatMinutes` on catalogue entries; no per-test turnaround targets exist yet, and the clinic sets them, not us.
 
-**4. D4 / D5** — role dashboards. D4 needs `tatMinutes` on catalogue entries; no per-test turnaround targets exist yet.
+**4. Clinical letters in the queue panel** — a manager scanning "6 awaiting review" should see which one carries a critical value.
 
-**5. Clinical letters in the queue panel** — a manager scanning "6 awaiting review" should see which one carries a critical value.
+**5. Excel formula escaping at export** — a cell beginning `=`, `+`, `-` or `@` executes on open, and exports are meant to reach the Ministry. Escape at export time only; never alter the stored value. **Now urgent: export works for the first time.**
 
-**6. Excel formula escaping at export** — a cell beginning `=`, `+`, `-` or `@` executes on open, and exports are meant to reach the Ministry. Escape at export time only; never alter the stored value.
+**6. Security headers** — `Referrer-Policy: no-referrer` first: following an external link from `/patients/{id}` currently sends that path in the `Referer` header. Then HSTS, `nosniff`, `frame-ancestors 'none'`, `Permissions-Policy`.
 
-**7. Security headers** — `Referrer-Policy: no-referrer` first: following an external link from `/patients/{id}` currently sends that path in the `Referer` header. Then HSTS, `nosniff`, `frame-ancestors 'none'`, `Permissions-Policy`.
+**7. Content Security Policy** — derived from observed traffic, shipped `Report-Only` for a week before enforcing. A wrong `connect-src` silently kills Firebase sign-in in production.
 
-**8. Content Security Policy** — derived from observed traffic, shipped `Report-Only` for a week before enforcing. A wrong `connect-src` silently kills Firebase sign-in in production.
+**8. Inventory adjustments into the audit log** — the stock ledger is sound, but `ADJUSTMENT` is the movement most able to hide error or theft and it never appears where oversight happens.
 
 ---
 
