@@ -2,9 +2,9 @@
  * Patient history is read-only / print assembly only.
  * Do not edit, amend, delete, or change status from this surface.
  *
- * Cumulative rows join only on the stored pair (testCode + parameter name).
- * There is no LOINC (or other) analyte code. Do not invent a cross-test key —
- * FBC "Haemoglobin (Hb)" and standalone HB "Haemoglobin (Hb)" stay separate.
+ * Cumulative rows join on catalogue `analyteId` when present, otherwise on the
+ * stored pair (testCode + parameter name). Missing analyteId must not invent a
+ * cross-test key.
  */
 
 import { formatHeaderName } from "./headerIdentity";
@@ -22,7 +22,11 @@ export const HISTORY_READONLY_NOTE =
   "This page is read-only / print assembly only. It cannot edit, amend, delete, or change status.";
 
 export const CUMULATIVE_ALIGNMENT_NOTE =
-  "Columns line up only when the same catalogue test code and parameter name both match. Haemoglobin on FBC and Haemoglobin on HB are different rows. There is no shared analyte code.";
+  "Columns line up on catalogue analyteId when seeded. Without analyteId they require the same test code and parameter name. Source test codes are still shown when rows fall back to the pair key.";
+
+export const HISTORY_AMENDMENT_FOOTNOTE_HEADING = "* Amended values";
+
+export const ORDER_LAB_ID_FALLBACK_NOTE = "no separate order Lab ID";
 
 /**
  * Print chunk caps — derived from headless Chrome A4 print fixtures
@@ -80,6 +84,7 @@ export type HistoryParameterRow = {
   testCode: string;
   testName: string;
   parameter: string;
+  analyteId: string | null;
   value: string;
   unit: string;
   definition: TestParameter | null;
@@ -99,11 +104,12 @@ export type HistoryCumulativeCell = {
 };
 
 export type HistoryCumulativeRow = {
-  /** Stored join key only: testCode + parameter name. Not a clinical code. */
+  /** Join key: analyte:{id} when present, else testCode + parameter name. */
   key: string;
   testCode: string;
   testName: string;
   parameter: string;
+  analyteId: string | null;
   unit: string;
   label: string;
   values: Record<string, HistoryCumulativeCell>;
@@ -113,7 +119,19 @@ export function patientHistoryHref(patientId: string): string {
   return `/patients/${patientId}/history`;
 }
 
-export function cumulativeJoinKey(testCode: string, parameter: string): string {
+export function normalizeAnalyteId(value: string | null | undefined): string | null {
+  if (typeof value !== "string") return null;
+  const trimmed = value.trim().toLowerCase();
+  return trimmed || null;
+}
+
+export function cumulativeJoinKey(
+  testCode: string,
+  parameter: string,
+  analyteId?: string | null
+): string {
+  const id = normalizeAnalyteId(analyteId);
+  if (id) return `analyte:${id}`;
   return `${testCode}\u0001${parameter}`;
 }
 
@@ -182,13 +200,15 @@ export function historyVisitParameters(
     const params = definition?.parameters || [];
     if (params.length === 0) {
       for (const [parameter, value] of Object.entries(values)) {
-        const key = cumulativeJoinKey(test.code, parameter);
+        const analyteId = null;
+        const key = cumulativeJoinKey(test.code, parameter, analyteId);
         if (seen.has(key)) continue;
         seen.add(key);
         rows.push({
           testCode: test.code,
           testName: test.name?.trim() || test.code,
           parameter,
+          analyteId,
           value,
           unit: "—",
           definition: null,
@@ -197,13 +217,15 @@ export function historyVisitParameters(
       continue;
     }
     for (const param of params) {
-      const key = cumulativeJoinKey(test.code, param.name);
+      const analyteId = normalizeAnalyteId(param.analyteId);
+      const key = cumulativeJoinKey(test.code, param.name, analyteId);
       if (seen.has(key)) continue;
       seen.add(key);
       rows.push({
         testCode: test.code,
         testName: definition?.name || test.name?.trim() || test.code,
         parameter: param.name,
+        analyteId,
         value: values[param.name] || "",
         unit: param.unit || "—",
         definition: param,
@@ -231,12 +253,11 @@ export function historyCumulativeRows(
   catalog: LabTest[]
 ): HistoryCumulativeRow[] {
   const visits = historyVisitRows(orders);
-  const columns = historyCumulativeColumns(orders);
   const byKey = new Map<string, HistoryCumulativeRow>();
 
   for (const visit of visits) {
     for (const param of historyVisitParameters(visit, catalog)) {
-      const key = cumulativeJoinKey(param.testCode, param.parameter);
+      const key = cumulativeJoinKey(param.testCode, param.parameter, param.analyteId);
       let row = byKey.get(key);
       if (!row) {
         row = {
@@ -244,6 +265,7 @@ export function historyCumulativeRows(
           testCode: param.testCode,
           testName: param.testName,
           parameter: param.parameter,
+          analyteId: param.analyteId,
           unit: param.unit,
           label: param.parameter,
           values: {},
@@ -264,14 +286,13 @@ export function historyCumulativeRows(
   );
   for (const row of rows) {
     const base = row.parameter === "Result" ? row.testName : row.parameter;
-    // Always name the source test. Without analyteId, FBC and HB haemoglobin
-    // must not look like one broken series.
-    row.label = `${base} (${row.testCode})`;
+    // analyteId rows are one clinical series; pair-key fallback still names the source test.
+    row.label = row.analyteId ? base : `${base} (${row.testCode})`;
   }
 
   return rows.sort(
     (a, b) =>
-      a.testCode.localeCompare(b.testCode) ||
+      (a.analyteId || a.testCode).localeCompare(b.analyteId || b.testCode) ||
       a.parameter.localeCompare(b.parameter) ||
       a.label.localeCompare(b.label)
   );
@@ -319,8 +340,7 @@ function trimId(value: string | null | undefined): string {
 
 /**
  * Orders do not carry their own Lab ID — only the patient's.
- * Synthesize a stable human-readable label: `{labId}-{nn}` in chronological
- * order within the disclosed set (01, 02, …).
+ * Human-readable disclosure uses patient Lab ID + order date and says so.
  */
 export function historyOrderLabIds(
   orders: HistoryOrderInput[],
@@ -331,9 +351,9 @@ export function historyOrderLabIds(
     if (a.createdAt === b.createdAt) return a.id.localeCompare(b.id);
     return a.createdAt < b.createdAt ? -1 : 1;
   });
-  return chronological.map((order, index) => {
-    const orderBase = trimId(order.patientLabId) || base || order.id;
-    return `${orderBase}-${String(index + 1).padStart(2, "0")}`;
+  return chronological.map((order) => {
+    const lab = trimId(order.patientLabId) || base || order.id;
+    return `${lab} · ${formatHistoryDay(order.createdAt)} (${ORDER_LAB_ID_FALLBACK_NOTE})`;
   });
 }
 
@@ -370,6 +390,28 @@ export function historyDisclosureDetail(input: {
 
 export function historyHasUnsynced(orders: HistoryOrderInput[]): boolean {
   return releasedHistoryOrders(orders).some((order) => order.notYetSynced === true);
+}
+
+/**
+ * Footnote lines for amended cells on a cumulative print.
+ * Heading is HISTORY_AMENDMENT_FOOTNOTE_HEADING; each line names analyte,
+ * visit date, amendment date, and version.
+ */
+export function historyAmendmentFootnotes(
+  orders: HistoryOrderInput[],
+  catalog: LabTest[]
+): string[] {
+  const lines: string[] = [];
+  for (const visit of historyVisitRows(orders)) {
+    if (!visit.amended) continue;
+    const amendedOn = visit.amendmentDateLabel || "—";
+    for (const param of historyVisitParameters(visit, catalog)) {
+      if (!param.value.trim()) continue;
+      const name = param.parameter === "Result" ? param.testName : param.parameter;
+      lines.push(`${name}, ${visit.dateLabel} — amended ${amendedOn}, v${visit.version}`);
+    }
+  }
+  return lines;
 }
 
 export type HistoryVisitPrintSlice = {

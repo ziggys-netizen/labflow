@@ -51,6 +51,12 @@ export interface TestParameter {
   valueSet?: QualitativeValue[];
   /** For semi_quantitative: values at or after this index are abnormal. */
   abnormalFromIndex?: number | null;
+  /**
+   * Stable analyte slug across tests (e.g. haemoglobin on FBC and HB).
+   * Optional — legacy / imported rows omit it; cumulative falls back to
+   * testCode + parameter name.
+   */
+  analyteId?: string | null;
 }
 
 export const RDT_VALUE_SET: QualitativeValue[] = [
@@ -168,7 +174,7 @@ export function numericParam(
   name: string,
   unit: string,
   referenceRange: string,
-  extras: Pick<TestParameter, "criticalLow" | "criticalHigh"> = {}
+  extras: Pick<TestParameter, "criticalLow" | "criticalHigh" | "analyteId"> = {}
 ): TestParameter {
   return { name, unit, referenceRange, resultType: "numeric", ...extras };
 }
@@ -176,16 +182,18 @@ export function numericParam(
 export function qualitativeParam(
   name: string,
   valueSet: QualitativeValue[],
-  referenceRange: string
+  referenceRange: string,
+  extras: Pick<TestParameter, "analyteId"> = {}
 ): TestParameter {
-  return { name, unit: "—", referenceRange, resultType: "qualitative", valueSet };
+  return { name, unit: "—", referenceRange, resultType: "qualitative", valueSet, ...extras };
 }
 
 export function semiQuantitativeParam(
   name: string,
   valueSet: QualitativeValue[],
   referenceRange: string,
-  abnormalFromIndex = 1
+  abnormalFromIndex = 1,
+  extras: Pick<TestParameter, "analyteId"> = {}
 ): TestParameter {
   return {
     name,
@@ -194,11 +202,16 @@ export function semiQuantitativeParam(
     resultType: "semi_quantitative",
     valueSet,
     abnormalFromIndex,
+    ...extras,
   };
 }
 
-export function textParam(name: string, referenceRange = ""): TestParameter {
-  return { name, unit: "—", referenceRange, resultType: "text" };
+export function textParam(
+  name: string,
+  referenceRange = "",
+  extras: Pick<TestParameter, "analyteId"> = {}
+): TestParameter {
+  return { name, unit: "—", referenceRange, resultType: "text", ...extras };
 }
 
 export function parameterNeedsUnit(parameter: TestParameter): boolean {

@@ -127,15 +127,15 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [
-      textParam("Colour", "Pale yellow"),
-      textParam("Appearance", ""),
-      numericParam("pH", "pH", "5.0-8.0"),
-      semiQuantitativeParam("Protein", DIPSTICK_VALUE_SET, "Nil"),
-      semiQuantitativeParam("Glucose", DIPSTICK_VALUE_SET, "Nil"),
-      semiQuantitativeParam("Ketones", DIPSTICK_VALUE_SET, "Nil"),
-      qualitativeParam("Blood", RDT_VALUE_SET, "Negative"),
-      qualitativeParam("Leukocytes", RDT_VALUE_SET, "Negative"),
-      qualitativeParam("Nitrites", RDT_VALUE_SET, "Negative"),
+      textParam("Colour", "Pale yellow", { analyteId: "urine-colour" }),
+      textParam("Appearance", "", { analyteId: "urine-appearance" }),
+      numericParam("pH", "pH", "5.0-8.0", { analyteId: "urine-ph" }),
+      semiQuantitativeParam("Protein", DIPSTICK_VALUE_SET, "Nil", 1, { analyteId: "urine-protein" }),
+      semiQuantitativeParam("Glucose", DIPSTICK_VALUE_SET, "Nil", 1, { analyteId: "urine-glucose" }),
+      semiQuantitativeParam("Ketones", DIPSTICK_VALUE_SET, "Nil", 1, { analyteId: "urine-ketones" }),
+      qualitativeParam("Blood", RDT_VALUE_SET, "Negative", { analyteId: "urine-blood" }),
+      qualitativeParam("Leukocytes", RDT_VALUE_SET, "Negative", { analyteId: "urine-leukocytes" }),
+      qualitativeParam("Nitrites", RDT_VALUE_SET, "Negative", { analyteId: "urine-nitrites" }),
     ],
   }),
   test({
@@ -146,9 +146,11 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [
-      qualitativeParam("Result", MALARIA_FILM_VALUE_SET, "No parasites seen"),
-      textParam("Species / description", ""),
-      numericParam("Parasite density", "parasites/µL", ""),
+      qualitativeParam("Result", MALARIA_FILM_VALUE_SET, "No parasites seen", {
+        analyteId: "malaria-film-result",
+      }),
+      textParam("Species / description", "", { analyteId: "malaria-film-species" }),
+      numericParam("Parasite density", "parasites/µL", "", { analyteId: "malaria-parasite-density" }),
     ],
   }),
   test({
@@ -159,9 +161,11 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [
-      qualitativeParam("Ova/cysts seen", STOOL_OVA_VALUE_SET, "None seen"),
-      textParam("Description", ""),
-      qualitativeParam("Occult blood", RDT_VALUE_SET, "Negative"),
+      qualitativeParam("Ova/cysts seen", STOOL_OVA_VALUE_SET, "None seen", {
+        analyteId: "stool-ova-cysts",
+      }),
+      textParam("Description", "", { analyteId: "stool-description" }),
+      qualitativeParam("Occult blood", RDT_VALUE_SET, "Negative", { analyteId: "stool-occult-blood" }),
     ],
   }),
   test({
@@ -172,7 +176,7 @@ export const TEST_CATALOG: LabTest[] = [
     specimenCap: "lavender",
     tiers: PRIMARY,
     onNationalMenu: true,
-    parameters: [numericParam("Haemoglobin (Hb)", "g/dL", "M: 13-18, F: 12-16")],
+    parameters: [numericParam("Haemoglobin (Hb)", "g/dL", "M: 13-18, F: 12-16", { analyteId: "haemoglobin" })],
   }),
   test({
     code: "FBS",
@@ -182,7 +186,7 @@ export const TEST_CATALOG: LabTest[] = [
     specimenCap: "grey",
     tiers: PRIMARY,
     onNationalMenu: true,
-    parameters: [numericParam("Glucose", "mmol/L", "3.9-5.6")],
+    parameters: [numericParam("Glucose", "mmol/L", "3.9-5.6", { analyteId: "glucose" })],
   }),
   test({
     code: "SICKLE",
@@ -191,7 +195,7 @@ export const TEST_CATALOG: LabTest[] = [
     specimenType: "blood",
     tiers: PRIMARY,
     onNationalMenu: true,
-    parameters: [qualitativeParam("Result", SICKLE_VALUE_SET, "Negative")],
+    parameters: [qualitativeParam("Result", SICKLE_VALUE_SET, "Negative", { analyteId: "sickle-result" })],
   }),
   test({
     code: "MAL-RDT",
@@ -201,8 +205,8 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [
-      qualitativeParam("Result", RDT_VALUE_SET, "Negative"),
-      textParam("Parasite species (if positive)", ""),
+      qualitativeParam("Result", RDT_VALUE_SET, "Negative", { analyteId: "malaria-rdt-result" }),
+      textParam("Parasite species (if positive)", "", { analyteId: "malaria-rdt-species" }),
     ],
   }),
   test({
@@ -214,8 +218,12 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [
-      qualitativeParam("Screening result", SEROLOGY_VALUE_SET, "Non-reactive"),
-      qualitativeParam("Confirmatory result (if reactive)", SEROLOGY_VALUE_SET, "Non-reactive"),
+      qualitativeParam("Screening result", SEROLOGY_VALUE_SET, "Non-reactive", {
+        analyteId: "hiv-screening",
+      }),
+      qualitativeParam("Confirmatory result (if reactive)", SEROLOGY_VALUE_SET, "Non-reactive", {
+        analyteId: "hiv-confirmatory",
+      }),
     ],
   }),
   test({
@@ -226,7 +234,9 @@ export const TEST_CATALOG: LabTest[] = [
     specimenCap: "gold",
     tiers: PRIMARY,
     onNationalMenu: true,
-    parameters: [qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive")],
+    parameters: [
+      qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive", { analyteId: "hbsag-result" }),
+    ],
   }),
   test({
     code: "HCV",
@@ -236,7 +246,9 @@ export const TEST_CATALOG: LabTest[] = [
     specimenCap: "gold",
     tiers: PRIMARY,
     onNationalMenu: true,
-    parameters: [qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive")],
+    parameters: [
+      qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive", { analyteId: "hcv-result" }),
+    ],
   }),
   test({
     code: "PREG",
@@ -245,7 +257,9 @@ export const TEST_CATALOG: LabTest[] = [
     specimenType: "urine",
     tiers: PRIMARY,
     onNationalMenu: true,
-    parameters: [qualitativeParam("Result", RDT_VALUE_SET, "Negative")],
+    parameters: [
+      qualitativeParam("Result", RDT_VALUE_SET, "Negative", { analyteId: "urine-hcg" }),
+    ],
   }),
   test({
     code: "VDRL",
@@ -256,8 +270,8 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: PRIMARY,
     onNationalMenu: true,
     parameters: [
-      qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive"),
-      textParam("Titre (if reactive)", ""),
+      qualitativeParam("Result", SEROLOGY_VALUE_SET, "Non-reactive", { analyteId: "vdrl-result" }),
+      textParam("Titre (if reactive)", "", { analyteId: "vdrl-titre" }),
     ],
   }),
   test({
@@ -269,16 +283,18 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: SECONDARY,
     onNationalMenu: true,
     parameters: [
-      numericParam("Haemoglobin (Hb)", "g/dL", "M: 13-18, F: 12-16"),
-      numericParam("White Blood Cells (WBC)", "x10^9/L", "4.5-11.0"),
-      numericParam("Red Blood Cells (RBC)", "x10^12/L", "M: 4.5-5.9, F: 4.0-5.2"),
-      numericParam("Platelets", "x10^9/L", "150-400"),
-      numericParam("Haematocrit (HCT/PCV)", "%", "M: 40-54, F: 36-48"),
-      numericParam("Neutrophils", "%", "40-75"),
-      numericParam("Lymphocytes", "%", "20-45"),
-      numericParam("Monocytes", "%", "2-10"),
-      numericParam("Eosinophils", "%", "1-6"),
-      numericParam("Basophils", "%", "0-2"),
+      numericParam("Haemoglobin (Hb)", "g/dL", "M: 13-18, F: 12-16", { analyteId: "haemoglobin" }),
+      numericParam("White Blood Cells (WBC)", "x10^9/L", "4.5-11.0", { analyteId: "wbc" }),
+      numericParam("Red Blood Cells (RBC)", "x10^12/L", "M: 4.5-5.9, F: 4.0-5.2", {
+        analyteId: "rbc",
+      }),
+      numericParam("Platelets", "x10^9/L", "150-400", { analyteId: "platelets" }),
+      numericParam("Haematocrit (HCT/PCV)", "%", "M: 40-54, F: 36-48", { analyteId: "haematocrit" }),
+      numericParam("Neutrophils", "%", "40-75", { analyteId: "neutrophils" }),
+      numericParam("Lymphocytes", "%", "20-45", { analyteId: "lymphocytes" }),
+      numericParam("Monocytes", "%", "2-10", { analyteId: "monocytes" }),
+      numericParam("Eosinophils", "%", "1-6", { analyteId: "eosinophils" }),
+      numericParam("Basophils", "%", "0-2", { analyteId: "basophils" }),
     ],
   }),
   test({
@@ -290,8 +306,10 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: SECONDARY,
     onNationalMenu: true,
     parameters: [
-      qualitativeParam("ABO Group", ABO_VALUE_SET, "A / B / AB / O"),
-      qualitativeParam("Rhesus (Rh) Factor", RH_VALUE_SET, "Positive / Negative"),
+      qualitativeParam("ABO Group", ABO_VALUE_SET, "A / B / AB / O", { analyteId: "abo-group" }),
+      qualitativeParam("Rhesus (Rh) Factor", RH_VALUE_SET, "Positive / Negative", {
+        analyteId: "rh-factor",
+      }),
     ],
   }),
   test({
@@ -303,11 +321,11 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: SECONDARY,
     onNationalMenu: true,
     parameters: [
-      numericParam("Urea", "mmol/L", "2.5-7.8"),
-      numericParam("Creatinine", "µmol/L", "M: 53-106, F: 44-97"),
-      numericParam("Sodium", "mmol/L", "135-145"),
-      numericParam("Potassium", "mmol/L", "3.5-5.0"),
-      numericParam("Chloride", "mmol/L", "98-107"),
+      numericParam("Urea", "mmol/L", "2.5-7.8", { analyteId: "urea" }),
+      numericParam("Creatinine", "µmol/L", "M: 53-106, F: 44-97", { analyteId: "creatinine" }),
+      numericParam("Sodium", "mmol/L", "135-145", { analyteId: "sodium" }),
+      numericParam("Potassium", "mmol/L", "3.5-5.0", { analyteId: "potassium" }),
+      numericParam("Chloride", "mmol/L", "98-107", { analyteId: "chloride" }),
     ],
   }),
   test({
@@ -319,12 +337,12 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: SECONDARY,
     onNationalMenu: true,
     parameters: [
-      numericParam("ALT", "U/L", "7-56"),
-      numericParam("AST", "U/L", "10-40"),
-      numericParam("ALP", "U/L", "44-147"),
-      numericParam("Total Bilirubin", "mg/dL", "0.1-1.2"),
-      numericParam("Albumin", "g/dL", "3.5-5.0"),
-      numericParam("Total Protein", "g/dL", "6.3-8.2"),
+      numericParam("ALT", "U/L", "7-56", { analyteId: "alt" }),
+      numericParam("AST", "U/L", "10-40", { analyteId: "ast" }),
+      numericParam("ALP", "U/L", "44-147", { analyteId: "alp" }),
+      numericParam("Total Bilirubin", "mg/dL", "0.1-1.2", { analyteId: "total-bilirubin" }),
+      numericParam("Albumin", "g/dL", "3.5-5.0", { analyteId: "albumin" }),
+      numericParam("Total Protein", "g/dL", "6.3-8.2", { analyteId: "total-protein" }),
     ],
   }),
   test({
@@ -336,10 +354,12 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: SECONDARY,
     onNationalMenu: true,
     parameters: [
-      numericParam("Total Cholesterol", "mmol/L", "< 5.0 (desirable)"),
-      numericParam("HDL Cholesterol", "mmol/L", "> 1.0"),
-      numericParam("LDL Cholesterol", "mmol/L", "< 4.0"),
-      numericParam("Triglycerides", "mmol/L", "< 1.7"),
+      numericParam("Total Cholesterol", "mmol/L", "< 5.0 (desirable)", {
+        analyteId: "total-cholesterol",
+      }),
+      numericParam("HDL Cholesterol", "mmol/L", "> 1.0", { analyteId: "hdl-cholesterol" }),
+      numericParam("LDL Cholesterol", "mmol/L", "< 4.0", { analyteId: "ldl-cholesterol" }),
+      numericParam("Triglycerides", "mmol/L", "< 1.7", { analyteId: "triglycerides" }),
     ],
   }),
   test({
@@ -351,10 +371,14 @@ export const TEST_CATALOG: LabTest[] = [
     tiers: SECONDARY,
     onNationalMenu: false,
     parameters: [
-      qualitativeParam("S. Typhi O", WIDAL_TITRE_VALUE_SET, "< 1:80"),
-      qualitativeParam("S. Typhi H", WIDAL_TITRE_VALUE_SET, "< 1:80"),
-      qualitativeParam("S. Paratyphi A", WIDAL_TITRE_VALUE_SET, "< 1:80"),
-      qualitativeParam("S. Paratyphi B", WIDAL_TITRE_VALUE_SET, "< 1:80"),
+      qualitativeParam("S. Typhi O", WIDAL_TITRE_VALUE_SET, "< 1:80", { analyteId: "widal-typhi-o" }),
+      qualitativeParam("S. Typhi H", WIDAL_TITRE_VALUE_SET, "< 1:80", { analyteId: "widal-typhi-h" }),
+      qualitativeParam("S. Paratyphi A", WIDAL_TITRE_VALUE_SET, "< 1:80", {
+        analyteId: "widal-paratyphi-a",
+      }),
+      qualitativeParam("S. Paratyphi B", WIDAL_TITRE_VALUE_SET, "< 1:80", {
+        analyteId: "widal-paratyphi-b",
+      }),
     ],
   }),
 ];

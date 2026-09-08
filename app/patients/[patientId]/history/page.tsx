@@ -32,6 +32,7 @@ import {
   PROVISIONAL_NOTICE,
 } from "../../../lib/provisionalReport";
 import { canApproveResults } from "../../../lib/permissions";
+import { requireSurface } from "../../../lib/surfaces";
 import ClinicalFlagLetter from "../../../lib/ClinicalFlagLetter";
 import { orderCollectionFromData } from "../../../lib/sampleCollection";
 import { useStaffSession, useWriteIdentity } from "../../../lib/pinSession";
@@ -45,12 +46,14 @@ import { formatSexAge } from "../../../lib/patientList";
 import { formatHeaderName } from "../../../lib/headerIdentity";
 import {
   CUMULATIVE_ALIGNMENT_NOTE,
+  HISTORY_AMENDMENT_FOOTNOTE_HEADING,
   HISTORY_CUMULATIVE_ROWS_PER_PAGE,
   HISTORY_READONLY_NOTE,
   HISTORY_VISIT_PARAMS_PER_PAGE,
   allHistoryOrderIds,
   formatHistoryPageLine,
   formatHistoryReleaser,
+  historyAmendmentFootnotes,
   historyCumulativeColumns,
   historyCumulativeRows,
   historyDateRangeLabel,
@@ -97,7 +100,9 @@ const PRINT_CSS = `
     .print-sheet { display: block !important; box-shadow: none !important; border: 0 !important; margin: 0 !important; padding: 0 !important; width: auto !important; }
     .print-page { break-after: page; page-break-after: always; }
     .print-page:last-child { break-after: auto; page-break-after: auto; }
-    .avoid-break { break-inside: avoid; }
+    .avoid-break { break-inside: avoid; page-break-inside: avoid; }
+    .print-page table tr { break-inside: avoid; page-break-inside: avoid; }
+    .print-page footer { break-inside: avoid; page-break-inside: avoid; }
   }
 `;
 
@@ -417,6 +422,7 @@ function PatientHistoryContent() {
   const printCumPages = historyPrintPages(
     paginateByWeight(printCumRows, () => 1, HISTORY_CUMULATIVE_ROWS_PER_PAGE)
   );
+  const printCumFootnotes = printJob ? historyAmendmentFootnotes(printJob.orders, catalog) : [];
   const printRange = printJob ? historyDateRangeLabel(printJob.orders) : "—";
   const printProvisional = printJob
     ? printJob.orders.some((order) =>
@@ -843,6 +849,14 @@ function PatientHistoryContent() {
                       ))}
                     </tbody>
                   </table>
+                  {printCumFootnotes.length > 0 && (
+                    <div className="mt-3 text-[10px] text-gray-600">
+                      <p className="font-medium text-gray-800">{HISTORY_AMENDMENT_FOOTNOTE_HEADING}</p>
+                      {printCumFootnotes.map((line) => (
+                        <p key={line}>{line}</p>
+                      ))}
+                    </div>
+                  )}
                   <footer className="mt-6 border-t border-gray-300 pt-2 text-[10px] text-gray-500">
                     {clinic?.name || "Clinic"}
                     {clinic?.address ? ` · ${clinic.address}` : ""} · {displayName} · Lab ID{" "}
@@ -867,7 +881,7 @@ function PatientHistoryContent() {
 
 export default function PatientHistoryPage() {
   return (
-    <ProtectedRoute require={canApproveResults}>
+    <ProtectedRoute require={requireSurface("patientHistory")}>
       <PatientHistoryContent />
     </ProtectedRoute>
   );

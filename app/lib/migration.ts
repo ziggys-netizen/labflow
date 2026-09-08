@@ -8,6 +8,7 @@ import {
 } from "./inventory";
 import type { SpecimenType, TestParameter } from "./testCatalog";
 import { parseSpecimenType } from "./testCatalog";
+import { CURRENCY_SYMBOL, priceFieldLabel } from "./currency";
 
 export type MigrationDataType = "patients" | "testCatalog" | "historicalOrders" | "inventory";
 export type MappingTarget = string | "ignore";
@@ -355,9 +356,9 @@ const TEST_CATALOG_FIELDS: MigrationField[] = [
   },
   {
     key: "price",
-    label: "Price",
+    label: priceFieldLabel(),
     aliases: ["price", "cost", "amount", "fee"],
-    help: "Optional. Must be a non-negative number.",
+    help: `Optional. Must be a non-negative number (${CURRENCY_SYMBOL}).`,
   },
   {
     key: "parameterName",
@@ -1346,6 +1347,9 @@ function parseParameters(
           name,
           unit: normalizeText(cellToString(item.unit)),
           referenceRange: normalizeText(cellToString(item.referenceRange)),
+          ...(typeof item.analyteId === "string" && item.analyteId.trim()
+            ? { analyteId: item.analyteId.trim().toLowerCase() }
+            : {}),
         });
       }
       if (new Set(parameters.map((parameter) => mapKey(parameter.name))).size !== parameters.length) {

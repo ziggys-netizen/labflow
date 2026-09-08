@@ -67,6 +67,20 @@ describe("national tier catalogue", () => {
     expect(testsForTier("secondary").some((t) => t.code === "FBC")).toBe(true);
   });
 
+  it("seeds analyteId on every standard-menu parameter, sharing haemoglobin across FBC and HB", () => {
+    for (const test of TEST_CATALOG) {
+      for (const parameter of test.parameters) {
+        expect(parameter.analyteId).toBeTruthy();
+      }
+    }
+    const fbcHb = TEST_CATALOG.find((t) => t.code === "FBC")?.parameters.find(
+      (p) => p.name === "Haemoglobin (Hb)"
+    );
+    const hb = TEST_CATALOG.find((t) => t.code === "HB")?.parameters[0];
+    expect(fbcHb?.analyteId).toBe("haemoglobin");
+    expect(hb?.analyteId).toBe("haemoglobin");
+  });
+
   it("gives every qualitative parameter a value set including Invalid or Not done where required", () => {
     for (const test of TEST_CATALOG) {
       for (const parameter of test.parameters) {
