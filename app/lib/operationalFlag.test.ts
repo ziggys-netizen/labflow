@@ -28,7 +28,10 @@ describe("formatOperationalChipLabel", () => {
     expect(formatOperationalChipLabel({ state: "due" })).toBe("DUE");
   });
 
-  it("uses fixed words for recollect, released, and queued", () => {
+  it("uses fixed words for workflow stages, recollect, released, and queued", () => {
+    expect(formatOperationalChipLabel({ state: "awaiting-sample" })).toBe("AWAITING SAMPLE");
+    expect(formatOperationalChipLabel({ state: "collected" })).toBe("COLLECTED");
+    expect(formatOperationalChipLabel({ state: "results-entered" })).toBe("AWAITING REVIEW");
     expect(formatOperationalChipLabel({ state: "recollect" })).toBe("RECOLLECT");
     expect(formatOperationalChipLabel({ state: "released" })).toBe("RELEASED");
     expect(formatOperationalChipLabel({ state: "queued" })).toBe("QUEUED");
@@ -45,6 +48,9 @@ describe("formatOperationalChipLabel", () => {
     const labels = [
       formatOperationalChipLabel({ state: "overdue", elapsedMinutes: 120 }),
       formatOperationalChipLabel({ state: "due", elapsedMinutes: 30 }),
+      formatOperationalChipLabel({ state: "awaiting-sample" }),
+      formatOperationalChipLabel({ state: "collected" }),
+      formatOperationalChipLabel({ state: "results-entered" }),
       formatOperationalChipLabel({ state: "recollect" }),
       formatOperationalChipLabel({ state: "released" }),
       formatOperationalChipLabel({ state: "queued" }),
@@ -54,7 +60,16 @@ describe("formatOperationalChipLabel", () => {
       expect(CLINICAL_FLAG_LETTERS).not.toContain(label);
       expect(isClinicalFlagLetter(label)).toBe(false);
     }
-    expect(OPERATIONAL_CHIP_WORDS).toEqual(["OVERDUE", "DUE", "RECOLLECT", "RELEASED", "QUEUED"]);
+    expect(OPERATIONAL_CHIP_WORDS).toEqual([
+      "OVERDUE",
+      "DUE",
+      "AWAITING SAMPLE",
+      "COLLECTED",
+      "AWAITING REVIEW",
+      "RECOLLECT",
+      "RELEASED",
+      "QUEUED",
+    ]);
   });
 });
 

@@ -1,5 +1,5 @@
 import { QueryDocumentSnapshot } from "firebase/firestore";
-import { ActorStamp, readActorStamp } from "./identity";
+import { ActorStamp, readActorStamp } from "./actorStamp";
 
 /**
  * Store and inventory model — PRD v0.2 section 6.

@@ -549,7 +549,7 @@ describe("continuePathAfterAuth", () => {
     expect(continuePathAfterAuth(pendingNoClinic())).toBe("/join");
   });
 
-  it("approved technician continues to the patients workspace", () => {
+  it("approved technician continues to the own-work dashboard", () => {
     expect(
       continuePathAfterAuth({
         hasGoogleUser: true,
@@ -562,7 +562,7 @@ describe("continuePathAfterAuth", () => {
         pinUnlocked: true,
         rosterAllowed: true,
       })
-    ).toBe("/patients");
+    ).toBe("/dashboard");
   });
 
   it("approved technician without terms continues to /terms", () => {

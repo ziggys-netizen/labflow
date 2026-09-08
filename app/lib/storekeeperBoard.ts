@@ -18,7 +18,7 @@ import {
   type InventoryItem,
   type InventoryMovement,
 } from "./inventory";
-import type { ActorStamp } from "./identity";
+import type { ActorStamp } from "./actorStamp";
 import type { OperationalFlagInput } from "./operationalFlag";
 import { visibleWorklist } from "./technicianBoard";
 

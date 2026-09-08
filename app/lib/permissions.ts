@@ -126,7 +126,7 @@ export function canViewPatients(role: string | null | undefined) {
   );
 }
 
-/** Technician landing on /patients is the work board, not the patient list. */
+/** Technician landing on /dashboard is the work board, not the patient list. */
 export function isTechnicianBoardRole(role: string | null | undefined) {
   return allows(role, "technician", "technician_assistant");
 }

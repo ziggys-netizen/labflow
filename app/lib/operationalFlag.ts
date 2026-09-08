@@ -9,6 +9,9 @@
 export const OPERATIONAL_STATES = [
   "overdue",
   "due",
+  "awaiting-sample",
+  "collected",
+  "results-entered",
   "recollect",
   "released",
   "queued",
@@ -18,7 +21,16 @@ export const OPERATIONAL_STATES = [
 export type OperationalState = (typeof OPERATIONAL_STATES)[number];
 
 /** Word stems that appear on chips. Distinct from clinical letters H/L/A/C. */
-export const OPERATIONAL_CHIP_WORDS = ["OVERDUE", "DUE", "RECOLLECT", "RELEASED", "QUEUED"] as const;
+export const OPERATIONAL_CHIP_WORDS = [
+  "OVERDUE",
+  "DUE",
+  "AWAITING SAMPLE",
+  "COLLECTED",
+  "AWAITING REVIEW",
+  "RECOLLECT",
+  "RELEASED",
+  "QUEUED",
+] as const;
 
 export type OperationalFlagInput = {
   state: OperationalState;
@@ -27,7 +39,10 @@ export type OperationalFlagInput = {
    * when elapsed time is already formatted, or when no duration is known.
    */
   label?: string;
-  /** Elapsed (overdue) or remaining (due) minutes. Never a TAT target. */
+  /**
+   * Elapsed (overdue / results-entered age) or remaining (due) minutes.
+   * Never a TAT target.
+   */
   elapsedMinutes?: number;
 };
 
@@ -37,20 +52,19 @@ export type OperationalFlagView = {
 };
 
 const NAMED_CHIP: Record<Exclude<OperationalState, "overdue" | "due" | "ordinary">, string> = {
+  "awaiting-sample": "AWAITING SAMPLE",
+  collected: "COLLECTED",
+  "results-entered": "AWAITING REVIEW",
   recollect: "RECOLLECT",
   released: "RELEASED",
   queued: "QUEUED",
 };
 
+/** Age at which an awaiting-review chip takes the warn colour. */
+const RESULTS_ENTERED_WARN_MINUTES = 24 * 60;
+
 export function isOperationalState(value: string | null | undefined): value is OperationalState {
-  return (
-    value === "overdue" ||
-    value === "due" ||
-    value === "recollect" ||
-    value === "released" ||
-    value === "queued" ||
-    value === "ordinary"
-  );
+  return (OPERATIONAL_STATES as readonly string[]).includes(value ?? "");
 }
 
 export function formatDurationToken(elapsedMinutes: number): string {
@@ -89,14 +103,25 @@ export function resolveOperationalFlag(input: OperationalFlagInput): Operational
   return { state: input.state, label: formatOperationalChipLabel(input) };
 }
 
-/** Stripe colour. Queued and ordinary share the neutral line — no colour. */
-export function operationalStripeClass(state: OperationalState): string {
+function resultsEnteredIsStale(elapsedMinutes: number | null | undefined): boolean {
+  return elapsedMinutes != null && elapsedMinutes >= RESULTS_ENTERED_WARN_MINUTES;
+}
+
+/** Stripe colour. Queued, ordinary, and fresh workflow stages share the neutral line. */
+export function operationalStripeClass(
+  state: OperationalState,
+  elapsedMinutes?: number
+): string {
   switch (state) {
     case "overdue":
       return "lf-op-stripe border-lf-crit";
     case "due":
     case "recollect":
       return "lf-op-stripe border-lf-warn";
+    case "results-entered":
+      return resultsEnteredIsStale(elapsedMinutes)
+        ? "lf-op-stripe border-lf-warn"
+        : "lf-op-stripe border-lf-line-strong";
     case "released":
       return "lf-op-stripe border-lf-ok";
     default:
@@ -104,13 +129,20 @@ export function operationalStripeClass(state: OperationalState): string {
   }
 }
 
-export function operationalChipClass(state: OperationalState): string {
+export function operationalChipClass(
+  state: OperationalState,
+  elapsedMinutes?: number
+): string {
   switch (state) {
     case "overdue":
       return "lf-op-chip bg-lf-crit-soft text-lf-crit border-lf-crit/30";
     case "due":
     case "recollect":
       return "lf-op-chip bg-lf-warn-soft text-lf-warn border-lf-warn/30";
+    case "results-entered":
+      return resultsEnteredIsStale(elapsedMinutes)
+        ? "lf-op-chip bg-lf-warn-soft text-lf-warn border-lf-warn/30"
+        : "lf-op-chip bg-lf-surface-2 text-lf-ink-2 border-lf-line-strong";
     case "released":
       return "lf-op-chip bg-lf-ok-soft text-lf-ok border-lf-ok/30";
     default:
@@ -118,8 +150,15 @@ export function operationalChipClass(state: OperationalState): string {
   }
 }
 
-export function operationalHasColour(state: OperationalState): boolean {
-  return state === "overdue" || state === "due" || state === "recollect" || state === "released";
+export function operationalHasColour(
+  state: OperationalState,
+  elapsedMinutes?: number
+): boolean {
+  if (state === "overdue" || state === "due" || state === "recollect" || state === "released") {
+    return true;
+  }
+  if (state === "results-entered") return resultsEnteredIsStale(elapsedMinutes);
+  return false;
 }
 
 /**
@@ -146,7 +185,7 @@ export function operationalGreyscaleIdentity(input: OperationalFlagInput): {
   return {
     position: "row-left-stripe+row-right-chip",
     text: formatOperationalChipLabel(input),
-    coloured: operationalHasColour(input.state),
+    coloured: operationalHasColour(input.state, input.elapsedMinutes),
   };
 }
 
