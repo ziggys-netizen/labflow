@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
 import NotYetSynced from "../lib/NotYetSynced";
@@ -9,16 +9,14 @@ import { useConnection } from "../lib/ConnectionContext";
 import { useClinicCollection } from "../lib/clinicListen";
 import { authedGet, authedPost } from "../lib/authApi";
 import { canExportData, canViewDashboard } from "../lib/permissions";
+import CurrentQueue from "./CurrentQueue";
 import { isOrderForDeletedPatient, isPatientDeleted } from "../lib/patientSoftDelete";
 import { getTimeWindow, isWithin, summarizeTurnaround, formatTurnaroundExclusionCopy, TimeWindowKey, TURNAROUND_DEFINITION } from "../lib/datetime";
 import CatalogReviewBanner from "../lib/CatalogReviewBanner";
-import { interpretCollection, orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../lib/sampleCollection";
+import { orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../lib/sampleCollection";
 import { countAmendmentsInWindow, isReleasedResultStatus } from "../lib/resultAmendment";
-import { criticalAwaitingCommunication } from "../lib/criticalResults";
-import { orderHasCriticalResults } from "../lib/resultFlag";
 import { SAMPLE_REJECTION_CODES } from "../lib/reasonCodes";
 import { SensitivePinPrompt } from "../lib/PinGate";
-import type { LabTest } from "../lib/testCatalog";
 import { parseRosterSession } from "../lib/rosterStore";
 import { reasonCodeLabel, BREAK_GLASS_CODES } from "../lib/reasonCodes";
 import {
@@ -46,10 +44,6 @@ interface OrderRecord {
   selfReleased?: boolean;
   rejectionReasonCode?: string | null;
   rejectedAt?: string | null;
-  needsFinalReprint?: boolean;
-  criticalNotification?: unknown;
-  results?: Record<string, Record<string, string>> | null;
-  patientSex?: string | null;
 }
 
 const WINDOWS: { key: TimeWindowKey; label: string }[] = [
@@ -320,7 +314,6 @@ function DashboardContent() {
   const allowed = canViewDashboard(role);
   const ordersQuery = useClinicCollection("orders", role, clinicId, { enabled: allowed });
   const patientsQuery = useClinicCollection("patients", role, clinicId, { enabled: allowed });
-  const catalogQuery = useClinicCollection("testCatalog", role, clinicId, { enabled: allowed });
   const rosterSessionsQuery = useClinicCollection("rosterSessions", role, clinicId, { enabled: allowed });
 
   const orders: OrderRecord[] = ordersQuery.docs
@@ -341,12 +334,8 @@ function DashboardContent() {
         selfReleased: d.data().selfReleased === true,
         rejectionReasonCode: typeof d.data().rejectionReasonCode === "string" ? d.data().rejectionReasonCode : null,
         rejectedAt: typeof d.data().rejectedAt === "string" ? d.data().rejectedAt : null,
-        needsFinalReprint: d.data().needsFinalReprint === true,
-        criticalNotification: d.data().criticalNotification,
-        results: (d.data().results as Record<string, Record<string, string>>) || null,
       };
     });
-  const catalog = catalogQuery.docs.map((d) => d.data() as LabTest);
   const patientDates = patientsQuery.docs
     .filter((d) => !isPatientDeleted(d.data()))
     .map((d) => d.data().createdAt)
@@ -354,7 +343,7 @@ function DashboardContent() {
   const offRosterSessions = rosterSessionsQuery.docs
     .map((d) => parseRosterSession(d.id, d.data() as Record<string, unknown>))
     .filter((row): row is NonNullable<typeof row> => row !== null);
-  const loading = ordersQuery.loading || patientsQuery.loading || catalogQuery.loading;
+  const loading = ordersQuery.loading || patientsQuery.loading;
   const error = ordersQuery.error
     ? `Could not load dashboard data. ${ordersQuery.error}`
     : patientsQuery.error
@@ -391,12 +380,6 @@ function DashboardContent() {
       turnaround: tat.median,
       turnaroundLegacy: tat.legacyCounted,
       turnaroundCopy: formatTurnaroundExclusionCopy(tat),
-      awaitingSample: orders.filter(
-        (o) => !isReleasedResultStatus(o.status) && !interpretCollection(o).allCollected
-      ).length,
-      pending: orders.filter((o) => o.status === "pending").length,
-      awaitingReview: orders.filter((o) => o.status === "results_entered").length,
-      returned: orders.filter((o) => o.status === "needs_correction").length,
       rejected: orders.filter(
         (o) => o.status === "rejected" && isWithin(o.rejectedAt || o.createdAt, window)
       ).length,
@@ -411,14 +394,6 @@ function DashboardContent() {
         ).length,
       })).filter((row) => row.count > 0),
       selfReleased: approvedInWindow.filter((o) => o.selfReleased).length,
-      criticalAwaiting: orders.filter((o) =>
-        criticalAwaitingCommunication({
-          status: o.status,
-          hasCritical: orderHasCriticalResults(o.tests, o.results, catalog, null),
-          criticalNotification: o.criticalNotification,
-        })
-      ).length,
-      pendingReprints: orders.filter((o) => o.needsFinalReprint).length,
       offRosterByStaff: (() => {
         const rows = offRosterSessions.filter((session) => isWithin(session.startsAt, window));
         const byUid = new Map<string, { name: string; count: number; codes: Record<string, number> }>();
@@ -437,7 +412,7 @@ function DashboardContent() {
           .sort((a, b) => b.count - a.count);
       })(),
     };
-  }, [orders, patientDates, windowKey, catalog, offRosterSessions]);
+  }, [orders, patientDates, windowKey, offRosterSessions]);
 
   if (!allowed) return null;
 
@@ -475,42 +450,9 @@ function DashboardContent() {
 
         {!loading && !error && (
           <>
-            <h2 className="text-sm font-medium text-gray-900 mb-3">Current queue</h2>
-            <p className="text-sm text-gray-500 mb-3">
-              Live counts across all open work, not limited to the selected period.
-            </p>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-              <Metric
-                label="Pending tests"
-                value={String(stats.pending)}
-                hint="Ordered, results not entered"
-              />
-              <Metric
-                label="Awaiting review"
-                value={String(stats.awaitingReview)}
-                hint="Entered, not yet approved"
-              />
-              <Metric
-                label="Returned for correction"
-                value={String(stats.returned)}
-                hint="Sent back by the lab manager"
-              />
-              <Metric
-                label="Awaiting sample"
-                value={String(stats.awaitingSample)}
-                hint="A required specimen has no collection time"
-              />
-              <Metric
-                label="Critical results awaiting communication"
-                value={String(stats.criticalAwaiting)}
-                hint="Released, named person not yet recorded as told"
-              />
-              <Metric
-                label="Pending final reprints"
-                value={String(stats.pendingReprints)}
-                hint="Provisional reports waiting for a confirmed copy"
-              />
-            </div>
+            <Suspense fallback={<p className="mb-10 text-sm text-gray-600">Loading queue…</p>}>
+              <CurrentQueue className="mb-10" />
+            </Suspense>
 
             <h2 className="text-sm font-medium text-gray-900 mb-3">{stats.window.label}</h2>
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
