@@ -64,7 +64,7 @@ describe("honest TAT clock", () => {
     const pending = item();
     expect(computeTatClock(pending.tatMinutes, pending.createdAt, NOW)).toBeNull();
     expect(isNeedsAttention(pending, NOW)).toBe(false);
-    expect(operationalForTechItem(pending, NOW)).toEqual({ state: "queued" });
+    expect(operationalForTechItem(pending, NOW)).toEqual({ state: "awaiting-sample" });
     expect(awaitingSubLabel([pending], NOW)).toBe("NOT COLLECTED");
   });
 
@@ -140,7 +140,7 @@ describe("tile definitions", () => {
     expect(isResultsToEnter(collected)).toBe(true);
     expect(isResultsToEnter(correction)).toBe(true);
     expect(isResultsToEnter(waitingReview)).toBe(false);
-    expect(operationalForTechItem(collected, NOW)).toEqual({ state: "ordinary", label: "COLLECTED" });
+    expect(operationalForTechItem(collected, NOW)).toEqual({ state: "collected" });
   });
 
   it("released today uses the supplied window and an honest sub-label", () => {

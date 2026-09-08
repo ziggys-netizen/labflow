@@ -1,6 +1,6 @@
 import { isTerminalOrderStatus } from "./orderLifecycle";
 import {
-  operationalFromOrderStage,
+  operationalFromOrder,
   type OperationalFlagInput,
 } from "./operationalFlag";
 import { parseAgeYears } from "./resultFlag";
@@ -169,16 +169,22 @@ export function patientListChip(orders: PatientListOrder[]): PatientListChip {
   const action = patientPrimaryAction(orders);
   if (action.targetOrderId) {
     const target = orders.find((order) => order.id === action.targetOrderId);
-    if (target) return operationalFromOrderStage(target);
+    if (target) {
+      return operationalFromOrder(target) ?? { state: "ordinary", label: "OPEN" };
+    }
   }
   if (action.kind === "print") {
     const released = orders.find((order) => isReleasedResultStatus(order.status));
-    if (released) return operationalFromOrderStage(released);
+    if (released) {
+      return operationalFromOrder(released) ?? { state: "released" };
+    }
   }
   const leftover = orders.find((order) => order.status === "rejected" || order.recollectionOfOrderId);
-  if (leftover) return operationalFromOrderStage(leftover);
+  if (leftover) {
+    return operationalFromOrder(leftover) ?? { state: "ordinary", label: "OPEN" };
+  }
   if (orders.length === 0) return { state: "ordinary", label: "REGISTERED" };
-  return { state: "queued" };
+  return { state: "ordinary", label: "OPEN" };
 }
 
 export function patientLastActivity(

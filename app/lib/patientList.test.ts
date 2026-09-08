@@ -110,12 +110,12 @@ describe("patientPrimaryAction", () => {
 });
 
 describe("patientListChip", () => {
-  it("uses D3 operational states, not invented ENTER/COLLECT chip text", () => {
+  it("uses workflow operational states, never QUEUED as a fallback", () => {
     expect(patientListChip([])).toEqual({ state: "ordinary", label: "REGISTERED" });
-    expect(patientListChip([order({ id: "o1" })]).state).toBe("queued");
-    expect(patientListChip([order({ id: "o2", status: "approved" })]).state).toBe("released");
+    expect(patientListChip([order({ id: "o1" })])?.state).toBe("awaiting-sample");
+    expect(patientListChip([order({ id: "o2", status: "approved" })])?.state).toBe("released");
     expect(
-      patientListChip([order({ id: "o3", recollectionOfOrderId: "old" })]).state
+      patientListChip([order({ id: "o3", recollectionOfOrderId: "old" })])?.state
     ).toBe("recollect");
   });
 });

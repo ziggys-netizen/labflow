@@ -3,8 +3,8 @@
  * catalogue test has tatMinutes. No clinic-wide fallback, no guessed SLA.
  */
 
+import { operationalFromOrder } from "./operationalFlag";
 import type { OperationalFlagInput } from "./operationalFlag";
-import { operationalFromOrderStage } from "./operationalFlag";
 import { isReleasedResultStatus } from "./resultAmendment";
 import { interpretCollection, type OrderCollectionFields, type OrderTestRef } from "./sampleCollection";
 import { parseTatMinutes, resolveSpecimenType, type LabTest } from "./testCatalog";
@@ -277,19 +277,22 @@ export function releasedSubLabel(window: TechReleaseWindow): string {
 }
 
 export function operationalForTechItem(item: TechWorkItem, now: Date): OperationalFlagInput {
-  const stage = operationalFromOrderStage(item);
-  if (stage.state === "recollect" || stage.state === "released" || stage.state === "ordinary") {
-    return stage;
-  }
-  const clock = computeTatClock(item.tatMinutes, tatClockStartIso(item), now);
-  if (clock?.overdue) {
-    return { state: "overdue", elapsedMinutes: Math.abs(clock.remainingMinutes) };
-  }
-  if (clock && !clock.overdue) {
-    return { state: "due", elapsedMinutes: clock.remainingMinutes };
-  }
-  if (item.collected) return { state: "ordinary", label: "COLLECTED" };
-  return { state: "queued" };
+  const flag = operationalFromOrder(
+    {
+      status: item.status,
+      recollectionOfOrderId: item.recollectionOfOrderId,
+      createdAt: item.createdAt,
+      tatMinutes: item.tatMinutes,
+      collected: item.collected,
+      collectedAt: item.collectedAt,
+      tests: item.testCode
+        ? [{ code: item.testCode, name: item.testName, specimenType: null }]
+        : [],
+      sampleCollectedAt: item.collected ? item.collectedAt : null,
+    },
+    now
+  );
+  return flag ?? { state: "ordinary", label: item.collected ? "COLLECTED" : "OPEN" };
 }
 
 export function stageTimeLabel(item: TechWorkItem, now: Date): string {
@@ -303,8 +306,9 @@ export function stageTimeLabel(item: TechWorkItem, now: Date): string {
   const time = formatHm(iso);
   if (op.state === "recollect") return time ? `RECOLLECT ${time}` : "RECOLLECT";
   if (op.state === "released") return time ? `RELEASED ${time}` : "RELEASED";
+  if (op.state === "awaiting-sample") return time ? `AWAITING SAMPLE ${time}` : "AWAITING SAMPLE";
   if (item.collected) return time ? `COLLECTED ${time}` : "COLLECTED";
-  return time ? `QUEUED ${time}` : "QUEUED";
+  return time ? `OPEN ${time}` : "OPEN";
 }
 
 function formatHm(iso: string | null | undefined): string {

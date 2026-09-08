@@ -1,17 +1,15 @@
 /**
  * G1 — Current queue tile sets on /dashboard.
- * Count predicates and list filters share these helpers so a tile and its panel
- * cannot drift apart. Predicates match the pre-G1 dashboard metric filters
- * (status / collection / critical / reprint) so list rows are exactly what
- * each tile counted.
+ * Workflow tiles (pending / review / returned / awaiting sample) use
+ * `operationalFromOrder` — the same derivation as patient-row State chips —
+ * so a tile count and a row chip cannot disagree on the same order.
  */
 
 import { criticalAwaitingCommunication } from "./criticalResults";
+import { operationalFromOrder } from "./operationalFlag";
 import { orderHasCriticalResults } from "./resultFlag";
 import { formatHours, hoursSince } from "./reviewQueue";
-import { isReleasedResultStatus } from "./resultAmendment";
 import {
-  interpretCollection,
   type CollectionOrderInput,
   type OrderTestRef,
 } from "./sampleCollection";
@@ -170,14 +168,16 @@ export function orderMatchesDashboardQueue(
   catalog: LabTest[]
 ): boolean {
   switch (slug) {
-    case "pending-tests":
-      return order.status === "pending";
+    case "pending-tests": {
+      const state = operationalFromOrder(order)?.state;
+      return state === "awaiting-sample" || state === "collected";
+    }
     case "awaiting-review":
-      return order.status === "results_entered";
+      return operationalFromOrder(order)?.state === "results-entered";
     case "returned-for-correction":
-      return order.status === "needs_correction";
+      return operationalFromOrder(order)?.state === "returned";
     case "awaiting-sample":
-      return !isReleasedResultStatus(order.status) && !interpretCollection(order).allCollected;
+      return operationalFromOrder(order)?.state === "awaiting-sample";
     case "critical-awaiting-communication":
       return criticalAwaitingCommunication({
         status: order.status,
