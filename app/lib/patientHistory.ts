@@ -260,16 +260,11 @@ export function historyCumulativeRows(
   const rows = [...byKey.values()].filter((row) =>
     Object.values(row.values).some((cell) => cell.value.trim())
   );
-  const labelCounts = new Map<string, number>();
   for (const row of rows) {
     const base = row.parameter === "Result" ? row.testName : row.parameter;
-    row.label = base;
-    labelCounts.set(base, (labelCounts.get(base) || 0) + 1);
-  }
-  for (const row of rows) {
-    if ((labelCounts.get(row.label) || 0) > 1) {
-      row.label = `${row.label} (${row.testCode})`;
-    }
+    // Always name the source test. Without analyteId, FBC and HB haemoglobin
+    // must not look like one broken series.
+    row.label = `${base} (${row.testCode})`;
   }
 
   return rows.sort(

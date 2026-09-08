@@ -134,6 +134,7 @@ describe("cumulative alignment", () => {
     expect(columns.map((col) => col.orderId)).toEqual(["jul", "aug", "sep"]);
     const hb = historyCumulativeRows(orders, [FBC]).find((row) => row.parameter === "Haemoglobin (Hb)");
     expect(hb?.key).toBe(cumulativeJoinKey("FBC", "Haemoglobin (Hb)"));
+    expect(hb?.label).toBe("Haemoglobin (Hb) (FBC)");
     expect(hb?.values.jul.value).toBe("11.2");
     expect(hb?.values.aug.value).toBe("10.4");
     expect(hb?.values.sep.value).toBe("9.1");
@@ -157,8 +158,23 @@ describe("cumulative alignment", () => {
     const hbRows = rows.filter((row) => row.parameter === "Haemoglobin (Hb)");
     expect(hbRows).toHaveLength(2);
     expect(hbRows.map((row) => row.testCode).sort()).toEqual(["FBC", "HB"]);
-    expect(hbRows.every((row) => row.label.includes("("))).toBe(true);
+    expect(hbRows.map((row) => row.label).sort()).toEqual([
+      "Haemoglobin (Hb) (FBC)",
+      "Haemoglobin (Hb) (HB)",
+    ]);
     expect(CUMULATIVE_ALIGNMENT_NOTE).toMatch(/no shared analyte code/i);
+  });
+
+  it("always names the source test on cumulative labels, even for unique parameters", () => {
+    const orders = [
+      order({
+        id: "o1",
+        results: { FBC: { "Haemoglobin (Hb)": "11.2", Platelets: "210" } },
+      }),
+    ];
+    const rows = historyCumulativeRows(orders, [FBC]);
+    expect(rows.find((row) => row.parameter === "Platelets")?.label).toBe("Platelets (FBC)");
+    expect(rows.every((row) => /\([A-Z0-9-]+\)$/.test(row.label))).toBe(true);
   });
 
   it("keeps generic Result parameters on different tests apart", () => {
@@ -179,7 +195,12 @@ describe("cumulative alignment", () => {
       ],
       [MAL, sickle]
     );
-    expect(rows.filter((row) => row.parameter === "Result")).toHaveLength(2);
+    const resultRows = rows.filter((row) => row.parameter === "Result");
+    expect(resultRows).toHaveLength(2);
+    expect(resultRows.map((row) => row.label).sort()).toEqual([
+      "Malaria Rapid Diagnostic Test (MAL-RDT)",
+      "Sickle cell testing (SICKLE)",
+    ]);
   });
 });
 
