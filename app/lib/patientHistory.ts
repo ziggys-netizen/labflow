@@ -24,8 +24,15 @@ export const HISTORY_READONLY_NOTE =
 export const CUMULATIVE_ALIGNMENT_NOTE =
   "Columns line up only when the same catalogue test code and parameter name both match. Haemoglobin on FBC and Haemoglobin on HB are different rows. There is no shared analyte code.";
 
-export const HISTORY_VISIT_PARAMS_PER_PAGE = 16;
-export const HISTORY_CUMULATIVE_ROWS_PER_PAGE = 14;
+/**
+ * Print chunk caps — derived from headless Chrome A4 print fixtures
+ * (provisional banner + long wrapping parameter names + footer).
+ * Max that stayed on one physical sheet: visit weight 15, cumulative 17.
+ * Settled at ~80% so one stamped HTML sheet cannot overflow onto a second
+ * physical page (which would duplicate "Page n of m").
+ */
+export const HISTORY_VISIT_PARAMS_PER_PAGE = 12;
+export const HISTORY_CUMULATIVE_ROWS_PER_PAGE = 13;
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -328,6 +335,40 @@ export function historyDisclosureDetail(input: {
 
 export function historyHasUnsynced(orders: HistoryOrderInput[]): boolean {
   return releasedHistoryOrders(orders).some((order) => order.notYetSynced === true);
+}
+
+export type HistoryVisitPrintSlice = {
+  visit: HistoryVisitRow;
+  params: HistoryParameterRow[];
+};
+
+/**
+ * Split visits into print slices so no slice exceeds the A4 param budget.
+ * Oversized single orders (many tests) would otherwise sit alone on a sheet
+ * and overflow despite the page weight cap.
+ */
+export function historyVisitPrintSlices(
+  visits: HistoryVisitRow[],
+  catalog: LabTest[],
+  maxParams: number = HISTORY_VISIT_PARAMS_PER_PAGE
+): HistoryVisitPrintSlice[] {
+  const limit = Math.max(1, maxParams);
+  const slices: HistoryVisitPrintSlice[] = [];
+  for (const visit of visits) {
+    const params = historyVisitParameters(visit, catalog);
+    if (params.length === 0) {
+      slices.push({ visit, params: [] });
+      continue;
+    }
+    for (let i = 0; i < params.length; i += limit) {
+      slices.push({ visit, params: params.slice(i, i + limit) });
+    }
+  }
+  return slices;
+}
+
+export function visitPrintSliceWeight(slice: HistoryVisitPrintSlice): number {
+  return Math.max(2, slice.params.length);
 }
 
 export function paginateByWeight<T>(

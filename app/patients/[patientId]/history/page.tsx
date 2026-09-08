@@ -58,10 +58,12 @@ import {
   historyHasUnsynced,
   historyPrintPages,
   historyVisitParameters,
+  historyVisitPrintSlices,
   historyVisitRows,
   paginateByWeight,
   resolvePrintOrders,
   toggleSelectedId,
+  visitPrintSliceWeight,
   type HistoryLayout,
   type HistoryOrderInput,
   type HistoryPrintMode,
@@ -86,9 +88,6 @@ interface ClinicRecord {
 
 const PRINT_CSS = `
   @page { size: A4; margin: 14mm 12mm 16mm 12mm; }
-  @page {
-    @bottom-center { content: "Page " counter(page) " of " counter(pages); }
-  }
   @media screen {
     .print-sheet { display: none !important; }
   }
@@ -379,8 +378,8 @@ function PatientHistoryContent() {
   const printVisits = printJob ? historyVisitRows(printJob.orders) : [];
   const printVisitPages = historyPrintPages(
     paginateByWeight(
-      printVisits,
-      (visit) => Math.max(2, historyVisitParameters(visit, catalog).length),
+      historyVisitPrintSlices(printVisits, catalog, HISTORY_VISIT_PARAMS_PER_PAGE),
+      visitPrintSliceWeight,
       HISTORY_VISIT_PARAMS_PER_PAGE
     )
   );
@@ -717,10 +716,13 @@ function PatientHistoryContent() {
                     provisional={printProvisional}
                   />
                   <div className="flex flex-col gap-4">
-                    {sheet.items.map((visit) => {
-                      const params = historyVisitParameters(visit, catalog);
+                    {sheet.items.map((slice, sliceIndex) => {
+                      const { visit, params } = slice;
                       return (
-                        <div key={visit.orderId} className="avoid-break border border-gray-300 p-3">
+                        <div
+                          key={`${visit.orderId}-${sliceIndex}-${params[0]?.parameter || "empty"}`}
+                          className="avoid-break border border-gray-300 p-3"
+                        >
                           <p className="text-sm font-medium text-gray-900">
                             {visit.dateLabel} · {visit.testNames}
                           </p>

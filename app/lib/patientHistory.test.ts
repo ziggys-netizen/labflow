@@ -3,7 +3,9 @@ import { PRINT_DISCLOSURE_ACTION } from "./provisionalReport";
 import { TEST_CATALOG } from "./testCatalog";
 import {
   CUMULATIVE_ALIGNMENT_NOTE,
+  HISTORY_CUMULATIVE_ROWS_PER_PAGE,
   HISTORY_READONLY_NOTE,
+  HISTORY_VISIT_PARAMS_PER_PAGE,
   allHistoryOrderIds,
   cumulativeJoinKey,
   formatHistoryDay,
@@ -16,6 +18,7 @@ import {
   historyHasUnsynced,
   historyPrintPages,
   historyVisitParameters,
+  historyVisitPrintSlices,
   historyVisitRows,
   namedHistoryLabIds,
   paginateByWeight,
@@ -23,6 +26,7 @@ import {
   releasedHistoryOrders,
   resolvePrintOrders,
   toggleSelectedId,
+  visitPrintSliceWeight,
   type HistoryOrderInput,
 } from "./patientHistory";
 
@@ -217,6 +221,47 @@ describe("print pages", () => {
       "Page 1 of 2",
       "Page 2 of 2",
     ]);
+  });
+
+  it("caps visit and cumulative chunks below measured A4 overflow", () => {
+    // Headless Chrome A4 fixtures (provisional header + long names): visit weight
+    // overflowed at 16; cumulative rows at 18. Caps are ~80% of the last safe fit.
+    expect(HISTORY_VISIT_PARAMS_PER_PAGE).toBe(12);
+    expect(HISTORY_CUMULATIVE_ROWS_PER_PAGE).toBe(13);
+    expect(HISTORY_VISIT_PARAMS_PER_PAGE).toBeLessThan(16);
+    expect(HISTORY_CUMULATIVE_ROWS_PER_PAGE).toBeLessThan(18);
+  });
+
+  it("splits oversized visits so no print slice exceeds the page param budget", () => {
+    const params = Object.fromEntries(
+      FBC.parameters.map((param, index) => [param.name, String(index + 1)])
+    );
+    const ua = TEST_CATALOG.find((row) => row.code === "UA")!;
+    const uaParams = Object.fromEntries(ua.parameters.map((param, index) => [param.name, `u${index}`]));
+    const [visit] = historyVisitRows([
+      order({
+        id: "big",
+        tests: [
+          { code: "FBC", name: "Full Blood Count" },
+          { code: "UA", name: "Urinalysis" },
+        ],
+        results: { FBC: params, UA: uaParams },
+      }),
+    ]);
+    const total = historyVisitParameters(visit, [FBC, ua]).length;
+    expect(total).toBeGreaterThan(HISTORY_VISIT_PARAMS_PER_PAGE);
+    const slices = historyVisitPrintSlices([visit], [FBC, ua]);
+    expect(slices.length).toBeGreaterThan(1);
+    expect(slices.every((slice) => slice.params.length <= HISTORY_VISIT_PARAMS_PER_PAGE)).toBe(true);
+    expect(slices.reduce((sum, slice) => sum + slice.params.length, 0)).toBe(total);
+
+    const sheets = historyPrintPages(
+      paginateByWeight(slices, visitPrintSliceWeight, HISTORY_VISIT_PARAMS_PER_PAGE)
+    );
+    expect(sheets.every((sheet) => sheet.items.reduce((sum, slice) => sum + visitPrintSliceWeight(slice), 0) <= HISTORY_VISIT_PARAMS_PER_PAGE)).toBe(
+      true
+    );
+    expect(sheets.length).toBeGreaterThanOrEqual(2);
   });
 });
 
