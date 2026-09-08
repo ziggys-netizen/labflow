@@ -1,16 +1,15 @@
 /**
- * Role capabilities — single source of truth for actions.
+ * Role capabilities ΓÇö single source of truth.
  *
- * Surface visibility (nav + route entry) lives in `surfaces.ts` and must stay
- * aligned with these predicates. Do not compare role strings in UI except
- * `role === "owner"` where a predicate is not enough. `admin` is not a role.
+ * Pages must call these predicates. Do not compare role strings in UI except
+ * `role === "owner"` for the Owner nav link. `admin` is not a role.
  *
  * `technician_assistant` is not a technician: register patients, view patients,
- * see/collect on orders. They do not create orders, enter results, approve,
- * manage catalogue/staff/stock, or open Store.
+ * record sample collection, record specimen movement, view inventory. They do
+ * not order tests, enter results, approve, or manage catalogue/staff/stock.
  *
  * `accounts` reads daily test-value rollups only. Never patients, orders, or
- * results — totals must not become a clinical access path.
+ * results ΓÇö totals must not become a clinical access path.
  */
 
 import { isTermsReadablePath } from "./legal/termsGate";
@@ -80,7 +79,7 @@ export const SHIFT_LABELS: Record<Shift, string> = {
 };
 
 export function roleLabel(role: string | null | undefined): string {
-  if (!role) return "—";
+  if (!role) return "ΓÇö";
   return ROLE_LABELS[role as Role] ?? role;
 }
 
@@ -89,11 +88,11 @@ export function shiftLabel(shift: string | null | undefined): string {
   return SHIFT_LABELS[shift];
 }
 
-/** e.g. "Shift Supervisor — Night". Other roles omit the shift. */
+/** e.g. "Shift Supervisor ΓÇö Night". Other roles omit the shift. */
 export function roleDisplay(role: string | null | undefined, shift?: string | null): string {
   const label = roleLabel(role);
   if (roleRequiresShift(role) && shift && isShift(shift)) {
-    return `${label} — ${shiftLabel(shift)}`;
+    return `${label} ΓÇö ${shiftLabel(shift)}`;
   }
   return label;
 }
@@ -133,7 +132,7 @@ export function isTechnicianBoardRole(role: string | null | undefined) {
 
 /**
  * Lab manager landing on /dashboard is the line board.
- * Supervisor shares that landing. Owner and clinic_admin do not — they
+ * Supervisor shares that landing. Owner and clinic_admin do not ΓÇö they
  * keep the clinic picker / staff home.
  */
 export function isManagerBoardRole(role: string | null | undefined) {
@@ -150,21 +149,8 @@ export function isReceptionBoardRole(role: string | null | undefined) {
   return allows(role, "intern");
 }
 
-/** Accounts landing / own-work dashboard is the rollup hand-off, not clinic stats. */
-export function isAccountsBoardRole(role: string | null | undefined) {
-  return allows(role, "accounts");
-}
-
-/**
- * Manager queue deep-links under /dashboard/queues/*. Clinic-stats dashboard
- * roles (owner, clinic_admin) share these URLs with the line board.
- */
-export function canViewClinicQueuePages(role: string | null | undefined) {
-  return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
-}
-
 export function canOrderTests(role: string | null | undefined) {
-  // technician_assistant is excluded — collection only, no ordering.
+  // technician_assistant is excluded ΓÇö collection only, no ordering.
   return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");
 }
 
@@ -180,7 +166,7 @@ export function canRecordSampleCollection(role: string | null | undefined) {
 }
 
 export function canEnterResults(role: string | null | undefined) {
-  // technician_assistant is excluded — they may open an order to collect a
+  // technician_assistant is excluded ΓÇö they may open an order to collect a
   // sample, but results stay read-only.
   return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");
 }
@@ -194,52 +180,15 @@ export function canSendBackForCorrection(role: string | null | undefined) {
 }
 
 export function canEditTestCatalogue(role: string | null | undefined) {
-  // Clinic Settings surface is ◐ for lab_manager (catalogue only) and – for
-  // lab_supervisor. Catalogue writes follow that surface, not Review.
-  return allows(role, "owner", "lab_manager");
+  return allows(role, "owner", "lab_manager", "lab_supervisor");
 }
 
-/**
- * Own-work / role dashboard. Every clinic role gets the Dashboard surface;
- * what they see on it is role-specific (line board, tech board, clinic stats).
- */
 export function canViewDashboard(role: string | null | undefined) {
-  return allows(
-    role,
-    "owner",
-    "clinic_admin",
-    "lab_manager",
-    "lab_supervisor",
-    "technician",
-    "technician_assistant",
-    "intern",
-    "storekeeper",
-    "accounts"
-  );
-}
-
-/** Orders list / open-order surface. tech_assistant is ◐ (see + collect only). */
-export function canViewOrders(role: string | null | undefined) {
-  return allows(
-    role,
-    "owner",
-    "lab_manager",
-    "lab_supervisor",
-    "technician",
-    "technician_assistant"
-  );
+  return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
 }
 
 /**
- * Clinic Settings surface. lab_manager is ◐ (catalogue/ranges/prices).
- * Staff and clinic-profile controls stay with owner / clinic_admin predicates.
- */
-export function canAccessClinicSettings(role: string | null | undefined) {
-  return allows(role, "owner", "clinic_admin", "lab_manager");
-}
-
-/**
- * Day’s test counts and catalogue value. Aggregate only — no patient drill-down.
+ * DayΓÇÖs test counts and catalogue value. Aggregate only ΓÇö no patient drill-down.
  * Lab roles that release still write the rollup; they use the clinical dashboard.
  */
 export function canViewTestValueRollup(role: string | null | undefined) {
@@ -344,12 +293,20 @@ export function canRecordCriticalNotification(role: string | null | undefined) {
 }
 
 export function canViewInventory(role: string | null | undefined) {
-  // Store surface: technician / tech_assistant / lab_supervisor are –.
-  return allows(role, "owner", "clinic_admin", "lab_manager", "storekeeper");
+  return allows(
+    role,
+    "owner",
+    "clinic_admin",
+    "lab_manager",
+    "lab_supervisor",
+    "technician",
+    "technician_assistant",
+    "storekeeper"
+  );
 }
 
 export function canRecordStockMovement(role: string | null | undefined) {
-  return allows(role, "owner", "lab_manager", "storekeeper");
+  return allows(role, "owner", "lab_manager", "lab_supervisor", "storekeeper");
 }
 
 export function canManageInventoryItems(role: string | null | undefined) {
@@ -382,7 +339,7 @@ export function landingPathForRole(
       return "/dashboard";
     case "technician":
     case "technician_assistant":
-      return "/dashboard";
+      return "/patients";
     case "intern":
       return "/register";
     case "storekeeper":
@@ -400,25 +357,13 @@ export function landingPathForRole(
  */
 export function internAllowedPath(pathname: string): boolean {
   if (isTermsReadablePath(pathname)) return true;
-  if (
-    pathname === "/register" ||
-    pathname === "/profile" ||
-    pathname === "/patients" ||
-    pathname === "/dashboard"
-  ) {
-    return true;
-  }
+  if (pathname === "/register" || pathname === "/profile" || pathname === "/patients") return true;
   return pathname.startsWith("/patients/") && pathname.endsWith("/print");
 }
 
-/** Accounts officers: rollup page, own-work dashboard, identity, and legal documents. No clinical lists. */
+/** Accounts officers: rollup page, identity, and legal documents. No clinical lists. */
 export function accountsAllowedPath(pathname: string): boolean {
-  return (
-    pathname === "/accounts" ||
-    pathname === "/dashboard" ||
-    pathname === "/profile" ||
-    isTermsReadablePath(pathname)
-  );
+  return pathname === "/accounts" || pathname === "/profile" || isTermsReadablePath(pathname);
 }
 
 /** Capability redirect for roles that must not fall through ProtectedRoute. */
@@ -452,8 +397,6 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
   canRecordCriticalNotification,
   canEditTestCatalogue,
   canViewDashboard,
-  canViewOrders,
-  canAccessClinicSettings,
   canViewTestValueRollup,
   canExportData,
   canManageStaff,
@@ -470,9 +413,9 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
 };
 
 /**
- * Development-only dump of every role × every unary capability. Call from a
+ * Development-only dump of every role ├ù every unary capability. Call from a
  * client module that actually loads (AuthProvider) so it appears in the
- * browser console — do not leave this unused.
+ * browser console ΓÇö do not leave this unused.
  */
 export function logPermissionsMatrix() {
   if (process.env.NODE_ENV !== "development") return;
