@@ -1,8 +1,13 @@
 /**
- * Navigation filtering is a usability measure — it keeps a person's screen to
- * their own work. It is not an access boundary. The route guard prevents entry.
- * **Firestore rules are the only real boundary**, because a determined user can
- * call the database without the application at all.
+ * Three layers of access (do not conflate them):
+ *
+ * 1. Navigation filtering — usability only. Keeps a person's screen to their
+ *    own work. It is not an access boundary.
+ * 2. Route guards — prevent entry to a surface URL. Nav and guards both read
+ *    the same capability from the same SURFACES entry via `can` /
+ *    `requireSurface` / `primaryNavSurfaces`.
+ * 3. Firestore rules — the only real boundary, because a determined user can
+ *    call the database without the application at all.
  */
 
 import type { RouteRequire } from "./authState";
@@ -10,6 +15,7 @@ import {
   canAccessClinicSettings,
   canApproveResults,
   canDeletePatient,
+  canEditTestCatalogue,
   canViewDashboard,
   canViewInventory,
   canViewOrders,
@@ -25,6 +31,7 @@ export const CAPABILITIES = [
   "release:results",
   "view:inventory",
   "view:testValue",
+  "edit:catalogue",
   "manage:clinic",
   "restore:records",
   "platform:owner",
@@ -40,7 +47,8 @@ export type SurfaceId =
   | "review"
   | "store"
   | "accounts"
-  | "settings"
+  | "catalogue"
+  | "clinicAdmin"
   | "recycleBin"
   | "owner"
   | "patientHistory";
@@ -61,7 +69,8 @@ export const SURFACES: readonly Surface[] = [
   { id: "review", path: "/review", label: "Review", capability: "release:results" },
   { id: "store", path: "/inventory", label: "Store", capability: "view:inventory" },
   { id: "accounts", path: "/accounts", label: "Test value", capability: "view:testValue" },
-  { id: "settings", path: "/settings", label: "Clinic Settings", capability: "manage:clinic" },
+  { id: "catalogue", path: "/settings/catalogue", label: "Catalogue", capability: "edit:catalogue" },
+  { id: "clinicAdmin", path: "/settings/clinic", label: "Clinic admin", capability: "manage:clinic" },
   {
     id: "recycleBin",
     path: "/patients/deleted",
@@ -86,6 +95,7 @@ const CAPABILITY_PREDICATES: Record<Capability, (role: string | null | undefined
   "release:results": canApproveResults,
   "view:inventory": canViewInventory,
   "view:testValue": canViewTestValueRollup,
+  "edit:catalogue": canEditTestCatalogue,
   "manage:clinic": canAccessClinicSettings,
   "restore:records": canDeletePatient,
   "platform:owner": (role) => role === "owner",

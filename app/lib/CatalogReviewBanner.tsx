@@ -28,7 +28,7 @@ export default function CatalogReviewBanner() {
         {canEditTestCatalogue(role) ? (
           <>
             {" "}
-            <Link href="/settings" className="underline font-medium">
+            <Link href="/settings/catalogue" className="underline font-medium">
               Review catalogue
             </Link>
           </>

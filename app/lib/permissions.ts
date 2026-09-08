@@ -194,8 +194,7 @@ export function canSendBackForCorrection(role: string | null | undefined) {
 }
 
 export function canEditTestCatalogue(role: string | null | undefined) {
-  // Catalogue writes only. Clinic Settings surface is separate (manage:clinic);
-  // lab_supervisor is hidden from that surface entirely.
+  // Catalogue surface (`edit:catalogue` /settings/catalogue). Clinic admin is separate.
   return allows(role, "owner", "lab_manager");
 }
 
@@ -218,11 +217,12 @@ export function canViewDashboard(role: string | null | undefined) {
   );
 }
 
-/** Orders list / open-order surface. tech_assistant is partial (see + collect only). */
+/** Orders list / open-order surface. tech_assistant is partial (collect only). */
 export function canViewOrders(role: string | null | undefined) {
   return allows(
     role,
     "owner",
+    "clinic_admin",
     "lab_manager",
     "lab_supervisor",
     "technician",
@@ -231,12 +231,12 @@ export function canViewOrders(role: string | null | undefined) {
 }
 
 /**
- * Clinic Settings surface (/settings): owner, clinic_admin, lab_manager.
- * I3: lab_manager ◐ (catalogue only); lab_supervisor – (hidden).
- * Staff / clinic-profile stay on canManageStaff / canEditClinicProfile.
+ * Clinic admin surface (/settings/clinic): owner, clinic_admin.
+ * Catalogue is `canEditTestCatalogue` / `/settings/catalogue` (owner, lab_manager).
+ * lab_supervisor reaches neither settings surface.
  */
 export function canAccessClinicSettings(role: string | null | undefined) {
-  return allows(role, "owner", "clinic_admin", "lab_manager");
+  return allows(role, "owner", "clinic_admin");
 }
 
 /**

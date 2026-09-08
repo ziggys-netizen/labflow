@@ -221,6 +221,7 @@ describe("staff-management lockout trap", () => {
     expect(isStaffManagementPath("/owner/clinics/abc/staff")).toBe(true);
     expect(isStaffManagementPath("/owner/clinics/abc/roster")).toBe(true);
     expect(isStaffManagementPath("/staff")).toBe(true);
+    expect(isStaffManagementPath("/settings/clinic")).toBe(true);
     expect(isStaffManagementPath("/patients")).toBe(false);
     expect(isStaffManagementPath("/dashboard")).toBe(false);
   });

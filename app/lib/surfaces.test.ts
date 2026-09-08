@@ -25,7 +25,8 @@ const SURFACE_VISIBLE: Record<
     review: true,
     store: true,
     accounts: true,
-    settings: true,
+    catalogue: true,
+    clinicAdmin: true,
     recycleBin: true,
     owner: true,
     patientHistory: true,
@@ -33,11 +34,12 @@ const SURFACE_VISIBLE: Record<
   clinic_admin: {
     dashboard: true,
     patients: true,
-    orders: false,
+    orders: true,
     review: false,
     store: true,
     accounts: true,
-    settings: true,
+    catalogue: false,
+    clinicAdmin: true,
     recycleBin: true,
     owner: false,
     patientHistory: false,
@@ -49,7 +51,8 @@ const SURFACE_VISIBLE: Record<
     review: true,
     store: true,
     accounts: false,
-    settings: true,
+    catalogue: true,
+    clinicAdmin: false,
     recycleBin: true,
     owner: false,
     patientHistory: true,
@@ -61,7 +64,8 @@ const SURFACE_VISIBLE: Record<
     review: true,
     store: false,
     accounts: false,
-    settings: false,
+    catalogue: false,
+    clinicAdmin: false,
     recycleBin: false,
     owner: false,
     patientHistory: true,
@@ -73,7 +77,8 @@ const SURFACE_VISIBLE: Record<
     review: false,
     store: false,
     accounts: false,
-    settings: false,
+    catalogue: false,
+    clinicAdmin: false,
     recycleBin: false,
     owner: false,
     patientHistory: false,
@@ -85,7 +90,8 @@ const SURFACE_VISIBLE: Record<
     review: false,
     store: false,
     accounts: false,
-    settings: false,
+    catalogue: false,
+    clinicAdmin: false,
     recycleBin: false,
     owner: false,
     patientHistory: false,
@@ -97,7 +103,8 @@ const SURFACE_VISIBLE: Record<
     review: false,
     store: false,
     accounts: false,
-    settings: false,
+    catalogue: false,
+    clinicAdmin: false,
     recycleBin: false,
     owner: false,
     patientHistory: false,
@@ -109,7 +116,8 @@ const SURFACE_VISIBLE: Record<
     review: false,
     store: true,
     accounts: false,
-    settings: false,
+    catalogue: false,
+    clinicAdmin: false,
     recycleBin: false,
     owner: false,
     patientHistory: false,
@@ -121,7 +129,8 @@ const SURFACE_VISIBLE: Record<
     review: false,
     store: false,
     accounts: true,
-    settings: false,
+    catalogue: false,
+    clinicAdmin: false,
     recycleBin: false,
     owner: false,
     patientHistory: false,
@@ -137,6 +146,17 @@ describe("SURFACES declaration", () => {
   it("keeps recycle bin and patient history out of primary nav", () => {
     expect(surfaceById("recycleBin").primaryNav).toBe(false);
     expect(surfaceById("patientHistory").primaryNav).toBe(false);
+  });
+
+  it("splits settings into catalogue and clinic admin surfaces", () => {
+    expect(surfaceById("catalogue")).toMatchObject({
+      path: "/settings/catalogue",
+      capability: "edit:catalogue",
+    });
+    expect(surfaceById("clinicAdmin")).toMatchObject({
+      path: "/settings/clinic",
+      capability: "manage:clinic",
+    });
   });
 
   it("requireSurface matches can() for the same SURFACES entry", () => {
@@ -173,11 +193,28 @@ describe("I3 surface visibility", () => {
     ]);
   });
 
+  it("lab_supervisor cannot reach either settings surface", () => {
+    expect(can("lab_supervisor", "edit:catalogue")).toBe(false);
+    expect(can("lab_supervisor", "manage:clinic")).toBe(false);
+    const ids = primaryNavSurfaces("lab_supervisor").map((s) => s.id);
+    expect(ids).not.toContain("catalogue");
+    expect(ids).not.toContain("clinicAdmin");
+  });
+
+  it("lab_manager reaches Catalogue but not Clinic admin", () => {
+    expect(can("lab_manager", "edit:catalogue")).toBe(true);
+    expect(can("lab_manager", "manage:clinic")).toBe(false);
+    const ids = primaryNavSurfaces("lab_manager").map((s) => s.id);
+    expect(ids).toContain("catalogue");
+    expect(ids).not.toContain("clinicAdmin");
+  });
+
   it("intern primary nav has Patients and Dashboard but not Orders", () => {
     const ids = primaryNavSurfaces("intern").map((s) => s.id);
     expect(ids).toContain("dashboard");
     expect(ids).toContain("patients");
     expect(ids).not.toContain("orders");
+    expect(requireSurface("orders")("intern")).toBe(false);
   });
 
   it("tech_assistant keeps Orders in nav (partial: collect only at action layer)", () => {
@@ -186,6 +223,11 @@ describe("I3 surface visibility", () => {
       "patients",
       "orders",
     ]);
+  });
+
+  it("clinic_admin has Orders visible", () => {
+    expect(can("clinic_admin", "view:orders")).toBe(true);
+    expect(primaryNavSurfaces("clinic_admin").map((s) => s.id)).toContain("orders");
   });
 });
 

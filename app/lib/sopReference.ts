@@ -186,7 +186,7 @@ export function catalogTestSaveError(
 }
 
 export const SOP_ORDER_BLOCKED =
-  "This test has no SOP reference and cannot be ordered. Add the document ID, title, version, dates, and author in Clinic Settings.";
+  "This test has no SOP reference and cannot be ordered. Add the document ID, title, version, dates, and author in Catalogue.";
 
 export function catalogTestMayBeOrdered(test: CatalogSopView): { ok: true } | { ok: false; reason: string } {
   if (catalogTestIsGrandfathered(test)) return { ok: true };

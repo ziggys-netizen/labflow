@@ -194,7 +194,9 @@ export function isIsoWeekday(value: number): value is IsoWeekday {
  * wrong roster cannot lock them out of the screen that would fix it.
  */
 export function isStaffManagementPath(pathname: string): boolean {
-  if (pathname === "/staff") return true;
+  if (pathname === "/staff" || pathname === "/settings/clinic" || pathname.startsWith("/settings/clinic/")) {
+    return true;
+  }
   return /^\/owner\/clinics\/[^/]+(?:\/staff|\/roster)?$/.test(pathname);
 }
 

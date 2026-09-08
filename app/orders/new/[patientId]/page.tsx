@@ -236,7 +236,7 @@ function NewOrderContent() {
 
   if (!allowed) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen bg-lf-ground">
         <AppNav />
         <div className="px-6 py-16 text-center text-gray-600">Redirecting...</div>
       </main>
@@ -245,7 +245,7 @@ function NewOrderContent() {
 
   if (loadingPatient) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen bg-lf-ground">
         <AppNav />
         <div className="px-6 py-16 text-center text-gray-600">Loading patient...</div>
       </main>
@@ -254,7 +254,7 @@ function NewOrderContent() {
 
   if (patientUnavailable) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen bg-lf-ground">
         <AppNav />
         <div className="px-6 py-16 text-center">
           <p className="text-gray-600">This patient is not available for new orders.</p>
@@ -267,7 +267,7 @@ function NewOrderContent() {
   }
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen bg-lf-ground">
       <AppNav />
       <div className="max-w-lg mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">
@@ -328,7 +328,7 @@ function NewOrderContent() {
               <div className="border-2 border-red-300 bg-red-50 rounded-lg p-3 mb-3">
                 <p className="font-semibold text-red-950 text-sm">This clinic has no test catalogue.</p>
                 <p className="text-sm text-red-900 mt-1">
-                  Product default tests are not used. Open Clinic Settings or ask the owner to seed
+                  Product default tests are not used. Open Catalogue or ask the owner to seed
                   the catalogue before ordering.
                 </p>
               </div>
@@ -358,7 +358,7 @@ function NewOrderContent() {
                         <span className="font-medium text-gray-500">{t.name}</span>
                         <span className="text-gray-400 ml-2">{t.category}</span>
                         <p className="text-xs text-red-800 mt-0.5">
-                          SOP reference required in Clinic Settings before this test can be ordered.
+                          SOP reference required in Catalogue before this test can be ordered.
                         </p>
                       </div>
                     );
