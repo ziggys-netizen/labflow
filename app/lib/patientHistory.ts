@@ -56,6 +56,8 @@ export type HistoryOrderInput = {
   lastAmendedAt?: string | null;
   lastAmendedBy?: string | null;
   currentResultVersion?: number | null;
+  /** Patient Lab ID stamped on the order when present. Orders have no separate order Lab ID. */
+  patientLabId?: string | null;
   notYetSynced?: boolean;
 };
 
@@ -311,16 +313,54 @@ export function namedHistoryLabIds(labId: string | null | undefined): string[] {
   return id ? [id] : [];
 }
 
+function trimId(value: string | null | undefined): string {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+/**
+ * Orders do not carry their own Lab ID — only the patient's.
+ * Synthesize a stable human-readable label: `{labId}-{nn}` in chronological
+ * order within the disclosed set (01, 02, …).
+ */
+export function historyOrderLabIds(
+  orders: HistoryOrderInput[],
+  patientLabId: string
+): string[] {
+  const base = trimId(patientLabId);
+  const chronological = [...orders].sort((a, b) => {
+    if (a.createdAt === b.createdAt) return a.id.localeCompare(b.id);
+    return a.createdAt < b.createdAt ? -1 : 1;
+  });
+  return chronological.map((order, index) => {
+    const orderBase = trimId(order.patientLabId) || base || order.id;
+    return `${orderBase}-${String(index + 1).padStart(2, "0")}`;
+  });
+}
+
 export function historyDisclosureDetail(input: {
   labId: string | null | undefined;
+  /** Firestore patient document id — used when Lab ID is blank. */
+  patientId: string;
   orders: HistoryOrderInput[];
   layout: HistoryLayout;
+  pageCount: number;
 }): Record<string, unknown> {
   const plan = planReportPrint(input.orders);
+  const trimmedLabId = trimId(input.labId);
+  const labIdMissing = !trimmedLabId;
+  const patientLabId = labIdMissing ? trimId(input.patientId) || input.patientId : trimmedLabId;
+  const chronological = [...input.orders].sort((a, b) => {
+    if (a.createdAt === b.createdAt) return a.id.localeCompare(b.id);
+    return a.createdAt < b.createdAt ? -1 : 1;
+  });
+  const orderLabIds = historyOrderLabIds(input.orders, patientLabId);
   return {
-    labIds: namedHistoryLabIds(input.labId),
-    orderIds: plan.releasedOrderIds,
-    layout: input.layout,
+    patientLabId,
+    ...(labIdMissing ? { labIdMissing: true as const } : {}),
+    orderLabIds,
+    orderIds: chronological.map((order) => order.id),
+    cumulative: input.layout === "cumulative",
+    pageCount: Math.max(1, Math.floor(input.pageCount) || 1),
     dateRange: historyDateRangeLabel(input.orders),
     provisional: plan.provisionalOrderIds.length > 0,
     provisionalOrderIds: plan.provisionalOrderIds,

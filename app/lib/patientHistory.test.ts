@@ -205,8 +205,11 @@ describe("cumulative alignment", () => {
 });
 
 describe("print selection and disclosure", () => {
-  it("selects named Lab IDs, not a count", () => {
-    const orders = [order({ id: "o1" }), order({ id: "o2", createdAt: "2026-08-28T08:00:00.000Z" })];
+  it("names the patient Lab ID and each disclosed order in human-readable form", () => {
+    const orders = [
+      order({ id: "o1", patientLabId: "LF-20260904-0031" }),
+      order({ id: "o2", createdAt: "2026-08-28T08:00:00.000Z", patientLabId: "LF-20260904-0031" }),
+    ];
     const selected = toggleSelectedId(["o1"], "o2");
     expect(selected).toEqual(["o1", "o2"]);
     expect(resolvePrintOrders(orders, ["o2"], "selected").map((row) => row.id)).toEqual(["o2"]);
@@ -215,23 +218,55 @@ describe("print selection and disclosure", () => {
 
     const detail = historyDisclosureDetail({
       labId: "LF-20260904-0031",
+      patientId: "patient-doc-1",
       orders: resolvePrintOrders(orders, ["o1", "o2"], "all"),
       layout: "visit",
+      pageCount: 4,
     });
-    expect(detail.labIds).toEqual(["LF-20260904-0031"]);
-    expect(detail.labIds).not.toEqual([2]);
-    expect(detail.orderIds).toEqual(["o1", "o2"]);
+    expect(detail.patientLabId).toBe("LF-20260904-0031");
+    expect(detail.labIdMissing).toBeUndefined();
+    expect(detail.orderLabIds).toEqual(["LF-20260904-0031-01", "LF-20260904-0031-02"]);
+    expect(detail.orderIds).toEqual(["o2", "o1"]);
+    expect(detail.cumulative).toBe(false);
+    expect(detail.pageCount).toBe(4);
     expect(detail.disclosureAction).toBe(PRINT_DISCLOSURE_ACTION);
-    expect(namedHistoryLabIds("  ")).toEqual([]);
     expect(historyDateRangeLabel(orders)).toContain("2026");
+  });
+
+  it("flags a missing patient Lab ID instead of writing an empty disclosure list", () => {
+    const orders = [order({ id: "o1" }), order({ id: "o2", createdAt: "2026-08-28T08:00:00.000Z" })];
+    const detail = historyDisclosureDetail({
+      labId: "  ",
+      patientId: "patient-doc-missing-lab",
+      orders,
+      layout: "cumulative",
+      pageCount: 2,
+    });
+    expect(detail.patientLabId).toBe("patient-doc-missing-lab");
+    expect(detail.labIdMissing).toBe(true);
+    expect(detail.orderLabIds).toEqual([
+      "patient-doc-missing-lab-01",
+      "patient-doc-missing-lab-02",
+    ]);
+    expect(detail.orderLabIds).not.toEqual([]);
+    expect(detail.cumulative).toBe(true);
+    expect(detail.pageCount).toBe(2);
+    expect(namedHistoryLabIds("  ")).toEqual([]);
   });
 
   it("treats unsynced released orders as provisional, not hidden", () => {
     const orders = [order({ id: "offline", notYetSynced: true })];
     expect(historyHasUnsynced(orders)).toBe(true);
-    const detail = historyDisclosureDetail({ labId: "LF-1", orders, layout: "cumulative" });
+    const detail = historyDisclosureDetail({
+      labId: "LF-1",
+      patientId: "p1",
+      orders,
+      layout: "cumulative",
+      pageCount: 1,
+    });
     expect(detail.provisional).toBe(true);
     expect(detail.provisionalOrderIds).toEqual(["offline"]);
+    expect(detail.orderLabIds).toEqual(["LF-1-01"]);
   });
 });
 

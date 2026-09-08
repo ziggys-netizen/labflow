@@ -235,6 +235,7 @@ function PatientHistoryContent() {
               lastAmendedBy: typeof o.lastAmendedBy === "string" ? o.lastAmendedBy : null,
               currentResultVersion:
                 typeof o.currentResultVersion === "number" ? o.currentResultVersion : null,
+              patientLabId: typeof o.patientLabId === "string" ? o.patientLabId : null,
               notYetSynced: d.metadata.hasPendingWrites,
             } satisfies HistoryOrderInput;
           })
@@ -312,10 +313,32 @@ function PatientHistoryContent() {
         );
       }
       if (auditActor && plan.allowPrint) {
+        const pageCount =
+          printJob.layout === "visit"
+            ? historyPrintPages(
+                paginateByWeight(
+                  historyVisitPrintSlices(
+                    historyVisitRows(printJob.orders),
+                    catalog,
+                    HISTORY_VISIT_PARAMS_PER_PAGE
+                  ),
+                  visitPrintSliceWeight,
+                  HISTORY_VISIT_PARAMS_PER_PAGE
+                )
+              ).length
+            : historyPrintPages(
+                paginateByWeight(
+                  historyCumulativeRows(printJob.orders, catalog),
+                  () => 1,
+                  HISTORY_CUMULATIVE_ROWS_PER_PAGE
+                )
+              ).length;
         const detail = historyDisclosureDetail({
           labId: patient.labId,
+          patientId,
           orders: printJob.orders,
           layout: printJob.layout,
+          pageCount,
         });
         safeLogAudit({
           clinicId: patient.clinicId || clinicId,
@@ -334,7 +357,12 @@ function PatientHistoryContent() {
             targetCollection: "orders",
             targetId: provisional[0].id,
             targetLabel: auditTargetLabel(patient.labId, "history"),
-            detail: { orderIds: provisional.map((row) => row.id), labIds: detail.labIds },
+            detail: {
+              orderIds: provisional.map((row) => row.id),
+              patientLabId: detail.patientLabId,
+              orderLabIds: detail.orderLabIds,
+              labIdMissing: detail.labIdMissing === true,
+            },
           });
         }
       }
@@ -353,6 +381,7 @@ function PatientHistoryContent() {
     writer.shift,
     clinicId,
     patientId,
+    catalog,
   ]);
 
   function requestPrint(mode: HistoryPrintMode) {
