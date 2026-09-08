@@ -188,6 +188,16 @@ export function canViewDashboard(role: string | null | undefined) {
 }
 
 /**
+ * Clinic Settings surface (/settings): owner, clinic_admin, lab_manager,
+ * lab_supervisor (shift supervisor). Catalogue writes stay on
+ * canEditTestCatalogue. Staff / clinic-profile stay on canManageStaff /
+ * canEditClinicProfile.
+ */
+export function canAccessClinicSettings(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
+}
+
+/**
  * DayΓÇÖs test counts and catalogue value. Aggregate only ΓÇö no patient drill-down.
  * Lab roles that release still write the rollup; they use the clinical dashboard.
  */
@@ -397,6 +407,7 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
   canRecordCriticalNotification,
   canEditTestCatalogue,
   canViewDashboard,
+  canAccessClinicSettings,
   canViewTestValueRollup,
   canExportData,
   canManageStaff,
