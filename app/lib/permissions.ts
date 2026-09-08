@@ -130,6 +130,15 @@ export function isTechnicianBoardRole(role: string | null | undefined) {
   return allows(role, "technician", "technician_assistant");
 }
 
+/**
+ * Lab manager landing on /dashboard is the line board.
+ * Supervisor shares that landing. Owner and clinic_admin do not — they
+ * keep the clinic picker / staff home.
+ */
+export function isManagerBoardRole(role: string | null | undefined) {
+  return allows(role, "lab_manager", "lab_supervisor");
+}
+
 export function canOrderTests(role: string | null | undefined) {
   // technician_assistant is excluded — collection only, no ordering.
   return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");

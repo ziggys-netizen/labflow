@@ -8,7 +8,8 @@ import { useAuth } from "../lib/AuthContext";
 import { useConnection } from "../lib/ConnectionContext";
 import { useClinicCollection } from "../lib/clinicListen";
 import { authedGet, authedPost } from "../lib/authApi";
-import { canExportData, canViewDashboard } from "../lib/permissions";
+import { canExportData, canViewDashboard, isManagerBoardRole } from "../lib/permissions";
+import ManagerBoard from "./ManagerBoard";
 import CurrentQueue from "./CurrentQueue";
 import { isOrderForDeletedPatient, isPatientDeleted } from "../lib/patientSoftDelete";
 import { getTimeWindow, isWithin, summarizeTurnaround, formatTurnaroundExclusionCopy, TimeWindowKey, TURNAROUND_DEFINITION } from "../lib/datetime";
@@ -553,10 +554,29 @@ function DashboardContent() {
   );
 }
 
+function DashboardGate() {
+  const { role } = useAuth();
+  if (isManagerBoardRole(role)) {
+    return (
+      <ManagerBoard>
+        {canExportData(role) ? (
+          <ExportReports />
+        ) : (
+          <p className="text-[11px] text-lf-ink-3">
+            Excel export is not available for this role. Ask a clinic admin, lab manager, or the
+            owner if a report is needed.
+          </p>
+        )}
+      </ManagerBoard>
+    );
+  }
+  return <DashboardContent />;
+}
+
 export default function Dashboard() {
   return (
     <ProtectedRoute require={canViewDashboard}>
-      <DashboardContent />
+      <DashboardGate />
     </ProtectedRoute>
   );
 }

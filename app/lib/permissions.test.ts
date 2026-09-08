@@ -17,6 +17,7 @@ import {
   internAllowedPath,
   accountsAllowedPath,
   landingPathForRole,
+  isManagerBoardRole,
   isTechnicianBoardRole,
   type Role,
 } from "./permissions";
@@ -524,6 +525,15 @@ describe("landingPathForRole", () => {
     expect(isTechnicianBoardRole("technician_assistant")).toBe(true);
     expect(isTechnicianBoardRole("clinic_admin")).toBe(false);
     expect(isTechnicianBoardRole("lab_manager")).toBe(false);
+  });
+
+  it("turns the lab manager and supervisor landing into the line board", () => {
+    expect(isManagerBoardRole("lab_manager")).toBe(true);
+    expect(isManagerBoardRole("lab_supervisor")).toBe(true);
+    expect(isManagerBoardRole("owner")).toBe(false);
+    expect(isManagerBoardRole("clinic_admin")).toBe(false);
+    expect(isManagerBoardRole("technician")).toBe(false);
+    expect(isManagerBoardRole("storekeeper")).toBe(false);
   });
 
   it("intern may open register, profile, their patients, a print page, and legal documents", () => {
