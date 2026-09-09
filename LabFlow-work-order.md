@@ -2,7 +2,7 @@
 
 **From:** Isaac Kanu, founder and owner of this project
 **To:** the coding agent working in this repository
-**Updated:** 8 September 2026
+**Updated:** 9 September 2026
 **Status:** standing. Every instruction here is a direct command from me. It applies to every task, whether or not the prompt repeats it.
 
 **Put this file in the repository root and reference it from `CLAUDE.md` or `.cursor/rules` so it is always in context.**
@@ -46,19 +46,25 @@ Around one man in twelve has red–green colour vision deficiency. Every state t
 
 **12. No real patient data enters the system** until rules are published, data residency is answered by counsel, and a retention default is set per clinic.
 
+**13. An error handler that discards the original message is a bug**, whatever it returns. Log the caught error before mapping it. Classify on error types and anchored strings, never on a bare common word. A status code is an assertion — 503 means the service is unavailable. Do not say that when a configuration value is missing.
+
 ---
 
-## Where things stand — end of 8 September 2026
+## Where things stand — end of 9 September 2026
 
 **Gate B is closed.** `https://labflow-six.vercel.app/api/health` returns `{"ok":true}`. Vercel OIDC federates to Google with no service-account key. Join-by-code, staff pre-approvals, custom claims and Excel export are all live for the first time.
 
 *What had been wrong for three weeks: the pool, provider, project number and principal string were all correct — there was simply no service account for the pool to impersonate. Everything downstream was built correctly and pointing at nothing.*
 
+**Excel export is live in production** after `e5b5ad4` (Admin projectId pin and narrower credential errors) and `a3c89b4` (WIF ExternalAccountClient as authClient). Confirmed working.
+
+**Still open on the export / Loading path (do not treat as closed):** the dashboard **Loading hang**, and the **ExportReports mount-time GET** — leave both for a later pass.
+
 **Published and live in Firestore:** the approval gate · roster collections · the two cross-tenant patches (`staffUserUpdateOk`, `clinicPins` delete) · the **J1 role gates** — catalogue writes, order status transitions into approved/amended, soft-delete · **un-release blocked** (`leavingReleasedStatus`) · **audit entries bound to their author** (`actorUid == request.auth.uid`).
 
 **The repo and the live ruleset agree.** `20a3eb3` closed a period where `main` held a weaker ruleset than production. Never let that recur — see rule 7.
 
-**Built 2–8 September:** D1–D3, D6 design tokens, mobile layout, the two flag systems, specimen caps · E1–E3 patient list, icons, patient history with cumulative view · F footer and terms acceptance · G1–G3 expanding queue, dashboard colour, wordmark · H1–H5 operational states, currency, header, row controls, adult fixtures · I1 access audit · J1 role gates and follow-ups · K1 tinted grounds · `f99a8c5` H1 mapping, tiles and chips now share `operationalFromOrder`.
+**Built 2–9 September:** D1–D3, D6 design tokens, mobile layout, the two flag systems, specimen caps · E1–E3 patient list, icons, patient history with cumulative view · F footer and terms acceptance · G1–G3 expanding queue, dashboard colour, wordmark · H1–H5 operational states, currency, header, row controls, adult fixtures · I1 access audit · J1 role gates and follow-ups · K1 tinted grounds · `f99a8c5` H1 mapping, tiles and chips now share `operationalFromOrder` · Admin WIF export fixes above.
 
 **Blocked on me, not you:** the signed-in browser pass · Green Aid population and the two-clinic isolation test · the pilot clinic's catalogue · counsel on data residency.
 
