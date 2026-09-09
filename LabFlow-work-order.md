@@ -48,6 +48,12 @@ Around one man in twelve has red–green colour vision deficiency. Every state t
 
 **13. An error handler that discards the original message is a bug**, whatever it returns. Log the caught error before mapping it. Classify on error types and anchored strings, never on a bare common word. A status code is an assertion — 503 means the service is unavailable. Do not say that when a configuration value is missing.
 
+**14. A surface must never be able to stay in a loading state.**
+Every asynchronous read that gates rendering resolves to data, empty, or a
+named error the user can act on. A failed read shows what failed and offers
+a retry. In a laboratory, an indefinite "Loading..." is worse than an error,
+because staff wait instead of acting.
+
 ---
 
 ## Where things stand — end of 9 September 2026
