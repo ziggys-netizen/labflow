@@ -141,7 +141,9 @@ export function getAdminApp(): App {
   try {
     return initializeApp({
       credential: resolveCredential(),
-      projectId: projectId(),
+      // Hardcoded so verifyIdToken / Firestore never fall back to a wrong or
+      // missing project when env vars differ across Vercel / local / ADC.
+      projectId: "labflow-6cb9e",
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Firebase Admin failed to initialise.";
@@ -157,10 +159,18 @@ export function getAdminDb(): Firestore {
   return getFirestore(getAdminApp());
 }
 
+/**
+ * True only for genuine Admin SDK / ADC failures that should map to 503.
+ * Must NOT match client ID-token verify failures (those stay 401), including
+ * messages that merely contain the word "credential" mid-sentence.
+ */
 export function isAdminCredentialError(err: unknown): boolean {
   if (err instanceof AdminUnavailableError) return true;
   const message = err instanceof Error ? err.message : String(err);
-  return /Could not load the default credentials|Could not refresh access token|invalid_grant|unable to authenticate|credential/i.test(
-    message
+  return (
+    /^Could not load the default credentials/i.test(message) ||
+    /^Could not refresh access token/i.test(message) ||
+    /\binvalid_grant\b/i.test(message) ||
+    /^unable to authenticate/i.test(message)
   );
 }

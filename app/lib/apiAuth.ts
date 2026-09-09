@@ -36,6 +36,7 @@ export async function requireVerifiedUser(
     return { token };
   } catch (err) {
     if (err instanceof AdminUnavailableError || isAdminCredentialError(err)) {
+      console.error(err);
       return json503();
     }
     return jsonError(401, "Invalid or expired session.");
@@ -80,6 +81,7 @@ export async function requireCapability(
     return { token: auth.token, identity, role, clinicId, email };
   } catch (err) {
     if (err instanceof AdminUnavailableError || isAdminCredentialError(err)) {
+      console.error(err);
       return json503();
     }
     throw err;
