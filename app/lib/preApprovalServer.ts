@@ -1,4 +1,4 @@
-import { FieldValue } from "firebase-admin/firestore";
+import { FieldValue } from "@google-cloud/firestore";
 import { getAdminDb } from "./firebaseAdmin";
 import { logAudit } from "./auditAdmin";
 import { resolveIdentity, type ResolvedIdentity } from "./membership";

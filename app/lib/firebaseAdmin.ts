@@ -9,9 +9,11 @@ import {
   type ServiceAccount,
 } from "firebase-admin/app";
 import { getAuth, type Auth } from "firebase-admin/auth";
-import { getFirestore, type Firestore } from "firebase-admin/firestore";
-import { ExternalAccountClient } from "google-auth-library";
+import { Firestore } from "@google-cloud/firestore";
+import { ExternalAccountClient, type BaseExternalAccountClient } from "google-auth-library";
 import { getVercelOidcToken } from "@vercel/oidc";
+
+const LABFLOW_PROJECT_ID = "labflow-6cb9e";
 
 /**
  * Admin SDK must be lazy. Importing this file during `next build` must not
@@ -39,17 +41,25 @@ function requiredEnv(name: string): string | null {
   return value || null;
 }
 
+/** Cached WIF client — shared by Auth credential wrapper and Firestore authClient. */
+let cachedOidcClient: BaseExternalAccountClient | null | undefined;
+
 /**
  * Vercel OIDC → GCP Workload Identity Federation (ADR-001 Option B).
  * Returns null unless every pool/provider/SA env var is set, so local
  * `next build` and Production without WIF still fail at request time (503).
  */
-function vercelOidcCredential(): Credential | null {
+function vercelOidcClient(): BaseExternalAccountClient | null {
+  if (cachedOidcClient !== undefined) return cachedOidcClient;
+
   const projectNumber = requiredEnv("GCP_PROJECT_NUMBER");
   const poolId = requiredEnv("GCP_WORKLOAD_IDENTITY_POOL_ID");
   const providerId = requiredEnv("GCP_WORKLOAD_IDENTITY_POOL_PROVIDER_ID");
   const saEmail = requiredEnv("GCP_SERVICE_ACCOUNT_EMAIL");
-  if (!projectNumber || !poolId || !providerId || !saEmail) return null;
+  if (!projectNumber || !poolId || !providerId || !saEmail) {
+    cachedOidcClient = null;
+    return null;
+  }
 
   const wifAudience = `//iam.googleapis.com/projects/${projectNumber}/locations/global/workloadIdentityPools/${poolId}/providers/${providerId}`;
   const tokenAudience = requiredEnv("GCP_AUDIENCE");
@@ -67,6 +77,16 @@ function vercelOidcCredential(): Credential | null {
           : getVercelOidcToken(),
     },
   });
+  cachedOidcClient = client ?? null;
+  return cachedOidcClient;
+}
+
+/**
+ * Thin Firebase Admin Credential for Auth only (`verifyIdToken`, custom claims).
+ * Firestore must NOT use this — it rejects non-cert / non-ADC credentials.
+ */
+function vercelOidcCredential(): Credential | null {
+  const client = vercelOidcClient();
   if (!client) return null;
 
   return {
@@ -143,7 +163,7 @@ export function getAdminApp(): App {
       credential: resolveCredential(),
       // Hardcoded so verifyIdToken / Firestore never fall back to a wrong or
       // missing project when env vars differ across Vercel / local / ADC.
-      projectId: "labflow-6cb9e",
+      projectId: LABFLOW_PROJECT_ID,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Firebase Admin failed to initialise.";
@@ -155,8 +175,32 @@ export function getAdminAuth(): Auth {
   return getAuth(getAdminApp());
 }
 
+let cachedDb: Firestore | undefined;
+
+/**
+ * Admin Firestore via `@google-cloud/firestore` (not firebase-admin's getFirestore).
+ *
+ * Branching:
+ * - OIDC/WIF env complete → pass ExternalAccountClient as `authClient`
+ *   (firebase-admin Firestore rejects the thin `{ getAccessToken }` wrapper).
+ * - Otherwise → construct with projectId only and let the library resolve
+ *   ADC / GOOGLE_APPLICATION_CREDENTIALS / SA file itself (no authClient).
+ *
+ * No `databaseId` — default database. nam7 is a location, not a database name.
+ * Lazy: only constructed on first request-path call.
+ */
 export function getAdminDb(): Firestore {
-  return getFirestore(getAdminApp());
+  if (cachedDb) return cachedDb;
+  try {
+    const authClient = vercelOidcClient();
+    cachedDb = authClient
+      ? new Firestore({ projectId: LABFLOW_PROJECT_ID, authClient })
+      : new Firestore({ projectId: LABFLOW_PROJECT_ID });
+    return cachedDb;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Firestore Admin failed to initialise.";
+    throw new AdminUnavailableError(message);
+  }
 }
 
 /**
@@ -167,10 +211,18 @@ export function getAdminDb(): Firestore {
 export function isAdminCredentialError(err: unknown): boolean {
   if (err instanceof AdminUnavailableError) return true;
   const message = err instanceof Error ? err.message : String(err);
+  const code =
+    typeof err === "object" && err !== null && "code" in err
+      ? String((err as { code: unknown }).code)
+      : "";
   return (
     /^Could not load the default credentials/i.test(message) ||
     /^Could not refresh access token/i.test(message) ||
     /\binvalid_grant\b/i.test(message) ||
-    /^unable to authenticate/i.test(message)
+    /^unable to authenticate/i.test(message) ||
+    /^Failed to initialize Google Cloud Firestore client with the available credentials/i.test(
+      message
+    ) ||
+    code === "firestore/invalid-credential"
   );
 }

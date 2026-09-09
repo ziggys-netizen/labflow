@@ -19,6 +19,19 @@ describe("isAdminCredentialError", () => {
     expect(isAdminCredentialError(new Error("unable to authenticate the request"))).toBe(true);
   });
 
+  it("returns true for Firestore invalid-credential (Admin wrapper rejection)", () => {
+    expect(
+      isAdminCredentialError(
+        new Error(
+          "Failed to initialize Google Cloud Firestore client with the available credentials. Must initialize the SDK with a certificate credential or application default credentials to use Cloud Firestore API."
+        )
+      )
+    ).toBe(true);
+    const withCode = new Error("something else");
+    (withCode as Error & { code: string }).code = "firestore/invalid-credential";
+    expect(isAdminCredentialError(withCode)).toBe(true);
+  });
+
   it("does not match bare mid-sentence credential wording", () => {
     expect(
       isAdminCredentialError(

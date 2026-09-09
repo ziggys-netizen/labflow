@@ -1,4 +1,4 @@
-import type { Query, QueryDocumentSnapshot } from "firebase-admin/firestore";
+import type { Query, QueryDocumentSnapshot } from "@google-cloud/firestore";
 import { getAdminDb, isAdminCredentialError } from "@/app/lib/firebaseAdmin";
 import {
   asRecord,
