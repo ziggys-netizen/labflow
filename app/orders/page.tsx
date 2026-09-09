@@ -72,7 +72,10 @@ function OrdersContent() {
 
         <div className="flex flex-col gap-3">
           {orders.map((o) => {
-            const operational = operationalFromOrderStage(o);
+            const operational = operationalFromOrderStage(o) ?? {
+              state: "ordinary" as const,
+              label: "OPEN",
+            };
             return (
               <Link
                 key={o.id}

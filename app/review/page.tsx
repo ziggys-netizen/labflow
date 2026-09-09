@@ -180,7 +180,11 @@ function ReviewContent() {
 
             <div className="flex flex-col gap-3">
               {visible.map((order) => {
-                const operational = operationalFromOrderStage({ status: order.status });
+                const operational =
+                  operationalFromOrderStage({ status: order.status }) ?? {
+                    state: "ordinary" as const,
+                    label: "OPEN",
+                  };
                 return (
                   <Link
                     key={order.id}
