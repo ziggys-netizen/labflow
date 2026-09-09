@@ -74,6 +74,7 @@ function ClinicAuditViewer({ clinicId, owner }: { clinicId: string; owner: boole
   const [appliedFrom, setAppliedFrom] = useState(defaultAuditDateFrom);
   const [appliedTo, setAppliedTo] = useState(defaultAuditDateTo);
   const [rows, setRows] = useState<AuditLogRecord[]>([]);
+  const [fetchCapped, setFetchCapped] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [page, setPage] = useState(0);
@@ -82,7 +83,7 @@ function ClinicAuditViewer({ clinicId, owner }: { clinicId: string; owner: boole
     let cancelled = false;
     async function load() {
       try {
-        const [clinic, logs] = await Promise.all([
+        const [clinic, loaded] = await Promise.all([
           loadClinic(clinicId),
           loadClinicAuditLogs(clinicId, {
             startAt: localDayStartIso(appliedFrom),
@@ -91,7 +92,8 @@ function ClinicAuditViewer({ clinicId, owner }: { clinicId: string; owner: boole
         ]);
         if (cancelled) return;
         setClinicName(clinic?.name || clinicId);
-        setRows(logs);
+        setRows(loaded.rows);
+        setFetchCapped(loaded.capped);
         setPage(0);
         setError("");
       } catch (err) {
@@ -99,6 +101,7 @@ function ClinicAuditViewer({ clinicId, owner }: { clinicId: string; owner: boole
         if (cancelled) return;
         setError("Could not load the audit log.");
         setRows([]);
+        setFetchCapped(false);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -252,6 +255,15 @@ function ClinicAuditViewer({ clinicId, owner }: { clinicId: string; owner: boole
 
         {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
         {loading && <p className="text-gray-600">Loading...</p>}
+        {!loading && fetchCapped && (
+          <p
+            role="status"
+            className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          >
+            Showing the 10,000 most recent entries in this range. Older entries were not
+            searched. Narrow the date range to search further back.
+          </p>
+        )}
         {!loading && filtered.length === 0 && (
           <p className="text-sm text-gray-600">No audit entries in this range.</p>
         )}

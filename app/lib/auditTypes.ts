@@ -219,6 +219,30 @@ export function filterAuditLogs(
   });
 }
 
+/** Hard stop for clinic audit reads. Callers must surface when this was hit. */
+export const AUDIT_FETCH_CAP = 10000;
+
+export type ClinicAuditLoadResult = {
+  rows: AuditLogRecord[];
+  /** True when the range had more than AUDIT_FETCH_CAP matches; older entries were not searched. */
+  capped: boolean;
+};
+
+/**
+ * Trim a paged fetch to the cap and mark when more documents existed beyond it.
+ * Fetched length must be allowed to go one past the cap so exact-cap exhaustion is not a false positive.
+ */
+export function finalizeClinicAuditFetch(
+  fetched: AuditLogRecord[],
+  fetchCap: number = AUDIT_FETCH_CAP
+): ClinicAuditLoadResult {
+  const capped = fetched.length > fetchCap;
+  return {
+    rows: capped ? fetched.slice(0, fetchCap) : fetched,
+    capped,
+  };
+}
+
 /** Local calendar day → ISO, for date-range queries on `at`. */
 export function localDayStartIso(dateStr: string): string {
   const [year, month, day] = dateStr.split("-").map(Number);

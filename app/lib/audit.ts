@@ -14,8 +14,11 @@ import { db } from "./firebase";
 import {
   auditLogPayload,
   parseAuditLog,
+  AUDIT_FETCH_CAP,
+  finalizeClinicAuditFetch,
   type AuditLogRecord,
   type AuditLogWrite,
+  type ClinicAuditLoadResult,
 } from "./auditTypes";
 import {
   auditFailureSummary,
@@ -25,16 +28,18 @@ import {
 import { lastKnownOnline } from "./firestoreConnectivity";
 import { enqueuePending, markRejected } from "./writeQueue";
 
-export type { AuditActor, AuditLogRecord, AuditLogWrite } from "./auditTypes";
+export type { AuditActor, AuditLogRecord, AuditLogWrite, ClinicAuditLoadResult } from "./auditTypes";
 export {
   AUDIT_ACTIONS,
   AUDIT_CSV_COLUMNS,
+  AUDIT_FETCH_CAP,
   actorFromAuth,
   auditLogsToCsv,
   auditTargetLabel,
   defaultAuditDateFrom,
   defaultAuditDateTo,
   filterAuditLogs,
+  finalizeClinicAuditFetch,
   localDayEndIso,
   localDayStartIso,
   parseAuditLog,
@@ -85,30 +90,31 @@ async function surfaceAuditFailure(entry: AuditLogWrite, err: unknown) {
 }
 
 const FETCH_PAGE = 400;
-const FETCH_CAP = 10000;
 
 /** Clinic-scoped reads. Newest first. Date range is inclusive local days as ISO. */
 export async function loadClinicAuditLogs(
   clinicId: string,
   options: { startAt?: string; endAt?: string } = {}
-): Promise<AuditLogRecord[]> {
-  if (!clinicId) return [];
-  const rows: AuditLogRecord[] = [];
+): Promise<ClinicAuditLoadResult> {
+  if (!clinicId) return { rows: [], capped: false };
+  const fetched: AuditLogRecord[] = [];
   let cursor: QueryDocumentSnapshot | undefined;
-  while (rows.length < FETCH_CAP) {
+  // Fetch up to one past the cap so we can tell "exactly N" from "more than N".
+  while (fetched.length <= AUDIT_FETCH_CAP) {
+    const pageSize = Math.min(FETCH_PAGE, AUDIT_FETCH_CAP + 1 - fetched.length);
     const constraints: QueryConstraint[] = [where("clinicId", "==", clinicId)];
     if (options.startAt) constraints.push(where("at", ">=", options.startAt));
     if (options.endAt) constraints.push(where("at", "<=", options.endAt));
     constraints.push(orderBy("at", "desc"));
     if (cursor) constraints.push(startAfter(cursor));
-    constraints.push(limit(FETCH_PAGE));
+    constraints.push(limit(pageSize));
     const snap = await getDocs(query(collection(db, "auditLogs"), ...constraints));
     if (snap.empty) break;
     for (const d of snap.docs) {
-      rows.push(parseAuditLog(d.id, d.data() as Record<string, unknown>));
+      fetched.push(parseAuditLog(d.id, d.data() as Record<string, unknown>));
     }
     cursor = snap.docs[snap.docs.length - 1];
-    if (snap.docs.length < FETCH_PAGE) break;
+    if (snap.docs.length < pageSize) break;
   }
-  return rows;
+  return finalizeClinicAuditFetch(fetched, AUDIT_FETCH_CAP);
 }

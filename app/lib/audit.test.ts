@@ -2,12 +2,16 @@ import { describe, expect, it } from "vitest";
 import {
   AUDIT_ACTIONS,
   AUDIT_CSV_COLUMNS,
+  AUDIT_FETCH_CAP,
   actorFromAuth,
   auditLogPayload,
   auditLogsToCsv,
   auditTargetLabel,
   csvCell,
+  defaultAuditDateFrom,
+  defaultAuditDateTo,
   filterAuditLogs,
+  finalizeClinicAuditFetch,
   parseAuditLog,
   type AuditLogRecord,
 } from "./auditTypes";
@@ -25,7 +29,7 @@ function sampleRecord(overrides: Partial<AuditLogRecord> = {}): AuditLogRecord {
     action: "patient.register",
     targetCollection: "patients",
     targetId: "p1",
-    targetLabel: "Ada Lovelace — LF-20260821-0001",
+    targetLabel: "LF-20260821-0001 · patient",
     at: "2026-08-21T12:00:00.000Z",
     detail: { fields: ["name", "labId"] },
     ...overrides,
@@ -213,12 +217,55 @@ describe("audit filters", () => {
       action: "patient.softDelete",
       targetCollection: "patients",
       targetId: "p1",
-      targetLabel: "Ada — LF-1",
+      targetLabel: "LF-1 · patient",
       at: "2026-08-21T12:00:00.000Z",
       detail: { reason: "duplicate", fields: ["deleted"] },
     });
     expect(row.detail).toEqual({ reason: "duplicate", fields: ["deleted"] });
     expect(row.detail).not.toHaveProperty("phone");
     expect(row.detail).not.toHaveProperty("nationalId");
+  });
+});
+
+describe("audit fetch cap", () => {
+  it("marks capped when the fetch went one past the cap", () => {
+    const fetched = Array.from({ length: AUDIT_FETCH_CAP + 1 }, (_, i) =>
+      sampleRecord({ id: `a${i}` })
+    );
+    const result = finalizeClinicAuditFetch(fetched);
+    expect(result.capped).toBe(true);
+    expect(result.rows).toHaveLength(AUDIT_FETCH_CAP);
+    expect(result.rows[0]?.id).toBe("a0");
+    expect(result.rows[AUDIT_FETCH_CAP - 1]?.id).toBe(`a${AUDIT_FETCH_CAP - 1}`);
+  });
+
+  it("does not mark capped when the fetch landed exactly on the cap", () => {
+    const fetched = Array.from({ length: AUDIT_FETCH_CAP }, (_, i) =>
+      sampleRecord({ id: `a${i}` })
+    );
+    const result = finalizeClinicAuditFetch(fetched);
+    expect(result.capped).toBe(false);
+    expect(result.rows).toHaveLength(AUDIT_FETCH_CAP);
+  });
+
+  it("does not mark capped for short result sets", () => {
+    const result = finalizeClinicAuditFetch([sampleRecord(), sampleRecord({ id: "a2" })]);
+    expect(result).toEqual({
+      rows: [sampleRecord(), sampleRecord({ id: "a2" })],
+      capped: false,
+    });
+  });
+});
+
+describe("default audit date range", () => {
+  it("defaults From to 30 local days before To (today)", () => {
+    const from = defaultAuditDateFrom();
+    const to = defaultAuditDateTo();
+    const fromDate = new Date(`${from}T12:00:00`);
+    const toDate = new Date(`${to}T12:00:00`);
+    const today = new Date();
+    const expectedTo = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+    expect(to).toBe(expectedTo);
+    expect((toDate.getTime() - fromDate.getTime()) / (24 * 60 * 60 * 1000)).toBe(30);
   });
 });
