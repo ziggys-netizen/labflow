@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
 import { auth, googleProvider, db } from "./firebase";
-import { doc, getDoc, setDoc, updateDoc, onSnapshot } from "firebase/firestore";
+import { doc, getDoc, getDocFromCache, setDoc, updateDoc, onSnapshot, type DocumentReference } from "firebase/firestore";
 import { reportFirestoreMetadata } from "./firestoreConnectivity";
 import {
   ClinicMembership,
@@ -25,6 +25,13 @@ if (process.env.NODE_ENV === "development") {
 }
 
 const ACTING_CLINIC_KEY = "labflow.actingClinicId";
+
+/** Upper bound for any await that can hold the auth loading gate open. */
+export const AUTH_BOOTSTRAP_DEADLINE_MS = 8000;
+
+/** Shown when bootstrap times out with no cached user doc. */
+export const AUTH_BOOTSTRAP_UNREACHABLE =
+  "Cannot reach the server. Sign in once while connected before working offline.";
 
 function readActingClinic(): string | null {
   if (typeof window === "undefined") return null;
@@ -76,6 +83,18 @@ interface AuthContextType {
   popupBlocked: boolean;
   authError: string | null;
   /**
+   * Bootstrap failed to reach the server and no cached identity was available.
+   * When set, the loading gate is false — show this message and offer retry.
+   */
+  bootstrapError: string | null;
+  /**
+   * True while the session is running on a cached user doc and has not yet
+   * confirmed identity with the server.
+   */
+  authOffline: boolean;
+  /** Re-run identity bootstrap for the current Firebase user. */
+  retryBootstrap: () => void;
+  /**
    * Newest accepted clinic-staff terms version for this user, or null if none.
    * Not used for the owner (exempt).
    */
@@ -113,6 +132,9 @@ const AuthContext = createContext<AuthContextType>({
   loading: true,
   popupBlocked: false,
   authError: null,
+  bootstrapError: null,
+  authOffline: false,
+  retryBootstrap: () => {},
   acceptedTermsVersion: null,
   acceptCurrentTerms: () => {},
   login: async () => {},
@@ -134,6 +156,14 @@ export function useSessionAuthInput(): AuthStateInput {
   );
 }
 
+async function readUserDocFromCache(ref: DocumentReference) {
+  try {
+    return await getDocFromCache(ref);
+  } catch {
+    return null;
+  }
+}
+
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [identity, setIdentity] = useState<ResolvedIdentity>(EMPTY_IDENTITY);
@@ -144,8 +174,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [termsChecked, setTermsChecked] = useState(false);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
+  const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [authOffline, setAuthOffline] = useState(false);
+  const [bootstrapEpoch, setBootstrapEpoch] = useState(0);
   const unsubDocRef = useRef<(() => void) | null>(null);
   const actingHydratedRef = useRef(false);
+  const identityReceivedRef = useRef(false);
+  const bootstrapTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const bootstrapGenRef = useRef(0);
+  const creatingUserDocRef = useRef(false);
 
   const clearActingClinic = useCallback(() => {
     actingHydratedRef.current = false;
@@ -153,78 +190,147 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     persistActingClinic(null);
   }, []);
 
+  const clearBootstrapTimer = useCallback(() => {
+    if (bootstrapTimerRef.current) {
+      clearTimeout(bootstrapTimerRef.current);
+      bootstrapTimerRef.current = null;
+    }
+  }, []);
+
+  const applyIdentity = useCallback(
+    (data: Record<string, unknown> | undefined, fromCache: boolean) => {
+      const next = resolveIdentity(data);
+      setIdentity(next);
+      identityReceivedRef.current = true;
+      if (isOwnerExemptFromStaffTerms(next.role) || next.status !== "approved" || !next.clinicId) {
+        setAcceptedTermsVersion(null);
+        setTermsChecked(true);
+      }
+      if (next.role === "owner") {
+        if (!actingHydratedRef.current) {
+          actingHydratedRef.current = true;
+          setActingClinicIdState(readActingClinic());
+        }
+      } else {
+        clearActingClinic();
+      }
+      setIdentityLoading(false);
+      setBootstrapError(null);
+      if (fromCache) {
+        setAuthOffline(true);
+      } else {
+        setAuthOffline(false);
+      }
+    },
+    [clearActingClinic]
+  );
+
+  const retryBootstrap = useCallback(() => {
+    setBootstrapError(null);
+    setAuthOffline(false);
+    setIdentityLoading(true);
+    setTermsChecked(false);
+    identityReceivedRef.current = false;
+    setBootstrapEpoch((n) => n + 1);
+  }, []);
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
       unsubDocRef.current?.();
       unsubDocRef.current = null;
+      clearBootstrapTimer();
+      creatingUserDocRef.current = false;
 
+      const gen = ++bootstrapGenRef.current;
       setUser(firebaseUser);
       if (!firebaseUser) {
+        identityReceivedRef.current = false;
         setIdentity(EMPTY_IDENTITY);
         setAcceptedTermsVersion(null);
         setTermsChecked(true);
+        setBootstrapError(null);
+        setAuthOffline(false);
         clearActingClinic();
         setIdentityLoading(false);
         return;
       }
 
+      identityReceivedRef.current = false;
       setIdentityLoading(true);
       setTermsChecked(false);
-      const userDocRef = doc(db, "users", firebaseUser.uid);
-      try {
-        const userDocSnap = await getDoc(userDocRef);
-        if (!userDocSnap.exists()) {
-          await setDoc(userDocRef, {
-            email: firebaseUser.email,
-            name: firebaseUser.displayName,
-            role: "pending",
-            clinicId: null,
-            status: "pending",
-            username: null,
-            clinicRoles: {},
-            activeClinicId: null,
-            createdAt: new Date().toISOString(),
-            approvedBy: null,
-            approvedAt: null,
-          });
-        }
-        unsubDocRef.current = onSnapshot(
-          userDocRef,
-          { includeMetadataChanges: true },
-          (snap) => {
-            reportFirestoreMetadata(snap.metadata);
-            const next = resolveIdentity(snap.data());
-            setIdentity(next);
-            if (isOwnerExemptFromStaffTerms(next.role) || next.status !== "approved" || !next.clinicId) {
-              setAcceptedTermsVersion(null);
-              setTermsChecked(true);
-            }
-            if (next.role === "owner") {
-              if (!actingHydratedRef.current) {
-                actingHydratedRef.current = true;
-                setActingClinicIdState(readActingClinic());
-              }
-            } else {
-              clearActingClinic();
-            }
-            setIdentityLoading(false);
-          },
-          (err) => {
-            // Without this the listener can fail silently and leave the app on "Loading...".
-            console.error(err);
-            setIdentityLoading(false);
-          }
-        );
-      } catch (err) {
-        console.error(err);
+      setBootstrapError(null);
+      setAuthOffline(false);
+
+      bootstrapTimerRef.current = setTimeout(() => {
+        if (gen !== bootstrapGenRef.current) return;
         setIdentityLoading(false);
+        if (!identityReceivedRef.current) {
+          setBootstrapError(AUTH_BOOTSTRAP_UNREACHABLE);
+          setTermsChecked(true);
+        }
+      }, AUTH_BOOTSTRAP_DEADLINE_MS);
+
+      const userDocRef = doc(db, "users", firebaseUser.uid);
+
+      const cachedSnap = await readUserDocFromCache(userDocRef);
+      if (gen !== bootstrapGenRef.current) return;
+      if (cachedSnap?.exists()) {
+        applyIdentity(cachedSnap.data() as Record<string, unknown>, true);
       }
+
+      // Ensure the user doc exists when the server is reachable. Must not gate
+      // loading — getDoc/setDoc can hang indefinitely with no network and a cold cache.
+      void (async () => {
+        try {
+          const serverSnap = await getDoc(userDocRef);
+          if (gen !== bootstrapGenRef.current) return;
+          if (!serverSnap.exists() && !creatingUserDocRef.current) {
+            creatingUserDocRef.current = true;
+            await setDoc(userDocRef, {
+              email: firebaseUser.email,
+              name: firebaseUser.displayName,
+              role: "pending",
+              clinicId: null,
+              status: "pending",
+              username: null,
+              clinicRoles: {},
+              activeClinicId: null,
+              createdAt: new Date().toISOString(),
+              approvedBy: null,
+              approvedAt: null,
+            });
+          }
+        } catch (err) {
+          console.error(err);
+        }
+      })();
+
+      unsubDocRef.current = onSnapshot(
+        userDocRef,
+        { includeMetadataChanges: true },
+        (snap) => {
+          if (gen !== bootstrapGenRef.current) return;
+          reportFirestoreMetadata(snap.metadata);
+          if (!snap.exists()) return;
+          applyIdentity(snap.data() as Record<string, unknown>, snap.metadata.fromCache);
+        },
+        (err) => {
+          console.error(err);
+          if (gen !== bootstrapGenRef.current) return;
+          setIdentityLoading(false);
+          setTermsChecked(true);
+          if (!identityReceivedRef.current) {
+            setBootstrapError(AUTH_BOOTSTRAP_UNREACHABLE);
+          }
+        }
+      );
     });
     return () => {
       unsubscribe();
       unsubDocRef.current?.();
+      clearBootstrapTimer();
     };
-  }, [clearActingClinic]);
+  }, [applyIdentity, clearActingClinic, clearBootstrapTimer, bootstrapEpoch]);
 
   useEffect(() => {
     if (identity.role !== "owner" || !actingClinicId) return;
@@ -326,6 +432,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     let cancelled = false;
     setTermsChecked(false);
+    const termsTimer = setTimeout(() => {
+      if (!cancelled) {
+        setTermsChecked(true);
+      }
+    }, AUTH_BOOTSTRAP_DEADLINE_MS);
     getNewestAcceptedTermsVersion(user.uid)
       .then((version) => {
         if (!cancelled) {
@@ -333,16 +444,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setTermsChecked(true);
         }
       })
-      .catch(() => {
+      .catch((err) => {
+        console.error(err);
         if (!cancelled) {
           setAcceptedTermsVersion(null);
           setTermsChecked(true);
         }
+      })
+      .finally(() => {
+        clearTimeout(termsTimer);
       });
     return () => {
       cancelled = true;
+      clearTimeout(termsTimer);
     };
-  }, [user, identity.role, identity.status, identity.clinicId]);
+  }, [user, identity.role, identity.status, identity.clinicId, bootstrapEpoch]);
 
   const acceptCurrentTerms = useCallback(() => {
     setAcceptedTermsVersion(ACCEPTABLE_USE.version);
@@ -375,6 +491,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         loading,
         popupBlocked,
         authError,
+        bootstrapError,
+        authOffline,
+        retryBootstrap,
         acceptedTermsVersion,
         acceptCurrentTerms,
         login,

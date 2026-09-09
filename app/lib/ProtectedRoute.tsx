@@ -19,14 +19,15 @@ export default function ProtectedRoute({
   children: React.ReactNode;
   require?: RouteRequire;
 }) {
-  const { user, loading, role } = useAuth();
+  const { user, loading, role, bootstrapError, authOffline, retryBootstrap } = useAuth();
   const session = useSessionAuthInput();
   const router = useRouter();
   const pathname = usePathname();
   const hasRedirected = useRef(false);
   const lastDest = useRef<string | null | undefined>(undefined);
 
-  const dest = loading ? null : protectedRouteDestination(session, pathname, require);
+  const dest =
+    loading || bootstrapError ? null : protectedRouteDestination(session, pathname, require);
 
   useEffect(() => {
     if (lastDest.current !== dest) {
@@ -36,17 +37,32 @@ export default function ProtectedRoute({
   }, [dest]);
 
   useEffect(() => {
-    if (loading) return;
+    if (loading || bootstrapError) return;
     if (dest && pathname !== dest && !hasRedirected.current) {
       hasRedirected.current = true;
       router.replace(dest);
     }
-  }, [loading, dest, pathname, router]);
+  }, [loading, bootstrapError, dest, pathname, router]);
 
   if (loading) {
     return (
       <main className="min-h-screen flex items-center justify-center text-gray-600">
         Loading...
+      </main>
+    );
+  }
+
+  if (bootstrapError) {
+    return (
+      <main className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
+        <p className="text-gray-800 max-w-md">{bootstrapError}</p>
+        <button
+          type="button"
+          onClick={retryBootstrap}
+          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
+        >
+          Retry
+        </button>
       </main>
     );
   }
@@ -75,5 +91,14 @@ export default function ProtectedRoute({
     );
   }
 
-  return <>{children}</>;
+  return (
+    <>
+      {authOffline && (
+        <div className="no-print border-b border-amber-200 bg-amber-50 px-0 py-2">
+          <p className="lf-shell text-sm text-amber-950">Offline — using cached account details</p>
+        </div>
+      )}
+      {children}
+    </>
+  );
 }

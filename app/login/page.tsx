@@ -9,7 +9,7 @@ import LabFlowWordmark from "../lib/LabFlowWordmark";
 import { consumeTermsDeclineNotice } from "../lib/legal/termsGate";
 
 export default function Login() {
-  const { user, login, loading, popupBlocked, authError } = useAuth();
+  const { user, login, loading, popupBlocked, authError, bootstrapError, retryBootstrap } = useAuth();
   const session = useSessionAuthInput();
   const router = useRouter();
   const [error, setError] = useState("");
@@ -39,15 +39,33 @@ export default function Login() {
   const continueHref = continuePathAfterAuth(session);
 
   useEffect(() => {
-    if (loading || !user || continueHref === "/login") return;
+    if (loading || bootstrapError || !user || continueHref === "/login") return;
     router.replace(continueHref);
-  }, [loading, user, continueHref, router]);
+  }, [loading, bootstrapError, user, continueHref, router]);
 
   // Animation runs during auth resolve only — never blocks redirect above.
   if (loading && !failureMessage && !signingIn) {
     return (
       <main className="min-h-screen flex items-center justify-center bg-lf-ground px-6">
         <LabFlowWordmark animate size="lg" />
+      </main>
+    );
+  }
+
+  if (bootstrapError) {
+    return (
+      <main className="min-h-screen bg-lf-ground flex items-center justify-center px-6">
+        <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
+          <LabFlowWordmark size="lg" />
+          <p className="text-lf-ink-2">{bootstrapError}</p>
+          <button
+            type="button"
+            onClick={retryBootstrap}
+            className="w-full bg-lf-ink text-lf-surface rounded-lf-md py-2 font-medium hover:opacity-90 transition"
+          >
+            Retry
+          </button>
+        </div>
       </main>
     );
   }
