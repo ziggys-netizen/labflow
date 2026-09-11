@@ -30,6 +30,7 @@ const SURFACE_VISIBLE: Record<
     recycleBin: true,
     owner: true,
     patientHistory: true,
+    medicalReport: true,
   },
   clinic_admin: {
     dashboard: true,
@@ -43,6 +44,7 @@ const SURFACE_VISIBLE: Record<
     recycleBin: true,
     owner: false,
     patientHistory: false,
+    medicalReport: true,
   },
   lab_manager: {
     dashboard: true,
@@ -56,6 +58,7 @@ const SURFACE_VISIBLE: Record<
     recycleBin: true,
     owner: false,
     patientHistory: true,
+    medicalReport: true,
   },
   lab_supervisor: {
     dashboard: true,
@@ -69,6 +72,7 @@ const SURFACE_VISIBLE: Record<
     recycleBin: false,
     owner: false,
     patientHistory: true,
+    medicalReport: false,
   },
   technician: {
     dashboard: true,
@@ -82,6 +86,7 @@ const SURFACE_VISIBLE: Record<
     recycleBin: false,
     owner: false,
     patientHistory: false,
+    medicalReport: false,
   },
   technician_assistant: {
     dashboard: true,
@@ -95,6 +100,7 @@ const SURFACE_VISIBLE: Record<
     recycleBin: false,
     owner: false,
     patientHistory: false,
+    medicalReport: false,
   },
   intern: {
     dashboard: true,
@@ -108,6 +114,7 @@ const SURFACE_VISIBLE: Record<
     recycleBin: false,
     owner: false,
     patientHistory: false,
+    medicalReport: false,
   },
   storekeeper: {
     dashboard: true,
@@ -121,6 +128,7 @@ const SURFACE_VISIBLE: Record<
     recycleBin: false,
     owner: false,
     patientHistory: false,
+    medicalReport: false,
   },
   accounts: {
     dashboard: true,
@@ -134,6 +142,7 @@ const SURFACE_VISIBLE: Record<
     recycleBin: false,
     owner: false,
     patientHistory: false,
+    medicalReport: false,
   },
 };
 
@@ -143,9 +152,10 @@ describe("SURFACES declaration", () => {
     expect([...used].sort()).toEqual([...CAPABILITIES].sort());
   });
 
-  it("keeps recycle bin and patient history out of primary nav", () => {
+  it("keeps recycle bin, patient history, and medical report out of primary nav", () => {
     expect(surfaceById("recycleBin").primaryNav).toBe(false);
     expect(surfaceById("patientHistory").primaryNav).toBe(false);
+    expect(surfaceById("medicalReport").primaryNav).toBe(false);
   });
 
   it("splits settings into catalogue and clinic admin surfaces", () => {

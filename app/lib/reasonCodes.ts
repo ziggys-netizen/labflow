@@ -46,6 +46,14 @@ export const AMENDMENT_CODES: ReasonCode[] = [
   { code: "other", label: "Other" },
 ];
 
+export const REPORT_AMENDMENT_CODES: ReasonCode[] = [
+  { code: "transcription_error", label: "Transcription error" },
+  { code: "wrong_information", label: "Wrong information entered" },
+  { code: "wrong_patient", label: "Wrong patient" },
+  { code: "clinical_update", label: "Clinical update since finalizing" },
+  { code: "other", label: "Other" },
+];
+
 export const SELF_RELEASE_CODES: ReasonCode[] = [
   { code: "sole_approver_on_duty", label: "Sole approver on duty" },
   { code: "urgent_clinical_need", label: "Urgent clinical need" },

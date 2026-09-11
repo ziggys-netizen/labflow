@@ -89,6 +89,9 @@ export const AUDIT_ACTIONS = [
   "roster.exceptionCreate",
   "roster.exceptionDelete",
   "terms.accept",
+  "medicalReport.finalized",
+  "medicalReport.amended",
+  "medicalReport.printed",
   "fixture.adult_hl_seeded",
   "fixture.green_aid_isolation_seeded",
 ] as const;

@@ -16,6 +16,7 @@ import {
   canApproveResults,
   canDeletePatient,
   canEditTestCatalogue,
+  canManageMedicalReports,
   canViewDashboard,
   canViewInventory,
   canViewOrders,
@@ -36,6 +37,7 @@ export const CAPABILITIES = [
   "restore:records",
   "platform:owner",
   "view:patientHistory",
+  "manage:medicalReport",
 ] as const;
 
 export type Capability = (typeof CAPABILITIES)[number];
@@ -51,7 +53,8 @@ export type SurfaceId =
   | "clinicAdmin"
   | "recycleBin"
   | "owner"
-  | "patientHistory";
+  | "patientHistory"
+  | "medicalReport";
 
 export type Surface = {
   id: SurfaceId;
@@ -86,6 +89,13 @@ export const SURFACES: readonly Surface[] = [
     capability: "view:patientHistory",
     primaryNav: false,
   },
+  {
+    id: "medicalReport",
+    path: "/patients/:patientId/report",
+    label: "Medical report",
+    capability: "manage:medicalReport",
+    primaryNav: false,
+  },
 ] as const;
 
 const CAPABILITY_PREDICATES: Record<Capability, (role: string | null | undefined) => boolean> = {
@@ -100,6 +110,7 @@ const CAPABILITY_PREDICATES: Record<Capability, (role: string | null | undefined
   "restore:records": canDeletePatient,
   "platform:owner": (role) => role === "owner",
   "view:patientHistory": canApproveResults,
+  "manage:medicalReport": canManageMedicalReports,
 };
 
 /** Single capability check used by nav filtering and route guards. */

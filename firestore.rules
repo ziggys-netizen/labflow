@@ -272,6 +272,12 @@ service cloud.firestore {
              || (isApproved() && callerRole() in ["lab_manager", "lab_supervisor"]);
     }
 
+    // canManageMedicalReports: owner, clinic_admin, lab_manager
+    function canManageMedicalReportsRole() {
+      return isOwner()
+             || (isApproved() && callerRole() in ["clinic_admin", "lab_manager"]);
+    }
+
     // canDeletePatient: owner, clinic_admin, lab_manager
     function canDeletePatientRole() {
       return isOwner()
@@ -420,6 +426,33 @@ service cloud.firestore {
       allow list: if patientDataGet();
       allow create: if patientDataCreate();
       allow update: if patientDataUpdate();
+      allow delete: if false;
+    }
+
+    // ---------- medical reports ----------
+    // Structured clinical report (SOAP-style) for a patient, separate from
+    // lab results — owner / clinic_admin / lab_manager only, both to read
+    // and to write. Draft is freely editable; once status is "final" it
+    // cannot revert to "draft" (further edits append a version instead —
+    // enforced in app/lib/medicalReport.ts, not re-validated field-by-field
+    // here, matching how orders/testCatalog are not field-validated either).
+
+    function medicalReportDataGet() {
+      return clinicScopedGet(resource.data) && canManageMedicalReportsRole();
+    }
+
+    function medicalReportLockOk() {
+      return resource.data.get("status", "draft") != "final"
+             || request.resource.data.get("status", "") == "final";
+    }
+
+    match /medicalReports/{id} {
+      allow get: if medicalReportDataGet();
+      allow list: if medicalReportDataGet();
+      allow create: if clinicalCreate() && canManageMedicalReportsRole();
+      allow update: if clinicalUpdate()
+                     && canManageMedicalReportsRole()
+                     && medicalReportLockOk();
       allow delete: if false;
     }
 

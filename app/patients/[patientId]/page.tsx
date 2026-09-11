@@ -13,6 +13,7 @@ import { isOwner } from "../../lib/clinicScope";
 import { isPatientDeleted } from "../../lib/patientSoftDelete";
 import {
   canApproveResults,
+  canManageMedicalReports,
   canViewOwnRegisteredPatients,
   canViewPatients,
   roleLabel,
@@ -23,6 +24,7 @@ import IconButton from "../../lib/IconButton";
 import PrintIcon from "../../lib/PrintIcon";
 import { ICON_ACTION_LABELS } from "../../lib/iconAction";
 import { patientHistoryHref } from "../../lib/patientHistory";
+import { medicalReportHref } from "../../lib/medicalReport";
 
 /**
  * Identity page for fields that left the patient list (E1).
@@ -137,6 +139,14 @@ function PatientRecordContent() {
                     className="lf-touch inline-flex items-center justify-center rounded-lf-md border border-lf-line bg-lf-surface px-3 text-sm font-medium text-lf-ink hover:bg-lf-surface-2"
                   >
                     History
+                  </Link>
+                )}
+                {canManageMedicalReports(role) && (
+                  <Link
+                    href={medicalReportHref(patientId)}
+                    className="lf-touch inline-flex items-center justify-center rounded-lf-md border border-lf-line bg-lf-surface px-3 text-sm font-medium text-lf-ink hover:bg-lf-surface-2"
+                  >
+                    Medical report
                   </Link>
                 )}
                 <IconButton label={ICON_ACTION_LABELS.print} href={`/patients/${patientId}/print`}>

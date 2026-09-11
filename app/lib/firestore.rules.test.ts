@@ -512,6 +512,96 @@ describe("firestore rules — J1 role gates", () => {
   });
 });
 
+describe("firestore rules — medical reports", () => {
+  const DRAFT = {
+    clinicId: MEDIC_AID,
+    patientId: FIXTURE.patient,
+    status: "draft",
+    chiefComplaint: "Fever",
+    findings: "",
+    assessment: "",
+    plan: "",
+  };
+
+  it("technician cannot create, get, or list medical reports", async () => {
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(setDoc(doc(db, "medicalReports", "report-medic-tech-create"), DRAFT));
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "medicalReports", "report-medic-tech-read"), DRAFT);
+    });
+    await assertFails(getDoc(doc(db, "medicalReports", "report-medic-tech-read")));
+    await assertFails(getDocs(query(collection(db, "medicalReports"), where("clinicId", "==", MEDIC_AID))));
+  });
+
+  it("lab_manager can create a draft and finalize it", async () => {
+    const db = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertSucceeds(setDoc(doc(db, "medicalReports", "report-medic-mgr"), DRAFT));
+    await assertSucceeds(
+      updateDoc(doc(db, "medicalReports", "report-medic-mgr"), {
+        status: "final",
+        findings: "Temp 38.9C",
+        assessment: "Suspected malaria",
+        plan: "Start ACT",
+        currentVersion: 1,
+        versions: [{ version: 1, at: "2026-09-11T10:00:00.000Z" }],
+      })
+    );
+  });
+
+  it("clinic_admin and owner can get a medical report", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "medicalReports", "report-medic-readable"), DRAFT);
+    });
+    const adminDb = testEnv.authenticatedContext(UID.adminMedicAid).firestore();
+    await assertSucceeds(getDoc(doc(adminDb, "medicalReports", "report-medic-readable")));
+    const ownerDb = testEnv.authenticatedContext(UID.owner).firestore();
+    await assertSucceeds(getDoc(doc(ownerDb, "medicalReports", "report-medic-readable")));
+  });
+
+  it("a clinic_admin from another clinic cannot read or write it", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "medicalReports", "report-medic-cross-clinic"), DRAFT);
+    });
+    const db = testEnv.authenticatedContext(UID.adminGreenAid).firestore();
+    await assertFails(getDoc(doc(db, "medicalReports", "report-medic-cross-clinic")));
+    await assertFails(updateDoc(doc(db, "medicalReports", "report-medic-cross-clinic"), { findings: "x" }));
+  });
+
+  it("a finalized report cannot revert to draft", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "medicalReports", "report-medic-final"), {
+        ...DRAFT,
+        status: "final",
+        findings: "Temp 38.9C",
+        assessment: "Suspected malaria",
+        plan: "Start ACT",
+        currentVersion: 1,
+        versions: [{ version: 1, at: "2026-09-11T10:00:00.000Z" }],
+      });
+    });
+    const db = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertFails(updateDoc(doc(db, "medicalReports", "report-medic-final"), { status: "draft" }));
+    await assertSucceeds(
+      updateDoc(doc(db, "medicalReports", "report-medic-final"), {
+        plan: "Refer to district hospital",
+        currentVersion: 2,
+        versions: [
+          { version: 1, at: "2026-09-11T10:00:00.000Z" },
+          { version: 2, at: "2026-09-12T08:00:00.000Z" },
+        ],
+      })
+    );
+  });
+
+  it("medical reports cannot be deleted by anyone", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "medicalReports", "report-medic-delete"), DRAFT);
+    });
+    const ownerDb = testEnv.authenticatedContext(UID.owner).firestore();
+    await assertFails(deleteDoc(doc(ownerDb, "medicalReports", "report-medic-delete")));
+  });
+});
+
 function auditPayload(actorUid: string, extra: Record<string, unknown> = {}) {
   return {
     clinicId: MEDIC_AID,

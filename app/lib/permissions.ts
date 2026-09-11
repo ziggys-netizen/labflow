@@ -239,6 +239,11 @@ export function canAccessClinicSettings(role: string | null | undefined) {
   return allows(role, "owner", "clinic_admin");
 }
 
+/** Medical report surface (/patients/[patientId]/report). Not a lab result — separate from canApproveResults. */
+export function canManageMedicalReports(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin", "lab_manager");
+}
+
 /**
  * Day's test counts and catalogue value. Aggregate only — no patient drill-down.
  * Lab roles that release still write the rollup; they use the clinical dashboard.
@@ -455,6 +460,7 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
   canViewDashboard,
   canViewOrders,
   canAccessClinicSettings,
+  canManageMedicalReports,
   canViewTestValueRollup,
   canExportData,
   canManageStaff,

@@ -50,6 +50,7 @@ const CHECKS = {
   canEditClinicProfile: permissions.canEditClinicProfile,
   canImportData: permissions.canImportData,
   canImportStaffPreApprovals: permissions.canImportStaffPreApprovals,
+  canManageMedicalReports: permissions.canManageMedicalReports,
   canDeletePatient: permissions.canDeletePatient,
   canExecuteErasure: permissions.canExecuteErasure,
   canViewInventory: permissions.canViewInventory,
@@ -91,6 +92,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canEditClinicProfile: true,
     canImportData: true,
     canImportStaffPreApprovals: true,
+    canManageMedicalReports: true,
     canDeletePatient: true,
     canExecuteErasure: true,
     canViewInventory: true,
@@ -124,6 +126,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canEditClinicProfile: true,
     canImportData: false,
     canImportStaffPreApprovals: true,
+    canManageMedicalReports: true,
     canDeletePatient: true,
     canExecuteErasure: false,
     canViewInventory: true,
@@ -157,6 +160,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canEditClinicProfile: false,
     canImportData: true,
     canImportStaffPreApprovals: false,
+    canManageMedicalReports: true,
     canDeletePatient: true,
     canExecuteErasure: false,
     canViewInventory: true,
@@ -165,6 +169,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   lab_supervisor: {
+    canManageMedicalReports: false,
     canRegisterPatient: true,
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
@@ -198,6 +203,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   technician: {
+    canManageMedicalReports: false,
     canRegisterPatient: true,
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
@@ -231,6 +237,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   technician_assistant: {
+    canManageMedicalReports: false,
     canRegisterPatient: true,
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
@@ -264,6 +271,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   intern: {
+    canManageMedicalReports: false,
     canRegisterPatient: true,
     canViewPatients: false,
     canViewOwnRegisteredPatients: true,
@@ -297,6 +305,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: false,
   },
   storekeeper: {
+    canManageMedicalReports: false,
     canRegisterPatient: false,
     canViewPatients: false,
     canViewOwnRegisteredPatients: false,
@@ -330,6 +339,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   accounts: {
+    canManageMedicalReports: false,
     canRegisterPatient: false,
     canViewPatients: false,
     canViewOwnRegisteredPatients: false,
@@ -363,6 +373,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: false,
   },
   pending: {
+    canManageMedicalReports: false,
     canRegisterPatient: false,
     canViewPatients: false,
     canViewOwnRegisteredPatients: false,
@@ -415,6 +426,7 @@ const SUPERVISOR_DIFFERS_FROM_MANAGER: Capability[] = [
   "canEditTestCatalogue",
   "canViewInventory",
   "canRecordStockMovement",
+  "canManageMedicalReports",
 ];
 
 describe("capability matrix", () => {
