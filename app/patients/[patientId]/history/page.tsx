@@ -182,6 +182,8 @@ function PatientHistoryContent() {
   const [catalog, setCatalog] = useState<LabTest[]>([]);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [reloadToken, setReloadToken] = useState(0);
   const [view, setView] = useState<HistoryLayout>("visit");
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -196,6 +198,9 @@ function PatientHistoryContent() {
 
   useEffect(() => {
     async function load() {
+      setLoading(true);
+      setNotFound(false);
+      setLoadError(null);
       try {
         const patientSnap = await docFromCacheOrServer(doc(db, "patients", patientId));
         if (!patientSnap.exists()) {
@@ -256,13 +261,13 @@ function PatientHistoryContent() {
         );
       } catch (err) {
         console.error(err);
-        setNotFound(true);
+        setLoadError(err instanceof Error ? err.message : "Unknown error.");
       } finally {
         setLoading(false);
       }
     }
     void load();
-  }, [patientId, role, clinicId]);
+  }, [patientId, role, clinicId, reloadToken]);
 
   const visits = useMemo(() => historyVisitRows(orders), [orders]);
   const cumulativeColumns = useMemo(() => historyCumulativeColumns(orders), [orders]);
@@ -441,6 +446,31 @@ function PatientHistoryContent() {
           <AppNav />
         </div>
         <p className="lf-shell py-8 text-lf-ink-2">Loading history...</p>
+      </main>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <main className="min-h-screen bg-lf-ground">
+        <div className="no-print">
+          <AppNav />
+        </div>
+        <div className="lf-shell flex flex-col gap-4 py-8">
+          <p className="text-lf-ink-2">Could not load patient history. {loadError}</p>
+          <div className="flex flex-wrap gap-3">
+            <button
+              type="button"
+              onClick={() => setReloadToken((n) => n + 1)}
+              className="lf-touch inline-flex items-center justify-center rounded-lf-md border border-lf-line bg-lf-surface px-4 text-sm font-medium text-lf-ink"
+            >
+              Retry
+            </button>
+            <Link href="/patients" className="lf-touch inline-flex items-center text-sm text-lf-accent">
+              Back to patients
+            </Link>
+          </div>
+        </div>
       </main>
     );
   }
