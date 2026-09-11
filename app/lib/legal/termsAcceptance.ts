@@ -6,6 +6,7 @@
 import { serverTimestamp, type FieldValue } from "firebase/firestore";
 import type { AuditActor, AuditLogWrite } from "../auditTypes";
 import { ACCEPTABLE_USE } from "./acceptableUse";
+import { requireResolvedTermsVersion } from "./termsGate";
 
 export const TERMS_ACCEPTANCES = "termsAcceptances";
 
@@ -66,11 +67,12 @@ export function termsAcceptancePayload(input: {
   version?: string;
   recordedAt?: string;
 }): TermsAcceptanceWrite {
+  const version = requireResolvedTermsVersion(input.version ?? ACCEPTABLE_USE.version);
   return {
     uid: input.uid,
     clinicId: input.clinicId,
     documentId: input.documentId ?? ACCEPTABLE_USE.id,
-    version: input.version ?? ACCEPTABLE_USE.version,
+    version,
     acceptedAt: serverTimestamp(),
     recordedAt: input.recordedAt ?? new Date().toISOString(),
   };

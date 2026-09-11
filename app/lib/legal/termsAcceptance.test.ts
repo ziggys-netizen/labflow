@@ -49,6 +49,16 @@ describe("termsAcceptancePayload", () => {
     expect(payload).not.toHaveProperty("email");
     expect(payload).not.toHaveProperty("displayName");
   });
+
+  it("refuses to build a payload without a resolved version", () => {
+    expect(() =>
+      termsAcceptancePayload({
+        uid: "uid-1",
+        clinicId: "clinicA",
+        version: "",
+      })
+    ).toThrow(/without a resolved version/);
+  });
 });
 
 describe("parseTermsAcceptance", () => {

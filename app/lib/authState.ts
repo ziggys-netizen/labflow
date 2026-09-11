@@ -22,7 +22,7 @@ import {
   TERMS_PATH,
   isOwnerExemptFromStaffTerms,
   isTermsReadablePath,
-  staffHasCurrentTerms,
+  termsGateSatisfied,
 } from "./legal/termsGate";
 import { capabilityRedirect, landingPathForRole } from "./permissions";
 
@@ -48,6 +48,12 @@ export type AuthStateInput = {
    * this field is not read for owner. Omit/`null` means no current acceptance.
    */
   acceptedTermsVersion?: string | null;
+  /**
+   * Terms lookup timed out with a cached acceptance of any version. Routing
+   * may proceed under that version until the network confirms; then this is
+   * cleared and a newer published version gates again.
+   */
+  termsTimeoutGrace?: boolean;
   /**
    * PIN record exists for this account at the active clinic.
    * Ignored until the PIN layer. Omit when only routing is needed.
@@ -102,6 +108,7 @@ export function sessionAuthInput(session: {
   clinicId: string | null;
   writeClinicId: string | null;
   acceptedTermsVersion?: string | null;
+  termsTimeoutGrace?: boolean;
 }): AuthStateInput {
   return {
     hasGoogleUser: Boolean(session.user),
@@ -110,6 +117,7 @@ export function sessionAuthInput(session: {
     clinicId: session.clinicId,
     writeClinicId: session.writeClinicId,
     acceptedTermsVersion: session.acceptedTermsVersion,
+    termsTimeoutGrace: session.termsTimeoutGrace,
   };
 }
 
@@ -168,7 +176,11 @@ function evaluatePinAndRoster(input: AuthStateInput): AuthStateDecision {
 function evaluateTermsThenPin(input: AuthStateInput): AuthStateDecision {
   if (
     !isOwnerExemptFromStaffTerms(input.role) &&
-    !staffHasCurrentTerms(input.acceptedTermsVersion, ACCEPTABLE_USE.version)
+    !termsGateSatisfied({
+      acceptedVersion: input.acceptedTermsVersion,
+      currentVersion: ACCEPTABLE_USE.version,
+      timeoutGrace: input.termsTimeoutGrace,
+    })
   ) {
     return beforePin(TERMS_PATH, "termsRequired");
   }

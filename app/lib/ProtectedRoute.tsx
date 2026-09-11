@@ -19,15 +19,17 @@ export default function ProtectedRoute({
   children: React.ReactNode;
   require?: RouteRequire;
 }) {
-  const { user, loading, role, bootstrapError, authOffline, retryBootstrap } = useAuth();
+  const { user, loading, role, bootstrapError, termsError, authOffline, retryBootstrap } = useAuth();
   const session = useSessionAuthInput();
   const router = useRouter();
   const pathname = usePathname();
   const hasRedirected = useRef(false);
   const lastDest = useRef<string | null | undefined>(undefined);
 
+  const gateError = bootstrapError || termsError;
+
   const dest =
-    loading || bootstrapError ? null : protectedRouteDestination(session, pathname, require);
+    loading || gateError ? null : protectedRouteDestination(session, pathname, require);
 
   useEffect(() => {
     if (lastDest.current !== dest) {
@@ -37,12 +39,12 @@ export default function ProtectedRoute({
   }, [dest]);
 
   useEffect(() => {
-    if (loading || bootstrapError) return;
+    if (loading || gateError) return;
     if (dest && pathname !== dest && !hasRedirected.current) {
       hasRedirected.current = true;
       router.replace(dest);
     }
-  }, [loading, bootstrapError, dest, pathname, router]);
+  }, [loading, gateError, dest, pathname, router]);
 
   if (loading) {
     return (
@@ -52,10 +54,10 @@ export default function ProtectedRoute({
     );
   }
 
-  if (bootstrapError) {
+  if (gateError) {
     return (
       <main className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
-        <p className="text-gray-800 max-w-md">{bootstrapError}</p>
+        <p className="text-gray-800 max-w-md">{gateError}</p>
         <button
           type="button"
           onClick={retryBootstrap}

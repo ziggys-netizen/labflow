@@ -70,6 +70,50 @@ export function staffHasCurrentTerms(
   return isAcceptedTermsCurrent(acceptedVersion, currentVersion);
 }
 
+/**
+ * Terms lookup timed out. A cached acceptance of any version lets the session
+ * proceed; no cache means first-login territory — show unreachable, not the form.
+ */
+export type TermsTimeoutDecision =
+  | { outcome: "proceed"; cachedVersion: string }
+  | { outcome: "unreachable" };
+
+export function decideTermsTimeout(
+  cachedVersion: string | null | undefined
+): TermsTimeoutDecision {
+  const version = typeof cachedVersion === "string" ? cachedVersion.trim() : "";
+  if (version) return { outcome: "proceed", cachedVersion: version };
+  return { outcome: "unreachable" };
+}
+
+/**
+ * While a terms lookup is still outstanding past the deadline, any previously
+ * accepted version (including older than current) satisfies the routing gate.
+ * Cleared when the network confirms; then staffHasCurrentTerms applies again.
+ */
+export function termsGateSatisfied(input: {
+  acceptedVersion: string | null | undefined;
+  currentVersion?: string;
+  timeoutGrace?: boolean;
+}): boolean {
+  if (!input.acceptedVersion) return false;
+  if (input.timeoutGrace) return true;
+  return staffHasCurrentTerms(input.acceptedVersion, input.currentVersion);
+}
+
+/** Submittable only when the document version is known. Null/blank must not write. */
+export function canSubmitTermsAcceptance(version: string | null | undefined): boolean {
+  return typeof version === "string" && version.trim().length > 0;
+}
+
+/** Throws when version is missing — acceptance without a version proves nothing. */
+export function requireResolvedTermsVersion(version: string | null | undefined): string {
+  if (!canSubmitTermsAcceptance(version)) {
+    throw new Error("Cannot record terms acceptance without a resolved version");
+  }
+  return (version as string).trim();
+}
+
 export function newestAcceptedVersion(
   records: readonly TermsAcceptanceRecord[],
   documentId: string = ACCEPTABLE_USE.id

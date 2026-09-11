@@ -182,6 +182,26 @@ describe("evaluateAuthState", () => {
     });
   });
 
+  it("timeout grace with any cached version proceeds past terms until confirmed", () => {
+    const decision = decide({
+      role: "technician",
+      status: "approved",
+      clinicId: "c1",
+      writeClinicId: "c1",
+      acceptedTermsVersion: "0.9",
+      termsTimeoutGrace: true,
+      hasPin: true,
+      pinUnlocked: true,
+      rosterAllowed: true,
+    });
+    expect(decision).toMatchObject({
+      destination: null,
+      layer: "ok",
+      pinApplies: true,
+      rosterApplies: true,
+    });
+  });
+
   it("unapproved / no clinic is not asked for terms", () => {
     expect(
       decide({

@@ -12,6 +12,7 @@ import { recordTermsAcceptance } from "../lib/legal/termsAcceptanceStore";
 import {
   TERMS_ACCEPT_CHECKBOX_LABEL,
   TERMS_DECLINE_MESSAGE,
+  canSubmitTermsAcceptance,
   formatTermsUpdateNotice,
   persistTermsDeclineNotice,
   termsRecordedCaption,
@@ -24,8 +25,12 @@ function TermsGateContent() {
   const [accepted, setAccepted] = useState(false);
   const [busy, setBusy] = useState(false);
 
+  const documentVersion = ACCEPTABLE_USE.version;
+  const versionKnown = canSubmitTermsAcceptance(documentVersion);
+  const canSubmit = versionKnown && accepted && !busy;
+
   async function handleAccept() {
-    if (!user || !clinicId || !accepted) return;
+    if (!user || !clinicId || !canSubmit) return;
     const actor = actorFromAuth(user, role, shift);
     if (!actor) return;
     setBusy(true);
@@ -34,6 +39,7 @@ function TermsGateContent() {
         uid: user.uid,
         clinicId,
         actor,
+        version: documentVersion,
       });
     } catch (err) {
       console.error(err);
@@ -43,7 +49,8 @@ function TermsGateContent() {
     router.replace(
       continuePathAfterAuth({
         ...session,
-        acceptedTermsVersion: ACCEPTABLE_USE.version,
+        acceptedTermsVersion: documentVersion,
+        termsTimeoutGrace: false,
       })
     );
   }
@@ -60,19 +67,26 @@ function TermsGateContent() {
         <h1 className="text-2xl font-semibold text-lf-ink">Before you start</h1>
         <p className="text-sm text-lf-ink-2">{formatTermsUpdateNotice()}</p>
         <TermsDocument />
-        <label className="flex items-start gap-3 text-sm text-lf-ink">
-          <input
-            type="checkbox"
-            checked={accepted}
-            onChange={(e) => setAccepted(e.target.checked)}
-            className="mt-1 size-4"
-          />
-          <span>{TERMS_ACCEPT_CHECKBOX_LABEL}</span>
-        </label>
+        {!versionKnown ? (
+          <p className="text-sm text-lf-ink-2">
+            These terms cannot be accepted until their version is known. Speak to your clinic
+            administrator.
+          </p>
+        ) : (
+          <label className="flex items-start gap-3 text-sm text-lf-ink">
+            <input
+              type="checkbox"
+              checked={accepted}
+              onChange={(e) => setAccepted(e.target.checked)}
+              className="mt-1 size-4"
+            />
+            <span>{TERMS_ACCEPT_CHECKBOX_LABEL}</span>
+          </label>
+        )}
         <div className="flex flex-wrap items-center gap-3">
           <button
             type="button"
-            disabled={!accepted || busy}
+            disabled={!canSubmit}
             onClick={() => void handleAccept()}
             className="rounded-lg bg-gray-900 px-4 py-2 text-sm font-medium text-white disabled:opacity-50"
           >
@@ -88,9 +102,11 @@ function TermsGateContent() {
           </button>
         </div>
         <p className="sr-only">{TERMS_DECLINE_MESSAGE}</p>
-        <p className="font-mono text-[11px] uppercase text-lf-ink-3">
-          {termsRecordedCaption()}
-        </p>
+        {versionKnown ? (
+          <p className="font-mono text-[11px] uppercase text-lf-ink-3">
+            {termsRecordedCaption(documentVersion)}
+          </p>
+        ) : null}
       </div>
     </main>
   );

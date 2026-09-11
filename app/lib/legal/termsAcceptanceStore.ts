@@ -1,10 +1,10 @@
-import { collection, doc, getDoc, getDocs, query, where } from "firebase/firestore";
+import { collection, doc, getDoc, getDocFromCache, getDocs, getDocsFromCache, query, where } from "firebase/firestore";
 import { safeLogAudit } from "../audit";
 import type { AuditActor } from "../auditTypes";
 import { db } from "../firebase";
 import { trackedSetDoc } from "../trackedWrites";
 import { ACCEPTABLE_USE } from "./acceptableUse";
-import { newestAcceptedVersion } from "./termsGate";
+import { newestAcceptedVersion, requireResolvedTermsVersion } from "./termsGate";
 import {
   TERMS_ACCEPTANCES,
   parseTermsAcceptance,
@@ -68,6 +68,40 @@ export async function getNewestAcceptedTermsVersion(
   }
 }
 
+/**
+ * Cache-only lookup. Fails fast when the IndexedDB persistence has nothing.
+ * Used so a terms timeout can proceed under a previously accepted version.
+ */
+export async function getNewestAcceptedTermsVersionFromCache(
+  uid: string,
+  documentId: string = ACCEPTABLE_USE.id
+): Promise<string | null> {
+  if (!uid) return null;
+  try {
+    const id = termsAcceptanceDocId(uid, documentId, ACCEPTABLE_USE.version);
+    const snap = await getDocFromCache(doc(db, TERMS_ACCEPTANCES, id));
+    if (snap.exists()) {
+      const row = parseTermsAcceptance(snap.id, snap.data() as Record<string, unknown>);
+      if (row?.version) return row.version;
+    }
+  } catch {
+    // Cold cache for the current-version doc — try the uid query cache.
+  }
+  try {
+    const snap = await getDocsFromCache(
+      query(collection(db, TERMS_ACCEPTANCES), where("uid", "==", uid))
+    );
+    const rows: TermsAcceptanceRecord[] = [];
+    for (const d of snap.docs) {
+      const row = parseTermsAcceptance(d.id, d.data() as Record<string, unknown>);
+      if (row) rows.push(row);
+    }
+    return newestAcceptedVersion(rows, documentId);
+  } catch {
+    return null;
+  }
+}
+
 /** Clinic-scoped list. Caller must be owner or that clinic's admin (rules). */
 export async function loadClinicTermsAcceptances(clinicId: string): Promise<TermsAcceptanceRecord[]> {
   if (!clinicId) return [];
@@ -96,7 +130,7 @@ export async function recordTermsAcceptance(input: {
   recordedAt?: string;
 }): Promise<{ id: string; created: boolean }> {
   const documentId = input.documentId ?? ACCEPTABLE_USE.id;
-  const version = input.version ?? ACCEPTABLE_USE.version;
+  const version = requireResolvedTermsVersion(input.version ?? ACCEPTABLE_USE.version);
   const id = termsAcceptanceDocId(input.uid, documentId, version);
   let alreadyExists = false;
   try {

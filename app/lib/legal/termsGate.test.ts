@@ -6,13 +6,17 @@ import {
   TERMS_DECLINE_MESSAGE,
   TERMS_PATH,
   acceptedVersionForUid,
+  canSubmitTermsAcceptance,
+  decideTermsTimeout,
   formatTermsEffectiveDate,
   formatTermsUpdateNotice,
   isOwnerExemptFromStaffTerms,
   newestAcceptedVersion,
+  requireResolvedTermsVersion,
   staffHasCurrentTerms,
   staffTermsIndicator,
   staffTermsIndicatorLabel,
+  termsGateSatisfied,
   termsRecordedCaption,
 } from "./termsGate";
 
@@ -44,6 +48,51 @@ describe("staffHasCurrentTerms", () => {
     expect(staffHasCurrentTerms("0.9")).toBe(false);
     expect(staffHasCurrentTerms(ACCEPTABLE_USE.version)).toBe(true);
     expect(staffHasCurrentTerms("1.1", "1.0")).toBe(true);
+  });
+});
+
+describe("terms timeout decision", () => {
+  it("cached acceptance + timeout proceeds under that version", () => {
+    expect(decideTermsTimeout("0.9")).toEqual({
+      outcome: "proceed",
+      cachedVersion: "0.9",
+    });
+    expect(decideTermsTimeout(ACCEPTABLE_USE.version)).toEqual({
+      outcome: "proceed",
+      cachedVersion: ACCEPTABLE_USE.version,
+    });
+    expect(
+      termsGateSatisfied({
+        acceptedVersion: "0.9",
+        timeoutGrace: true,
+      })
+    ).toBe(true);
+  });
+
+  it("no cached acceptance + timeout is unreachable (not the terms form)", () => {
+    expect(decideTermsTimeout(null)).toEqual({ outcome: "unreachable" });
+    expect(decideTermsTimeout(undefined)).toEqual({ outcome: "unreachable" });
+    expect(decideTermsTimeout("")).toEqual({ outcome: "unreachable" });
+    expect(decideTermsTimeout("   ")).toEqual({ outcome: "unreachable" });
+    expect(
+      termsGateSatisfied({
+        acceptedVersion: null,
+        timeoutGrace: true,
+      })
+    ).toBe(false);
+  });
+
+  it("null version never yields a submittable form", () => {
+    expect(canSubmitTermsAcceptance(null)).toBe(false);
+    expect(canSubmitTermsAcceptance(undefined)).toBe(false);
+    expect(canSubmitTermsAcceptance("")).toBe(false);
+    expect(canSubmitTermsAcceptance("   ")).toBe(false);
+    expect(canSubmitTermsAcceptance(ACCEPTABLE_USE.version)).toBe(true);
+    expect(() => requireResolvedTermsVersion(null)).toThrow(
+      /without a resolved version/
+    );
+    expect(() => requireResolvedTermsVersion("")).toThrow(/without a resolved version/);
+    expect(requireResolvedTermsVersion(" 1.0 ")).toBe("1.0");
   });
 });
 

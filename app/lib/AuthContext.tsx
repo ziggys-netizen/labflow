@@ -14,8 +14,11 @@ import {
 } from "./membership";
 import { writeClinicId as resolveWriteClinicId } from "./clinicScope";
 import { ACCEPTABLE_USE } from "./legal/acceptableUse";
-import { isOwnerExemptFromStaffTerms } from "./legal/termsGate";
-import { getNewestAcceptedTermsVersion } from "./legal/termsAcceptanceStore";
+import { isOwnerExemptFromStaffTerms, decideTermsTimeout, staffHasCurrentTerms } from "./legal/termsGate";
+import {
+  getNewestAcceptedTermsVersion,
+  getNewestAcceptedTermsVersionFromCache,
+} from "./legal/termsAcceptanceStore";
 import { logPermissionsMatrix } from "./permissions";
 import { forceTokenRefresh, syncCustomClaims } from "./authApi";
 import { sessionAuthInput, type AuthStateInput } from "./authState";
@@ -88,6 +91,11 @@ interface AuthContextType {
    */
   bootstrapError: string | null;
   /**
+   * Terms acceptance lookup timed out with no cached acceptance. Same copy and
+   * Retry as bootstrapError — first login must not open a versionless form.
+   */
+  termsError: string | null;
+  /**
    * True while the session is running on a cached user doc and has not yet
    * confirmed identity with the server.
    */
@@ -99,6 +107,11 @@ interface AuthContextType {
    * Not used for the owner (exempt).
    */
   acceptedTermsVersion: string | null;
+  /**
+   * Terms lookup timed out with a cached acceptance. Session may proceed under
+   * that version until the network confirms a newer published version.
+   */
+  termsTimeoutGrace: boolean;
   /** Optimistic: current `ACCEPTABLE_USE.version` is accepted (offline-safe). */
   acceptCurrentTerms: () => void;
   login: () => Promise<void>;
@@ -133,9 +146,11 @@ const AuthContext = createContext<AuthContextType>({
   popupBlocked: false,
   authError: null,
   bootstrapError: null,
+  termsError: null,
   authOffline: false,
   retryBootstrap: () => {},
   acceptedTermsVersion: null,
+  termsTimeoutGrace: false,
   acceptCurrentTerms: () => {},
   login: async () => {},
   logout: async () => {},
@@ -149,10 +164,20 @@ export function useAuth() {
 
 /** Auth machine input including the terms layer. PIN/roster stay omitted. */
 export function useSessionAuthInput(): AuthStateInput {
-  const { user, role, status, clinicId, writeClinicId, acceptedTermsVersion } = useAuth();
+  const { user, role, status, clinicId, writeClinicId, acceptedTermsVersion, termsTimeoutGrace } =
+    useAuth();
   return useMemo(
-    () => sessionAuthInput({ user, role, status, clinicId, writeClinicId, acceptedTermsVersion }),
-    [user, role, status, clinicId, writeClinicId, acceptedTermsVersion]
+    () =>
+      sessionAuthInput({
+        user,
+        role,
+        status,
+        clinicId,
+        writeClinicId,
+        acceptedTermsVersion,
+        termsTimeoutGrace,
+      }),
+    [user, role, status, clinicId, writeClinicId, acceptedTermsVersion, termsTimeoutGrace]
   );
 }
 
@@ -171,10 +196,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [actingClinicNames, setActingClinicNames] = useState<Record<string, string>>({});
   const [identityLoading, setIdentityLoading] = useState(true);
   const [acceptedTermsVersion, setAcceptedTermsVersion] = useState<string | null>(null);
+  const [termsTimeoutGrace, setTermsTimeoutGrace] = useState(false);
   const [termsChecked, setTermsChecked] = useState(false);
   const [popupBlocked, setPopupBlocked] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
   const [bootstrapError, setBootstrapError] = useState<string | null>(null);
+  const [termsError, setTermsError] = useState<string | null>(null);
   const [authOffline, setAuthOffline] = useState(false);
   const [bootstrapEpoch, setBootstrapEpoch] = useState(0);
   const unsubDocRef = useRef<(() => void) | null>(null);
@@ -204,6 +231,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       identityReceivedRef.current = true;
       if (isOwnerExemptFromStaffTerms(next.role) || next.status !== "approved" || !next.clinicId) {
         setAcceptedTermsVersion(null);
+        setTermsTimeoutGrace(false);
         setTermsChecked(true);
       }
       if (next.role === "owner") {
@@ -227,9 +255,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   const retryBootstrap = useCallback(() => {
     setBootstrapError(null);
+    setTermsError(null);
     setAuthOffline(false);
     setIdentityLoading(true);
     setTermsChecked(false);
+    setTermsTimeoutGrace(false);
     identityReceivedRef.current = false;
     setBootstrapEpoch((n) => n + 1);
   }, []);
@@ -247,8 +277,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         identityReceivedRef.current = false;
         setIdentity(EMPTY_IDENTITY);
         setAcceptedTermsVersion(null);
+        setTermsTimeoutGrace(false);
         setTermsChecked(true);
         setBootstrapError(null);
+        setTermsError(null);
         setAuthOffline(false);
         clearActingClinic();
         setIdentityLoading(false);
@@ -259,6 +291,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setIdentityLoading(true);
       setTermsChecked(false);
       setBootstrapError(null);
+      setTermsError(null);
       setAuthOffline(false);
 
       bootstrapTimerRef.current = setTimeout(() => {
@@ -422,46 +455,87 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!user) {
       setAcceptedTermsVersion(null);
+      setTermsTimeoutGrace(false);
       setTermsChecked(true);
+      setTermsError(null);
       return;
     }
     if (isOwnerExemptFromStaffTerms(identity.role) || identity.status !== "approved" || !identity.clinicId) {
       setAcceptedTermsVersion(null);
+      setTermsTimeoutGrace(false);
       setTermsChecked(true);
+      setTermsError(null);
       return;
     }
     let cancelled = false;
+    let settled = false;
+    let termsTimer: ReturnType<typeof setTimeout> | null = null;
     setTermsChecked(false);
-    const termsTimer = setTimeout(() => {
-      if (!cancelled) {
+    setTermsTimeoutGrace(false);
+    setTermsError(null);
+
+    const finishResolved = (version: string | null) => {
+      if (cancelled || settled) return;
+      settled = true;
+      if (termsTimer) clearTimeout(termsTimer);
+      setAcceptedTermsVersion(version);
+      setTermsTimeoutGrace(false);
+      setTermsChecked(true);
+      setTermsError(null);
+    };
+
+    const finishTimeout = (cachedVersion: string | null) => {
+      if (cancelled || settled) return;
+      settled = true;
+      if (termsTimer) clearTimeout(termsTimer);
+      const decision = decideTermsTimeout(cachedVersion);
+      if (decision.outcome === "proceed") {
+        setAcceptedTermsVersion(decision.cachedVersion);
+        setTermsTimeoutGrace(!staffHasCurrentTerms(decision.cachedVersion));
         setTermsChecked(true);
+        setTermsError(null);
+      } else {
+        setAcceptedTermsVersion(null);
+        setTermsTimeoutGrace(false);
+        setTermsChecked(true);
+        setTermsError(AUTH_BOOTSTRAP_UNREACHABLE);
       }
-    }, AUTH_BOOTSTRAP_DEADLINE_MS);
-    getNewestAcceptedTermsVersion(user.uid)
-      .then((version) => {
-        if (!cancelled) {
-          setAcceptedTermsVersion(version);
-          setTermsChecked(true);
+    };
+
+    void (async () => {
+      // Cache first so a timeout decision never races ahead of IndexedDB.
+      const cachedVersion = await getNewestAcceptedTermsVersionFromCache(user.uid);
+      if (cancelled) return;
+      if (cachedVersion) {
+        setAcceptedTermsVersion(cachedVersion);
+        if (staffHasCurrentTerms(cachedVersion)) {
+          finishResolved(cachedVersion);
+          return;
         }
-      })
-      .catch((err) => {
+      }
+
+      termsTimer = setTimeout(() => {
+        finishTimeout(cachedVersion);
+      }, AUTH_BOOTSTRAP_DEADLINE_MS);
+
+      try {
+        const version = await getNewestAcceptedTermsVersion(user.uid);
+        finishResolved(version);
+      } catch (err) {
         console.error(err);
-        if (!cancelled) {
-          setAcceptedTermsVersion(null);
-          setTermsChecked(true);
-        }
-      })
-      .finally(() => {
-        clearTimeout(termsTimer);
-      });
+        finishTimeout(cachedVersion);
+      }
+    })();
+
     return () => {
       cancelled = true;
-      clearTimeout(termsTimer);
+      if (termsTimer) clearTimeout(termsTimer);
     };
   }, [user, identity.role, identity.status, identity.clinicId, bootstrapEpoch]);
 
   const acceptCurrentTerms = useCallback(() => {
     setAcceptedTermsVersion(ACCEPTABLE_USE.version);
+    setTermsTimeoutGrace(false);
     setTermsChecked(true);
   }, []);
 
@@ -492,9 +566,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         popupBlocked,
         authError,
         bootstrapError,
+        termsError,
         authOffline,
         retryBootstrap,
         acceptedTermsVersion,
+        termsTimeoutGrace,
         acceptCurrentTerms,
         login,
         logout,
