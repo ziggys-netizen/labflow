@@ -13,13 +13,16 @@ import {
   doc,
   getDoc,
   getDocs,
+  increment,
   query,
   serverTimestamp,
   setDoc,
   updateDoc,
   where,
+  writeBatch,
 } from "firebase/firestore";
-import { afterAll, beforeAll, describe, it } from "vitest";
+import { rollupMergeFields } from "./dailyTestValueRollup";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import firebaseJson from "../../firebase.json";
 
 const PROJECT_ID = "demo-labflow";
@@ -509,6 +512,85 @@ describe("firestore rules — J1 role gates", () => {
     await assertSucceeds(
       updateDoc(doc(db, "orders", "order-medic-unrelease-mgr"), { status: "needs_correction" })
     );
+  });
+});
+
+describe("firestore rules — daily test value rollup writes", () => {
+  function contribution(date: string, code = "FBC") {
+    return {
+      clinicId: MEDIC_AID,
+      date,
+      testCount: 1,
+      valueOfTestsOrdered: 10,
+      lines: [{ code, name: "Full Blood Count", count: 1, value: 10 }],
+    };
+  }
+
+  it("owner can write a rollup with rollupMergeFields's real (nested) shape", async () => {
+    const db = testEnv.authenticatedContext(UID.owner).firestore();
+    const rollupRef = doc(db, "dailyTestValueRollups", `${MEDIC_AID}_2026-09-11`);
+    await assertSucceeds(
+      setDoc(rollupRef, rollupMergeFields(contribution("2026-09-11"), "2026-09-11T10:00:00.000Z", increment), {
+        merge: true,
+      })
+    );
+  });
+
+  it("a second same-day release accumulates instead of overwriting", async () => {
+    const db = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    const rollupRef = doc(db, "dailyTestValueRollups", `${MEDIC_AID}_2026-09-13`);
+    await assertSucceeds(
+      setDoc(
+        rollupRef,
+        rollupMergeFields(contribution("2026-09-13"), "2026-09-13T09:00:00.000Z", increment),
+        { merge: true }
+      )
+    );
+    await assertSucceeds(
+      setDoc(
+        rollupRef,
+        rollupMergeFields(contribution("2026-09-13"), "2026-09-13T11:00:00.000Z", increment),
+        { merge: true }
+      )
+    );
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      const snap = await getDoc(doc(context.firestore(), "dailyTestValueRollups", `${MEDIC_AID}_2026-09-13`));
+      const data = snap.data()!;
+      expect(data.testCount).toBe(2);
+      expect(data.valueOfTestsOrdered).toBe(20);
+      expect(data.byTest.FBC.count).toBe(2);
+      expect(data.byTest.FBC.value).toBe(20);
+    });
+  });
+
+  it("release batch (order + rollup together) matches commitRelease's real write shape", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "orders", "order-medic-release-batch"), {
+        clinicId: MEDIC_AID,
+        patientId: FIXTURE.patient,
+        status: "results_entered",
+        results: { FBC: { Hb: "12" } },
+      });
+    });
+    const db = testEnv.authenticatedContext(UID.owner).firestore();
+    const batch = writeBatch(db);
+    batch.set(
+      doc(db, "orders", "order-medic-release-batch"),
+      {
+        status: "approved",
+        reviewedBy: "owner@lab.test",
+        reviewedAt: "2026-09-11T10:00:00.000Z",
+        valueRollupAppliedAt: "2026-09-11T10:00:00.000Z",
+        actingAsOwner: true,
+      },
+      { merge: true }
+    );
+    batch.set(
+      doc(db, "dailyTestValueRollups", `${MEDIC_AID}_2026-09-14`),
+      rollupMergeFields(contribution("2026-09-14"), "2026-09-11T10:00:00.000Z", increment),
+      { merge: true }
+    );
+    await assertSucceeds(batch.commit());
   });
 });
 

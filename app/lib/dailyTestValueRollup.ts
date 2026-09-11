@@ -93,15 +93,23 @@ function asFiniteNumber(value: unknown): number | null {
   return value;
 }
 
-function hasPatientLinkedKey(keys: Iterable<string>): boolean {
+function hasPatientLinkedKey(keys: Iterable<string>, allow: ReadonlySet<string> = new Set()): boolean {
   const forbidden = new Set<string>(ROLLUP_PATIENT_LINKED_KEYS);
   for (const key of keys) {
+    if (allow.has(key)) continue;
     if (forbidden.has(key)) return true;
   }
   return false;
 }
 
-/** True when a payload could identify a patient or an order. */
+const ROLLUP_LINE_ALLOWED_KEY_SET = new Set<string>(ROLLUP_LINE_ALLOWED_KEYS);
+
+/**
+ * True when a payload could identify a patient or an order. byTest entries
+ * are checked against their own allowed shape (code/name/count/value) —
+ * a test's own name (e.g. "Full Blood Count") is not a patient name, even
+ * though "name" is forbidden at the top level.
+ */
 export function rollupHasPatientLinkedFields(data: Record<string, unknown> | null | undefined): boolean {
   if (!data) return false;
   if (hasPatientLinkedKey(Object.keys(data))) return true;
@@ -109,7 +117,9 @@ export function rollupHasPatientLinkedFields(data: Record<string, unknown> | nul
   if (byTest && typeof byTest === "object" && !Array.isArray(byTest)) {
     for (const entry of Object.values(byTest as Record<string, unknown>)) {
       if (!entry || typeof entry !== "object" || Array.isArray(entry)) continue;
-      if (hasPatientLinkedKey(Object.keys(entry as Record<string, unknown>))) return true;
+      if (hasPatientLinkedKey(Object.keys(entry as Record<string, unknown>), ROLLUP_LINE_ALLOWED_KEY_SET)) {
+        return true;
+      }
     }
   }
   return false;
@@ -170,25 +180,35 @@ export function releasedOrderContribution(input: {
   };
 }
 
+/**
+ * Dotted keys ("byTest.FBC.count") only flatten into nested field paths for
+ * updateDoc(). This is written into a set(..., {merge:true}) batch, which
+ * takes those keys literally — Firestore rejected every one of these writes
+ * because request.resource.data.byTest never existed. A genuinely nested
+ * byTest object merges recursively under {merge:true} exactly as intended.
+ */
 export function rollupMergeFields(
   contribution: RollupContribution,
   updatedAt: string,
   increment: (n: number) => unknown
 ): Record<string, unknown> {
-  const data: Record<string, unknown> = {
+  const byTest: Record<string, unknown> = {};
+  for (const line of contribution.lines) {
+    byTest[line.code] = {
+      code: line.code,
+      name: line.name,
+      count: increment(line.count),
+      value: increment(line.value),
+    };
+  }
+  return {
     clinicId: contribution.clinicId,
     date: contribution.date,
     testCount: increment(contribution.testCount),
     valueOfTestsOrdered: increment(contribution.valueOfTestsOrdered),
     updatedAt,
+    byTest,
   };
-  for (const line of contribution.lines) {
-    data[`byTest.${line.code}.code`] = line.code;
-    data[`byTest.${line.code}.name`] = line.name;
-    data[`byTest.${line.code}.count`] = increment(line.count);
-    data[`byTest.${line.code}.value`] = increment(line.value);
-  }
-  return data;
 }
 
 function parseLine(code: string, raw: unknown): RollupLine | null {

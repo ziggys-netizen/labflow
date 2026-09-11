@@ -101,9 +101,24 @@ describe("rollupMergeFields", () => {
     const payload = rollupMergeFields(contribution!, "2026-08-27T11:00:00.000Z", (n) => ({ inc: n }));
     expect(rollupHasPatientLinkedFields(payload)).toBe(false);
     for (const key of Object.keys(payload)) {
-      const top = key.split(".")[0];
-      expect(ROLLUP_ALLOWED_KEYS, key).toContain(top);
-      expect(ROLLUP_PATIENT_LINKED_KEYS, key).not.toContain(top);
+      expect(ROLLUP_ALLOWED_KEYS, key).toContain(key);
+      expect(ROLLUP_PATIENT_LINKED_KEYS, key).not.toContain(key);
+    }
+  });
+
+  it("nests byTest as a real map — not dotted field-path keys", () => {
+    // set(ref, data, {merge:true}) takes a dotted key like "byTest.FBC.count"
+    // literally; it does not flatten into a nested path the way updateDoc()
+    // does. A real nested object is required for Firestore to merge it
+    // under byTest, and for the security rules' `data.byTest is map` check.
+    const contribution = contribute();
+    expect(contribution).not.toBeNull();
+    const payload = rollupMergeFields(contribution!, "2026-08-27T11:00:00.000Z", (n) => ({ inc: n }));
+    expect(Object.keys(payload).some((key) => key.includes("."))).toBe(false);
+    expect(payload.byTest).toBeTypeOf("object");
+    const byTest = payload.byTest as Record<string, unknown>;
+    for (const line of contribution!.lines) {
+      expect(byTest[line.code]).toMatchObject({ code: line.code, name: line.name });
     }
   });
 });
