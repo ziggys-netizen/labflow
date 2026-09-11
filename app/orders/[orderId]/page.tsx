@@ -25,6 +25,7 @@ import {
   canRecordSampleCollection,
   canRejectSample,
   canSendBackForCorrection,
+  roleLabel,
 } from "../../lib/permissions";
 import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../../lib/audit";
 import { patientDisplayName } from "../../lib/patientDisplay";
@@ -280,6 +281,18 @@ function OrderDetailContent() {
     setPinAction(action);
   }
 
+  /**
+   * Writes are gated on the PIN-acting identity when one is unlocked (see
+   * useWriteIdentity) — a blocked action must say so, not silently no-op,
+   * or a device-account role mismatch with the acting PIN looks like a bug.
+   */
+  function permissionDeniedMessage(action: string) {
+    const actingRole = writer.role || role;
+    return `You do not have permission to ${action}${
+      actingRole ? ` as ${roleLabel(actingRole)}` : ""
+    }.`;
+  }
+
   function updateResultValue(testCode: string, paramName: string, value: string) {
     if (!resultsEditable || !canEnterResults(role)) return;
     resultsDirty.current = true;
@@ -405,7 +418,11 @@ function OrderDetailContent() {
   }
 
   async function approveAndRelease() {
-    if (!user || !canApproveResults(writer.role || role)) return;
+    if (!user) return;
+    if (!canApproveResults(writer.role || role)) {
+      setStatus(permissionDeniedMessage("release results"));
+      return;
+    }
     const ownResults = isSelfRelease(order?.resultsEnteredBy, writer.email);
     if (ownResults && !justificationReady(SELF_RELEASE_CODES, selfReleaseCode, selfReleaseNote)) {
       setStatus(SELF_RELEASE_MESSAGE);
@@ -518,7 +535,11 @@ function OrderDetailContent() {
   }
 
   async function sendBackForCorrection() {
-    if (!user || !canSendBackForCorrection(writer.role || role)) return;
+    if (!user) return;
+    if (!canSendBackForCorrection(writer.role || role)) {
+      setStatus(permissionDeniedMessage("send results back for correction"));
+      return;
+    }
     if (!justificationReady(SEND_BACK_CODES, sendBackCode, sendBackNote)) {
       setStatus(SEND_BACK_REASON_MESSAGE);
       return;
@@ -553,7 +574,11 @@ function OrderDetailContent() {
   }
 
   async function rejectSample() {
-    if (!user || !canRejectSample(writer.role || role) || !order) return;
+    if (!user || !order) return;
+    if (!canRejectSample(writer.role || role)) {
+      setStatus(permissionDeniedMessage("reject this sample"));
+      return;
+    }
     if (!canRejectStatus(order.status)) return;
     if (!justificationReady(SAMPLE_REJECTION_CODES, rejectCode, rejectNote)) {
       setStatus("Choose a reason to reject this sample.");
@@ -605,7 +630,11 @@ function OrderDetailContent() {
   }
 
   async function cancelOrder() {
-    if (!user || !canCancelOrder(writer.role || role) || !order) return;
+    if (!user || !order) return;
+    if (!canCancelOrder(writer.role || role)) {
+      setStatus(permissionDeniedMessage("stop this order"));
+      return;
+    }
     if (!canCancelStatus(order.status)) return;
     if (!justificationReady(ORDER_CANCEL_CODES, cancelCode, cancelNote)) {
       setStatus("Choose a reason to stop this order.");
@@ -631,7 +660,11 @@ function OrderDetailContent() {
   }
 
   async function recordCriticalNotification() {
-    if (!user || !canRecordCriticalNotification(writer.role || role) || !order) return;
+    if (!user || !order) return;
+    if (!canRecordCriticalNotification(writer.role || role)) {
+      setStatus(permissionDeniedMessage("record a critical-result notification"));
+      return;
+    }
     if (!criticalNotificationReady({ notifiedName: criticalName, means: criticalMeans, outcome: criticalOutcome })) {
       setStatus("Record who was told, how, and the outcome.");
       return;
