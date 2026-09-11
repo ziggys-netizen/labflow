@@ -1,7 +1,13 @@
 "use client";
 
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
-import { onAuthStateChanged, signInWithPopup, signOut, User } from "firebase/auth";
+import {
+  getRedirectResult,
+  onAuthStateChanged,
+  signInWithRedirect,
+  signOut,
+  User,
+} from "firebase/auth";
 import { auth, googleProvider, db } from "./firebase";
 import { doc, getDoc, getDocFromCache, setDoc, updateDoc, onSnapshot, type DocumentReference } from "firebase/firestore";
 import { reportFirestoreMetadata } from "./firestoreConnectivity";
@@ -121,14 +127,12 @@ interface AuthContextType {
 }
 
 const SIGN_IN_ERRORS: Record<string, string> = {
-  "auth/popup-blocked":
-    "Your browser blocked the sign-in popup. Allow popups for this site, then click Continue with Google.",
-  "auth/cancelled-popup-request":
-    "Another sign-in window was already open. Click Continue with Google to try again.",
-  "auth/popup-closed-by-user":
-    "The sign-in window was closed before sign-in finished. Click Continue with Google to try again.",
   "auth/unauthorized-domain":
     "This domain is not authorised for Google sign-in. Add it under Firebase Authentication settings, then try again.",
+  "auth/redirect-cancelled-by-user":
+    "Sign-in was cancelled before it finished. Click Continue with Google to try again.",
+  "auth/web-storage-unsupported":
+    "This browser is blocking the storage Google sign-in needs. Allow cookies for this site, then try again.",
 };
 
 const AuthContext = createContext<AuthContextType>({
@@ -365,6 +369,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, [applyIdentity, clearActingClinic, clearBootstrapTimer, bootstrapEpoch]);
 
+  // Completes the signInWithRedirect round-trip. onAuthStateChanged above
+  // fires independently once Firebase recognises the signed-in user — this
+  // effect exists only to surface a failed attempt, which onAuthStateChanged
+  // would otherwise leave silent.
+  useEffect(() => {
+    getRedirectResult(auth).catch((err: unknown) => {
+      console.error(err);
+      const code =
+        typeof err === "object" && err !== null && "code" in err
+          ? String((err as { code: string }).code)
+          : "";
+      setPopupBlocked(true);
+      setAuthError(SIGN_IN_ERRORS[code] || "Sign-in failed. Click Continue with Google to try again.");
+      setIdentityLoading(false);
+      setTermsChecked(true);
+    });
+  }, []);
+
   useEffect(() => {
     if (identity.role !== "owner" || !actingClinicId) return;
     let cancelled = false;
@@ -432,7 +454,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setPopupBlocked(false);
     setAuthError(null);
     try {
-      await signInWithPopup(auth, googleProvider);
+      // Redirect, not popup: Google's sign-in pages send a Cross-Origin-Opener-Policy
+      // header that breaks the window.closed polling signInWithPopup relies on,
+      // which surfaced as a false "auth/popup-closed-by-user" on every attempt.
+      // The redirect round-trip has no popup window to lose track of. Any
+      // failure is reported by getRedirectResult below, after the app reloads.
+      await signInWithRedirect(auth, googleProvider);
     } catch (err: unknown) {
       console.error(err);
       const code =
@@ -441,7 +468,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           : "";
       setPopupBlocked(true);
       setAuthError(SIGN_IN_ERRORS[code] || "Sign-in failed. Click Continue with Google to try again.");
-      // A failed popup never triggers onAuthStateChanged, so release the gate here.
       setIdentityLoading(false);
       setTermsChecked(true);
     }
