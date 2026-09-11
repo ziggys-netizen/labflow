@@ -155,7 +155,7 @@ This session **did not revert** (nothing was deployed).
 | Path | Role |
 |---|---|
 | `firestore.rules` | Interim ruleset |
-| `firebase.json` | Points at that file; emulator port 8080 |
+| `firebase.json` | Points at that file; emulator port 8089 |
 | `.firebaserc` | Default project `labflow-6cb9e` |
 | `scripts/rules-interim-playground.mjs` | 14-row emulator matrix |
 
