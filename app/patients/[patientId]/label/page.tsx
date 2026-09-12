@@ -29,6 +29,14 @@ import {
   type SpecimenLabel,
 } from "../../../lib/specimenLabel";
 
+/**
+ * Bar width in the barcode's own units. JsBarcode writes a viewBox, so the
+ * symbol is scaled to the label and this number does not set the printed bar
+ * width — the label's printable width divided by the module count does. It
+ * only fixes the internal coordinate scale.
+ */
+const BARCODE_MODULE_PX = 1.6;
+
 interface PatientRecord {
   clinicId?: string;
   labId?: string;
@@ -127,9 +135,17 @@ function LabelContent() {
       JsBarcode(barcodeRef.current, label.barcodeValue, {
         format: "CODE128",
         displayValue: false,
-        margin: 0,
+        // Quiet zone, not decoration: a scanner needs clear space either side
+        // of the symbol, and bars flush to the edge are the usual reason a
+        // barcode that looks right refuses to read. Ten modules a side is the
+        // Code 128 minimum. Top and bottom stay at zero — vertical space is
+        // what a 25mm label has least of.
+        marginLeft: 10 * BARCODE_MODULE_PX,
+        marginRight: 10 * BARCODE_MODULE_PX,
+        marginTop: 0,
+        marginBottom: 0,
         height: 38,
-        width: 1.6,
+        width: BARCODE_MODULE_PX,
       });
     } catch (err) {
       console.error(err);
