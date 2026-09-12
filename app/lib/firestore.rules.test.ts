@@ -807,4 +807,31 @@ describe("firestore rules — auditLogs actor binding", () => {
       setDoc(doc(db, "auditLogs", "audit-self-actor"), auditPayload(UID.techMedicAid))
     );
   });
+
+  // An owner has no membership clinic, so a caller that reaches for
+  // useAuth().clinicId writes null here and the entry is silently dropped.
+  it("create is denied without a clinic, including for the owner", async () => {
+    const techDb = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(
+      setDoc(doc(techDb, "auditLogs", "audit-no-clinic"), {
+        ...auditPayload(UID.techMedicAid),
+        clinicId: null,
+      })
+    );
+    const ownerDb = testEnv.authenticatedContext(UID.owner).firestore();
+    await assertFails(
+      setDoc(doc(ownerDb, "auditLogs", "audit-owner-no-clinic"), {
+        ...auditPayload(UID.owner),
+        actorUid: UID.owner,
+        clinicId: null,
+      })
+    );
+    await assertSucceeds(
+      setDoc(doc(ownerDb, "auditLogs", "audit-owner-with-clinic"), {
+        ...auditPayload(UID.owner),
+        actorUid: UID.owner,
+        clinicId: MEDIC_AID,
+      })
+    );
+  });
 });

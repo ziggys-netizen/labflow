@@ -53,6 +53,9 @@ function LabelContent() {
   const writer = useWriteIdentity();
 
   const [label, setLabel] = useState<SpecimenLabel | null>(null);
+  // The patient's own clinic, not useAuth().clinicId — that is null for an
+  // owner, and auditLogs will not accept an entry without a clinic.
+  const [patientClinicId, setPatientClinicId] = useState<string | null>(null);
   const [size, setSize] = useState<LabelSize>(defaultLabelSize());
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
@@ -83,6 +86,8 @@ function LabelContent() {
           setNotFound(true);
           return;
         }
+
+        setPatientClinicId(typeof data.clinicId === "string" ? data.clinicId : null);
 
         const clinicSnap = data.clinicId
           ? await docFromCacheOrServer(doc(db, "clinics", data.clinicId))
@@ -132,7 +137,7 @@ function LabelContent() {
   }, [label]);
 
   useEffect(() => {
-    if (!label || audited.current) return;
+    if (!label || !patientClinicId || audited.current) return;
     audited.current = true;
     const actor = actorFromAuth(
       { uid: writer.uid || user?.uid || "", email: writer.email },
@@ -141,14 +146,14 @@ function LabelContent() {
     );
     if (!actor) return;
     safeLogAudit({
-      clinicId: clinicId || null,
+      clinicId: patientClinicId,
       actor,
       action: "label.printed",
       targetCollection: "patients",
       targetId: patientId,
       targetLabel: auditTargetLabel(label.labId, "specimenLabel"),
     });
-  }, [label, clinicId, patientId, user, writer]);
+  }, [label, patientClinicId, patientId, user, writer]);
 
   if (loading) {
     return (
