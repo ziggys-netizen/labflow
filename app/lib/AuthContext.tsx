@@ -35,12 +35,46 @@ if (process.env.NODE_ENV === "development") {
 
 const ACTING_CLINIC_KEY = "labflow.actingClinicId";
 
+/**
+ * Set before leaving for Google, read when the redirect lands back here.
+ * First-party sessionStorage on this origin, so it survives the round trip
+ * even where the cross-site storage Firebase itself needs does not — which
+ * is precisely the case this flag exists to catch.
+ */
+const REDIRECT_PENDING_KEY = "labflow.authRedirectPending";
+
 /** Upper bound for any await that can hold the auth loading gate open. */
 export const AUTH_BOOTSTRAP_DEADLINE_MS = 8000;
 
 /** Shown when bootstrap times out with no cached user doc. */
 export const AUTH_BOOTSTRAP_UNREACHABLE =
   "Cannot reach the server. Sign in once while connected before working offline.";
+
+/**
+ * Google completed the sign-in but the result never reached this origin.
+ * Firebase reports no error for this — without this message the page simply
+ * returns to the sign-in button as though nothing happened.
+ */
+export const AUTH_REDIRECT_LOST =
+  "Google signed you in, but the result did not reach this site. Click Continue with Google to try again.";
+
+function markRedirectPending() {
+  try {
+    sessionStorage.setItem(REDIRECT_PENDING_KEY, "1");
+  } catch {
+    // Private mode. The redirect can still succeed; only the check below is lost.
+  }
+}
+
+function takeRedirectPending(): boolean {
+  try {
+    const pending = sessionStorage.getItem(REDIRECT_PENDING_KEY) === "1";
+    sessionStorage.removeItem(REDIRECT_PENDING_KEY);
+    return pending;
+  } catch {
+    return false;
+  }
+}
 
 function readActingClinic(): string | null {
   if (typeof window === "undefined") return null;
@@ -374,17 +408,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // effect exists only to surface a failed attempt, which onAuthStateChanged
   // would otherwise leave silent.
   useEffect(() => {
-    getRedirectResult(auth).catch((err: unknown) => {
-      console.error(err);
-      const code =
-        typeof err === "object" && err !== null && "code" in err
-          ? String((err as { code: string }).code)
-          : "";
-      setPopupBlocked(true);
-      setAuthError(SIGN_IN_ERRORS[code] || "Sign-in failed. Click Continue with Google to try again.");
-      setIdentityLoading(false);
-      setTermsChecked(true);
-    });
+    getRedirectResult(auth)
+      .then((result) => {
+        const attempted = takeRedirectPending();
+        // A plain page load resolves null with nothing pending. Only a return
+        // trip that carried nothing back is a failure worth naming.
+        if (!attempted || result) return;
+        setPopupBlocked(true);
+        setAuthError(AUTH_REDIRECT_LOST);
+        setIdentityLoading(false);
+        setTermsChecked(true);
+      })
+      .catch((err: unknown) => {
+        console.error(err);
+        takeRedirectPending();
+        const code =
+          typeof err === "object" && err !== null && "code" in err
+            ? String((err as { code: string }).code)
+            : "";
+        setPopupBlocked(true);
+        setAuthError(SIGN_IN_ERRORS[code] || "Sign-in failed. Click Continue with Google to try again.");
+        setIdentityLoading(false);
+        setTermsChecked(true);
+      });
   }, []);
 
   useEffect(() => {
@@ -459,6 +505,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // which surfaced as a false "auth/popup-closed-by-user" on every attempt.
       // The redirect round-trip has no popup window to lose track of. Any
       // failure is reported by getRedirectResult below, after the app reloads.
+      markRedirectPending();
       await signInWithRedirect(auth, googleProvider);
     } catch (err: unknown) {
       console.error(err);
