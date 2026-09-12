@@ -346,16 +346,29 @@ service cloud.firestore {
              || canApproveResultsRole();
     }
 
+    // canRestorePatient: owner, clinic_admin, lab_manager, lab_supervisor.
+    // Deliberately wider than canDeletePatientRole — a supervisor may undo a
+    // wrong removal but not make one. The gates below are directional for that
+    // reason: setting the flag is deletion, clearing it is recovery.
+    function canRestorePatientRole() {
+      return isOwner()
+             || (isApproved() && callerRole() in ["clinic_admin", "lab_manager", "lab_supervisor"]);
+    }
+
     function orderPatientDeletedGateOk() {
       return request.resource.data.get("patientDeleted", false)
              == resource.data.get("patientDeleted", false)
-             || canDeletePatientRole();
+             || (request.resource.data.get("patientDeleted", false)
+                 ? canDeletePatientRole()
+                 : canRestorePatientRole());
     }
 
     function patientDeletedGateOk() {
       return request.resource.data.get("deleted", false)
              == resource.data.get("deleted", false)
-             || canDeletePatientRole();
+             || (request.resource.data.get("deleted", false)
+                 ? canDeletePatientRole()
+                 : canRestorePatientRole());
     }
 
     function patientCreateDeletedOk() {

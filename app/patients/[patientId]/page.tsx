@@ -12,9 +12,9 @@ import { useWriteIdentity } from "../../lib/pinSession";
 import { isOwner } from "../../lib/clinicScope";
 import { isPatientDeleted } from "../../lib/patientSoftDelete";
 import {
-  canApproveResults,
   canManageMedicalReports,
   canViewOwnRegisteredPatients,
+  canViewPatientHistory,
   canViewPatients,
   roleLabel,
 } from "../../lib/permissions";
@@ -133,7 +133,7 @@ function PatientRecordContent() {
                 <p className="text-sm text-lf-ink-2">{formatSexAge(patient)}</p>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                {canApproveResults(role) && (
+                {canViewPatientHistory(role) && (
                   <Link
                     href={patientHistoryHref(patientId)}
                     className="lf-touch inline-flex items-center justify-center rounded-lf-md border border-lf-line bg-lf-surface px-3 text-sm font-medium text-lf-ink hover:bg-lf-surface-2"

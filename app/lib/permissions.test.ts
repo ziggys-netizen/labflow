@@ -52,6 +52,8 @@ const CHECKS = {
   canImportStaffPreApprovals: permissions.canImportStaffPreApprovals,
   canManageMedicalReports: permissions.canManageMedicalReports,
   canDeletePatient: permissions.canDeletePatient,
+  canRestorePatient: permissions.canRestorePatient,
+  canViewPatientHistory: permissions.canViewPatientHistory,
   canExecuteErasure: permissions.canExecuteErasure,
   canViewInventory: permissions.canViewInventory,
   canRecordStockMovement: permissions.canRecordStockMovement,
@@ -67,6 +69,8 @@ type Capability = keyof typeof CHECKS;
  */
 const EXPECTED: Record<Role, Record<Capability, boolean>> = {
   owner: {
+    canRestorePatient: true,
+    canViewPatientHistory: true,
     canRegisterPatient: true,
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
@@ -101,6 +105,8 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   clinic_admin: {
+    canRestorePatient: true,
+    canViewPatientHistory: true,
     canRegisterPatient: false,
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
@@ -135,6 +141,8 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: false,
   },
   lab_manager: {
+    canRestorePatient: true,
+    canViewPatientHistory: true,
     canRegisterPatient: true,
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
@@ -169,6 +177,8 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   lab_supervisor: {
+    canRestorePatient: true,
+    canViewPatientHistory: true,
     canManageMedicalReports: false,
     canRegisterPatient: true,
     canViewPatients: true,
@@ -203,6 +213,8 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   technician: {
+    canRestorePatient: false,
+    canViewPatientHistory: false,
     canManageMedicalReports: false,
     canRegisterPatient: true,
     canViewPatients: true,
@@ -237,6 +249,8 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   technician_assistant: {
+    canRestorePatient: false,
+    canViewPatientHistory: false,
     canManageMedicalReports: false,
     canRegisterPatient: true,
     canViewPatients: true,
@@ -271,6 +285,8 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   intern: {
+    canRestorePatient: false,
+    canViewPatientHistory: false,
     canManageMedicalReports: false,
     canRegisterPatient: true,
     canViewPatients: false,
@@ -305,6 +321,8 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: false,
   },
   storekeeper: {
+    canRestorePatient: false,
+    canViewPatientHistory: false,
     canManageMedicalReports: false,
     canRegisterPatient: false,
     canViewPatients: false,
@@ -339,6 +357,8 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: true,
   },
   accounts: {
+    canRestorePatient: false,
+    canViewPatientHistory: false,
     canManageMedicalReports: false,
     canRegisterPatient: false,
     canViewPatients: false,
@@ -373,6 +393,8 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canRecordSpecimenMovement: false,
   },
   pending: {
+    canRestorePatient: false,
+    canViewPatientHistory: false,
     canManageMedicalReports: false,
     canRegisterPatient: false,
     canViewPatients: false,

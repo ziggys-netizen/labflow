@@ -34,6 +34,7 @@ const GREEN_AID = "clinic-green-aid";
 const UID = {
   techMedicAid: "uid-medic-aid-tech",
   managerMedicAid: "uid-medic-aid-manager",
+  supervisorMedicAid: "uid-medic-aid-supervisor",
   adminMedicAid: "uid-medic-aid-admin",
   adminGreenAid: "uid-green-aid-admin",
   otherMedicAid: "uid-medic-aid-other",
@@ -101,6 +102,11 @@ beforeAll(async () => {
     });
     await setDoc(doc(db, "users", UID.managerMedicAid), {
       role: "lab_manager",
+      clinicId: MEDIC_AID,
+      status: "approved",
+    });
+    await setDoc(doc(db, "users", UID.supervisorMedicAid), {
+      role: "lab_supervisor",
       clinicId: MEDIC_AID,
       status: "approved",
     });
@@ -511,6 +517,92 @@ describe("firestore rules — J1 role gates", () => {
     const db = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
     await assertSucceeds(
       updateDoc(doc(db, "orders", "order-medic-unrelease-mgr"), { status: "needs_correction" })
+    );
+  });
+});
+
+describe("firestore rules — restore is separate from delete", () => {
+  async function seedPatient(id: string, deleted: boolean) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "patients", id), {
+        clinicId: MEDIC_AID,
+        name: "Ada Patient",
+        labId: "LF-ADA",
+        deleted,
+      });
+    });
+  }
+
+  async function seedOrder(id: string, patientDeleted: boolean) {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "orders", id), {
+        clinicId: MEDIC_AID,
+        patientId: FIXTURE.patient,
+        status: "pending",
+        results: {},
+        patientDeleted,
+      });
+    });
+  }
+
+  it("lab_supervisor can restore a soft-deleted patient", async () => {
+    await seedPatient("patient-restore-sup", true);
+    const db = testEnv.authenticatedContext(UID.supervisorMedicAid).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, "patients", "patient-restore-sup"), {
+        deleted: false,
+        deletedAt: null,
+        deletedBy: null,
+        restoredBy: "supervisor@clinic.test",
+        restoredAt: "2026-09-12T10:00:00.000Z",
+      })
+    );
+  });
+
+  it("lab_supervisor still cannot soft-delete a patient", async () => {
+    await seedPatient("patient-delete-sup", false);
+    const db = testEnv.authenticatedContext(UID.supervisorMedicAid).firestore();
+    await assertFails(
+      updateDoc(doc(db, "patients", "patient-delete-sup"), {
+        deleted: true,
+        deletedAt: "2026-09-12T10:00:00.000Z",
+        deletionReason: "duplicate",
+      })
+    );
+  });
+
+  it("lab_supervisor can clear patientDeleted on orders but not set it", async () => {
+    await seedOrder("order-restore-sup", true);
+    await seedOrder("order-delete-sup", false);
+    const db = testEnv.authenticatedContext(UID.supervisorMedicAid).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, "orders", "order-restore-sup"), { patientDeleted: false })
+    );
+    await assertFails(
+      updateDoc(doc(db, "orders", "order-delete-sup"), { patientDeleted: true })
+    );
+  });
+
+  it("technician can do neither", async () => {
+    await seedPatient("patient-restore-tech", true);
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(
+      updateDoc(doc(db, "patients", "patient-restore-tech"), { deleted: false })
+    );
+  });
+
+  it("lab_manager keeps both delete and restore", async () => {
+    await seedPatient("patient-both-mgr", false);
+    const db = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertSucceeds(
+      updateDoc(doc(db, "patients", "patient-both-mgr"), {
+        deleted: true,
+        deletedBy: "manager@clinic.test",
+        deletionReason: "duplicate",
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(db, "patients", "patient-both-mgr"), { deleted: false })
     );
   });
 });

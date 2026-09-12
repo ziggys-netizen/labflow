@@ -300,6 +300,26 @@ export function canDeletePatient(role: string | null | undefined) {
   return allows(role, "owner", "clinic_admin", "lab_manager");
 }
 
+/**
+ * Recovering a wrongly removed record is deliberately wider than removing one.
+ * lab_supervisor may undo a deletion but cannot make one — they already hold
+ * canCorrectPatientRecord, and an unrecoverable wrong removal is the worse
+ * failure. Keep this separate from canDeletePatient; do not collapse them.
+ */
+export function canRestorePatient(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
+}
+
+/**
+ * Read-only patient history. Wider than canApproveResults: clinic_admin can
+ * already reach the Patients and Orders lists, so withholding the read-only
+ * assembly of results they can already see was inconsistent rather than
+ * protective. Releasing a result stays with canApproveResults.
+ */
+export function canViewPatientHistory(role: string | null | undefined) {
+  return allows(role, "owner", "clinic_admin", "lab_manager", "lab_supervisor");
+}
+
 export function canRejectSample(role: string | null | undefined) {
   return allows(
     role,
@@ -469,6 +489,8 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
   canImportData,
   canImportStaffPreApprovals,
   canDeletePatient,
+  canRestorePatient,
+  canViewPatientHistory,
   canExecuteErasure,
   canViewInventory,
   canRecordStockMovement,

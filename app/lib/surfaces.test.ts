@@ -43,7 +43,7 @@ const SURFACE_VISIBLE: Record<
     clinicAdmin: true,
     recycleBin: true,
     owner: false,
-    patientHistory: false,
+    patientHistory: true,
     medicalReport: true,
   },
   lab_manager: {
@@ -69,7 +69,7 @@ const SURFACE_VISIBLE: Record<
     accounts: false,
     catalogue: false,
     clinicAdmin: false,
-    recycleBin: false,
+    recycleBin: true,
     owner: false,
     patientHistory: true,
     medicalReport: false,

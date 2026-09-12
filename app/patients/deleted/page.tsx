@@ -6,7 +6,7 @@ import ProtectedRoute from "../../lib/ProtectedRoute";
 import AppNav from "../../lib/AppNav";
 import { useAuth } from "../../lib/AuthContext";
 import { getClinicDocs } from "../../lib/clinicScope";
-import { canDeletePatient } from "../../lib/permissions";
+import { canRestorePatient } from "../../lib/permissions";
 import { isPatientDeleted, restorePatient } from "../../lib/patientSoftDelete";
 import { auditTargetLabel } from "../../lib/audit";
 
@@ -177,7 +177,7 @@ function DeletedPatientsContent() {
 
 export default function DeletedPatients() {
   return (
-    <ProtectedRoute require={canDeletePatient}>
+    <ProtectedRoute require={canRestorePatient}>
       <DeletedPatientsContent />
     </ProtectedRoute>
   );

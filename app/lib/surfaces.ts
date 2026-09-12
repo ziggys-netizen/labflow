@@ -14,13 +14,14 @@ import type { RouteRequire } from "./authState";
 import {
   canAccessClinicSettings,
   canApproveResults,
-  canDeletePatient,
   canEditTestCatalogue,
   canManageMedicalReports,
+  canRestorePatient,
   canViewDashboard,
   canViewInventory,
   canViewOrders,
   canViewOwnRegisteredPatients,
+  canViewPatientHistory,
   canViewPatients,
   canViewTestValueRollup,
 } from "./permissions";
@@ -107,9 +108,9 @@ const CAPABILITY_PREDICATES: Record<Capability, (role: string | null | undefined
   "view:testValue": canViewTestValueRollup,
   "edit:catalogue": canEditTestCatalogue,
   "manage:clinic": canAccessClinicSettings,
-  "restore:records": canDeletePatient,
+  "restore:records": canRestorePatient,
   "platform:owner": (role) => role === "owner",
-  "view:patientHistory": canApproveResults,
+  "view:patientHistory": canViewPatientHistory,
   "manage:medicalReport": canManageMedicalReports,
 };
 
