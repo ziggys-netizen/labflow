@@ -163,7 +163,7 @@ function MoreMenu({
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-20 mt-1 min-w-[10rem] rounded-lf-md border border-lf-line bg-lf-surface py-1 shadow-lg"
+          className="absolute right-0 z-30 mt-1 min-w-[13rem] max-w-[calc(100vw-2rem)] rounded-lf-md border border-lf-line bg-lf-surface py-1 shadow-lg"
         >
           {children}
         </div>
@@ -174,7 +174,9 @@ function MoreMenu({
 
 function menuItemClass(danger = false) {
   return [
-    "lf-touch flex w-full items-center px-3 text-left text-sm",
+    // whitespace-nowrap so a two-word action keeps its own line rather than
+    // wrapping into something that reads like two separate options.
+    "lf-touch flex w-full items-center whitespace-nowrap px-4 text-left text-sm",
     danger ? "text-lf-crit hover:bg-lf-crit-soft" : "text-lf-ink hover:bg-lf-surface-2",
   ].join(" ");
 }

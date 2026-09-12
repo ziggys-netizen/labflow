@@ -366,6 +366,21 @@ function PatientPrintContent() {
         </button>
       </div>
 
+      {/*
+        Auto-print is held back while the staff gate is open, and used to be
+        held back silently — the page simply sat there and nothing printed,
+        which reads as a broken button. Say so, and point at the Print button
+        that works regardless.
+      */}
+      {staffGateOpen && (
+        <div className="no-print max-w-[210mm] mx-auto mb-4 px-4">
+          <p className="rounded-lg border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-950">
+            This report did not print automatically because your PIN session is
+            not unlocked. Unlock to work, or use the Print button above.
+          </p>
+        </div>
+      )}
+
       <div className="print-sheet bg-white mx-auto w-[210mm] min-h-[297mm] p-[15mm] shadow-sm">
         <header className="border-b border-gray-300 pb-4 mb-6">
           <div className="mb-3">
