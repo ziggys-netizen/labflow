@@ -15,6 +15,7 @@ import {
   clinicRetentionWriteFields,
   parseRetentionFromData,
 } from "./clinicRetention";
+import { labelSizeWriteFields, parseLabelSize } from "./specimenLabel";
 
 /** Seven health regions used by the Ministry of Health. */
 export const GAMBIA_HEALTH_REGIONS = [
@@ -51,10 +52,14 @@ export interface ClinicRecord {
   retentionPeriod: string;
   /** Clinic-written basis. Empty means not set. Purge enforcement is later. */
   retentionBasis: string;
+  /** Specimen label stock this clinic feeds, in millimetres. */
+  labelWidthMm: number;
+  labelHeightMm: number;
 }
 
 export function clinicFromData(id: string, data: Record<string, unknown>): ClinicRecord {
   const retention = parseRetentionFromData(data);
+  const labelSize = parseLabelSize(data);
   return {
     id,
     name: typeof data.name === "string" ? data.name : "",
@@ -81,6 +86,8 @@ export function clinicFromData(id: string, data: Record<string, unknown>): Clini
         : DEFAULT_BREAK_GLASS_MINUTES,
     retentionPeriod: retention.retentionPeriod,
     retentionBasis: retention.retentionBasis,
+    labelWidthMm: labelSize.widthMm,
+    labelHeightMm: labelSize.heightMm,
   };
 }
 
@@ -140,6 +147,8 @@ export async function saveClinicProfile(params: {
   breakGlassMinutes: number;
   retentionPeriod: string;
   retentionBasis: string;
+  labelWidthMm: number;
+  labelHeightMm: number;
   actor: { uid: string; email: string | null };
 }) {
   const idle =
@@ -169,6 +178,10 @@ export async function saveClinicProfile(params: {
         ? Math.min(480, Math.round(params.breakGlassMinutes))
         : DEFAULT_BREAK_GLASS_MINUTES,
     ...retention,
+    ...labelSizeWriteFields({
+      widthMm: params.labelWidthMm,
+      heightMm: params.labelHeightMm,
+    }),
     ...auditFields(params.actor),
   });
 }

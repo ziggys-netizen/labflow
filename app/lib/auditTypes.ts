@@ -89,6 +89,7 @@ export const AUDIT_ACTIONS = [
   "roster.exceptionCreate",
   "roster.exceptionDelete",
   "terms.accept",
+  "label.printed",
   "medicalReport.finalized",
   "medicalReport.amended",
   "medicalReport.printed",

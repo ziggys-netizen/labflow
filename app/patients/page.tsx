@@ -13,6 +13,7 @@ import { useClinicCollection } from "../lib/clinicListen";
 import { trackedSetDoc, writeActorFromUser } from "../lib/trackedWrites";
 import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../lib/audit";
 import { isOrderForDeletedPatient, isPatientDeleted, softDeletePatient } from "../lib/patientSoftDelete";
+import { specimenLabelHref } from "../lib/specimenLabel";
 import { isReleasedResultStatus } from "../lib/resultAmendment";
 import {
   canAmendResult,
@@ -488,6 +489,20 @@ function PatientsContent() {
         </Link>
       );
     }
+    items.push(
+      <Link
+        key="label"
+        role="menuitem"
+        href={specimenLabelHref(patient.id)}
+        className={menuItemClass()}
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpenMenuId(null);
+        }}
+      >
+        Print Lab ID
+      </Link>
+    );
     if (items.length === 0) return null;
 
     return (

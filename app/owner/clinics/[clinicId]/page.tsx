@@ -32,6 +32,12 @@ import {
   RETENTION_SETUP_INCOMPLETE,
 } from "../../../lib/clinicRetention";
 import RetentionPolicyFields from "../../../lib/RetentionPolicyFields";
+import {
+  DEFAULT_LABEL_HEIGHT_MM,
+  DEFAULT_LABEL_WIDTH_MM,
+  MAX_LABEL_MM,
+  MIN_LABEL_MM,
+} from "../../../lib/specimenLabel";
 
 function ClinicProfileContent() {
   const params = useParams();
@@ -113,6 +119,8 @@ function ClinicProfileEditor({
   const [licenceNumber, setLicenceNumber] = useState("");
   const [licenceExpiry, setLicenceExpiry] = useState("");
   const [idleLockMinutes, setIdleLockMinutes] = useState("5");
+  const [labelWidthMm, setLabelWidthMm] = useState(String(DEFAULT_LABEL_WIDTH_MM));
+  const [labelHeightMm, setLabelHeightMm] = useState(String(DEFAULT_LABEL_HEIGHT_MM));
   const [rosteringEnabled, setRosteringEnabled] = useState(false);
   const [rosterGraceMinutes, setRosterGraceMinutes] = useState("30");
   const [breakGlassMinutes, setBreakGlassMinutes] = useState("120");
@@ -138,6 +146,8 @@ function ClinicProfileEditor({
           setLicenceNumber(record.licenceNumber);
           setLicenceExpiry(record.licenceExpiry);
           setIdleLockMinutes(String(record.idleLockMinutes || 5));
+          setLabelWidthMm(String(record.labelWidthMm));
+          setLabelHeightMm(String(record.labelHeightMm));
           setRosteringEnabled(record.rosteringEnabled);
           setRosterGraceMinutes(String(record.rosterGraceMinutes || 30));
           setBreakGlassMinutes(String(record.breakGlassMinutes || 120));
@@ -172,6 +182,8 @@ function ClinicProfileEditor({
       setLicenceNumber(record.licenceNumber);
       setLicenceExpiry(record.licenceExpiry);
       setIdleLockMinutes(String(record.idleLockMinutes || 5));
+      setLabelWidthMm(String(record.labelWidthMm));
+      setLabelHeightMm(String(record.labelHeightMm));
       setRosteringEnabled(record.rosteringEnabled);
       setRosterGraceMinutes(String(record.rosterGraceMinutes || 30));
       setBreakGlassMinutes(String(record.breakGlassMinutes || 120));
@@ -210,6 +222,8 @@ function ClinicProfileEditor({
         licenceNumber,
         licenceExpiry,
         idleLockMinutes: Number(idleLockMinutes) || 5,
+        labelWidthMm: Number(labelWidthMm),
+        labelHeightMm: Number(labelHeightMm),
         rosteringEnabled,
         rosterGraceMinutes: Number(rosterGraceMinutes) || 30,
         breakGlassMinutes: Number(breakGlassMinutes) || 120,
@@ -239,6 +253,8 @@ function ClinicProfileEditor({
               "licenceNumber",
               "licenceExpiry",
               "idleLockMinutes",
+              "labelWidthMm",
+              "labelHeightMm",
               "rosteringEnabled",
               "rosterGraceMinutes",
               "breakGlassMinutes",
@@ -483,6 +499,44 @@ function ClinicProfileEditor({
                 className="mt-1 w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
               />
             </label>
+            <div className="flex flex-col gap-1">
+              <span className="text-sm text-gray-600">Specimen label size (mm)</span>
+              <div className="flex items-center gap-2">
+                <label className="flex items-center gap-1">
+                  <span className="sr-only">Label width in millimetres</span>
+                  <input
+                    type="number"
+                    min={MIN_LABEL_MM}
+                    max={MAX_LABEL_MM}
+                    step={0.5}
+                    value={labelWidthMm}
+                    onChange={(e) => setLabelWidthMm(e.target.value)}
+                    disabled={!canEdit}
+                    className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+                  />
+                </label>
+                <span aria-hidden="true" className="text-sm text-gray-500">
+                  ×
+                </span>
+                <label className="flex items-center gap-1">
+                  <span className="sr-only">Label height in millimetres</span>
+                  <input
+                    type="number"
+                    min={MIN_LABEL_MM}
+                    max={MAX_LABEL_MM}
+                    step={0.5}
+                    value={labelHeightMm}
+                    onChange={(e) => setLabelHeightMm(e.target.value)}
+                    disabled={!canEdit}
+                    className="w-24 border border-gray-300 rounded-lg px-3 py-2 text-sm disabled:bg-gray-50"
+                  />
+                </label>
+              </div>
+              <span className="text-xs text-gray-500">
+                The label stock this clinic feeds. Default {DEFAULT_LABEL_WIDTH_MM}×
+                {DEFAULT_LABEL_HEIGHT_MM}mm. Used when printing a Lab ID for a sample container.
+              </span>
+            </div>
             <label className="flex items-center gap-2 text-sm text-gray-700">
               <input
                 type="checkbox"
