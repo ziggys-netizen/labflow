@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { useAuth } from "../lib/AuthContext";
 import { useClinicCollection } from "../lib/clinicListen";
 import {
@@ -21,7 +21,7 @@ import {
   type DashboardQueueOrder,
   type DashboardQueueSlug,
 } from "../lib/dashboardQueue";
-import IconButton from "../lib/IconButton";
+import MoreMenu, { moreMenuItemClass, moreMenuKey, type MenuLayout } from "../lib/MoreMenu";
 import { ICON_ACTION_LABELS } from "../lib/iconAction";
 import {
   canAmendResult,
@@ -113,57 +113,6 @@ function orderForList(
     patientLabId: typeof data.patientLabId === "string" ? data.patientLabId : null,
     patientSex: typeof data.patientSex === "string" ? data.patientSex : null,
   };
-}
-
-function MoreMenu({
-  open,
-  onToggle,
-  onClose,
-  children,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open, onClose]);
-
-  return (
-    <div ref={ref} className="relative shrink-0">
-      <IconButton
-        label={ICON_ACTION_LABELS.more}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
-      >
-        <span aria-hidden="true">⋯</span>
-      </IconButton>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 z-20 mt-1 min-w-[10rem] rounded-lf-md border border-lf-line bg-lf-surface py-1 shadow-lg"
-        >
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function menuItemClass() {
-  return "lf-touch flex w-full items-center px-3 text-left text-sm text-lf-ink hover:bg-lf-surface-2";
 }
 
 function primaryDisabledTitle(
@@ -279,7 +228,12 @@ export function CurrentQueueList({
     );
   }
 
-  function renderExtras(order: DashboardQueueOrder, listOrders: PatientListOrder[], patientId: string) {
+  function renderExtras(
+    order: DashboardQueueOrder,
+    listOrders: PatientListOrder[],
+    patientId: string,
+    where: MenuLayout
+  ) {
     const released = isReleasedResultStatus(order.status) ? order : null;
     const items: ReactNode[] = [];
     if (released) {
@@ -288,7 +242,7 @@ export function CurrentQueueList({
           key="print"
           role="menuitem"
           href={`/patients/${patientId}/print`}
-          className={menuItemClass()}
+          className={moreMenuItemClass()}
           onClick={(e) => {
             e.stopPropagation();
             setOpenMenuId(null);
@@ -304,7 +258,7 @@ export function CurrentQueueList({
           key="history"
           role="menuitem"
           href={patientHistoryHref(patientId)}
-          className={menuItemClass()}
+          className={moreMenuItemClass()}
           onClick={(e) => {
             e.stopPropagation();
             setOpenMenuId(null);
@@ -320,7 +274,7 @@ export function CurrentQueueList({
           key="amend"
           role="menuitem"
           href={`/orders/${released.id}`}
-          className={menuItemClass()}
+          className={moreMenuItemClass()}
           onClick={(e) => {
             e.stopPropagation();
             setOpenMenuId(null);
@@ -333,8 +287,11 @@ export function CurrentQueueList({
 
     return (
       <MoreMenu
-        open={openMenuId === order.id}
-        onToggle={() => setOpenMenuId((id) => (id === order.id ? null : order.id))}
+        open={openMenuId === moreMenuKey(where, order.id)}
+        onToggle={() => {
+          const key = moreMenuKey(where, order.id);
+          setOpenMenuId((id) => (id === key ? null : key));
+        }}
         onClose={() => setOpenMenuId(null)}
       >
         {items.length > 0 ? (
@@ -360,7 +317,7 @@ export function CurrentQueueList({
             mode="queue"
             row={data}
             primary={renderPrimary(order, listOrders, patientId)}
-            extras={renderExtras(order, listOrders, patientId)}
+            extras={renderExtras(order, listOrders, patientId, "card")}
           />
         ))}
       </ul>
@@ -374,7 +331,7 @@ export function CurrentQueueList({
                 mode="queue"
                 row={data}
                 primary={renderPrimary(order, listOrders, patientId)}
-                extras={renderExtras(order, listOrders, patientId)}
+                extras={renderExtras(order, listOrders, patientId, "row")}
                 onActivate={() => router.push(patientRecordHref(patientId))}
               />
             ))}

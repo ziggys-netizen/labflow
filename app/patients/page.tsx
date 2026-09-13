@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { db } from "../lib/firebase";
 import { doc, getDoc } from "firebase/firestore";
 import ProtectedRoute from "../lib/ProtectedRoute";
@@ -45,6 +45,7 @@ import {
 import { OperationalChip } from "../lib/OperationalRow";
 import { operationalStripeClass } from "../lib/operationalFlag";
 import IconButton from "../lib/IconButton";
+import MoreMenu, { moreMenuItemClass, moreMenuKey, type MenuLayout } from "../lib/MoreMenu";
 import PrintIcon from "../lib/PrintIcon";
 import TrashIcon from "../lib/TrashIcon";
 import HistoryIcon from "../lib/HistoryIcon";
@@ -123,62 +124,6 @@ function primaryDisabledTitle(
   if (kind === "enter") return "Your role cannot enter results";
   if (kind === "review") return "Your role cannot review results";
   return undefined;
-}
-
-function MoreMenu({
-  open,
-  onToggle,
-  onClose,
-  children,
-}: {
-  open: boolean;
-  onToggle: () => void;
-  onClose: () => void;
-  children: ReactNode;
-}) {
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDoc(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
-    }
-    document.addEventListener("mousedown", onDoc);
-    return () => document.removeEventListener("mousedown", onDoc);
-  }, [open, onClose]);
-
-  return (
-    <div ref={ref} className="relative shrink-0">
-      <IconButton
-        label={ICON_ACTION_LABELS.more}
-        aria-expanded={open}
-        aria-haspopup="menu"
-        onClick={(e) => {
-          e.stopPropagation();
-          onToggle();
-        }}
-      >
-        <span aria-hidden="true">⋯</span>
-      </IconButton>
-      {open && (
-        <div
-          role="menu"
-          className="absolute right-0 z-30 mt-1 min-w-[13rem] max-w-[calc(100vw-2rem)] rounded-lf-md border border-lf-line bg-lf-surface py-1 shadow-lg"
-        >
-          {children}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function menuItemClass(danger = false) {
-  return [
-    // whitespace-nowrap so a two-word action keeps its own line rather than
-    // wrapping into something that reads like two separate options.
-    "lf-touch flex w-full items-center whitespace-nowrap px-4 text-left text-sm",
-    danger ? "text-lf-crit hover:bg-lf-crit-soft" : "text-lf-ink hover:bg-lf-surface-2",
-  ].join(" ");
 }
 
 function PatientsContent() {
@@ -470,7 +415,7 @@ function PatientsContent() {
     );
   }
 
-  function renderMenu(patient: Patient) {
+  function renderMenu(patient: Patient, where: MenuLayout) {
     const orders = ordersByPatient[patient.id] || [];
     const released = orders.find((o) => isReleasedResultStatus(o.status));
     const items: ReactNode[] = [];
@@ -481,7 +426,7 @@ function PatientsContent() {
           key="amend"
           role="menuitem"
           href={`/orders/${released.id}`}
-          className={menuItemClass()}
+          className={moreMenuItemClass()}
           onClick={(e) => {
             e.stopPropagation();
             setOpenMenuId(null);
@@ -496,7 +441,7 @@ function PatientsContent() {
         key="label"
         role="menuitem"
         href={specimenLabelHref(patient.id)}
-        className={menuItemClass()}
+        className={moreMenuItemClass()}
         onClick={(e) => {
           e.stopPropagation();
           setOpenMenuId(null);
@@ -509,8 +454,11 @@ function PatientsContent() {
 
     return (
       <MoreMenu
-        open={openMenuId === patient.id}
-        onToggle={() => setOpenMenuId((id) => (id === patient.id ? null : patient.id))}
+        open={openMenuId === moreMenuKey(where, patient.id)}
+        onToggle={() => {
+          const key = moreMenuKey(where, patient.id);
+          setOpenMenuId((id) => (id === key ? null : key));
+        }}
         onClose={() => setOpenMenuId(null)}
       >
         {items}
@@ -518,14 +466,14 @@ function PatientsContent() {
     );
   }
 
-  function renderExtras(patient: Patient) {
+  function renderExtras(patient: Patient, where: MenuLayout) {
     const orders = ordersByPatient[patient.id] || [];
     const action = patientPrimaryAction(orders);
     const released = orders.find((o) => isReleasedResultStatus(o.status));
     const printSurface = action.kind === "print" ? "primary-next-step" : "secondary";
     const showPrintIcon =
       Boolean(released) && actionPresentation("print", printSurface) === "icon";
-    const menu = renderMenu(patient);
+    const menu = renderMenu(patient, where);
     const showHistoryIcon = canReview && actionPresentation("history", "secondary") === "icon";
     if (!showPrintIcon && !showHistoryIcon && !canDelete && !menu) return null;
 
@@ -655,7 +603,7 @@ function PatientsContent() {
                     </Link>
                     <div className="flex flex-col gap-2">
                       {renderPrimary(p)}
-                      {renderExtras(p)}
+                      {renderExtras(p, "card")}
                     </div>
                   </li>
                 );
@@ -718,7 +666,7 @@ function PatientsContent() {
                         >
                           <div className="flex items-center justify-end gap-2">
                             {renderPrimary(p)}
-                            {renderExtras(p)}
+                            {renderExtras(p, "row")}
                           </div>
                         </td>
                       </tr>
