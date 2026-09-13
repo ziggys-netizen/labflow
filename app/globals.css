@@ -297,6 +297,90 @@ body {
   }
 }
 
+/* Entry-screen laboratory backdrop. See app/lib/LabScene.tsx. */
+.lf-lab-scene {
+  background:
+    radial-gradient(circle at 18% 12%, var(--lf-accent-soft), transparent 55%),
+    radial-gradient(circle at 85% 85%, color-mix(in srgb, var(--lf-cap-lavender) 22%, transparent), transparent 50%),
+    linear-gradient(160deg, var(--lf-ground), var(--lf-surface-2));
+  perspective: 900px;
+}
+
+.lf-lab-scene-glow {
+  position: absolute;
+  width: 42vmax;
+  height: 42vmax;
+  border-radius: 50%;
+  opacity: 0.35;
+  background: radial-gradient(circle, color-mix(in srgb, var(--lf-cap-blue) 45%, transparent), transparent 70%);
+  animation: lf-lab-glow 18s ease-in-out infinite alternate;
+}
+
+.lf-lab-scene-glow--a {
+  left: -10vmax;
+  top: 30%;
+}
+
+.lf-lab-scene-glow--b {
+  right: -12vmax;
+  top: -8vmax;
+  animation-delay: -9s;
+  background: radial-gradient(circle, color-mix(in srgb, var(--lf-cap-lavender) 45%, transparent), transparent 70%);
+}
+
+.lf-tube {
+  transform-style: preserve-3d;
+}
+
+.lf-tube-drift {
+  transform: rotate(var(--lf-tube-tilt));
+  animation-name: lf-tube-drift;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  will-change: transform;
+  filter: drop-shadow(0 10px 14px rgba(20, 40, 60, 0.18));
+}
+
+/* Rise, lean and turn about the vertical axis — the turn is what reads as 3D. */
+@keyframes lf-tube-drift {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) rotate(var(--lf-tube-tilt)) rotateY(0deg);
+  }
+  33% {
+    transform: translate3d(6px, -16px, 40px) rotate(calc(var(--lf-tube-tilt) + 7deg)) rotateY(35deg);
+  }
+  66% {
+    transform: translate3d(-5px, -6px, -30px) rotate(calc(var(--lf-tube-tilt) - 5deg)) rotateY(-30deg);
+  }
+}
+
+@keyframes lf-lab-glow {
+  from {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  to {
+    transform: translate3d(6vmax, -4vmax, 0) scale(1.15);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lf-tube-drift,
+  .lf-lab-scene-glow {
+    animation: none;
+  }
+}
+
+/* Frosted panel that keeps entry-screen text legible over the backdrop. */
+.lf-glass-panel {
+  background: color-mix(in srgb, var(--lf-surface) 86%, transparent);
+  border: 1px solid var(--lf-line);
+  border-radius: 12px;
+  box-shadow: 0 20px 50px -20px rgba(20, 40, 60, 0.35);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+}
+
 /* D6 — specimen tube-cap dot. 11px; inset ring so pale caps stay visible. */
 .lf-specimen-cap-dot {
   display: inline-block;

@@ -2,11 +2,21 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { useAuth, useSessionAuthInput } from "../lib/AuthContext";
 import { continuePathAfterAuth } from "../lib/authState";
 import LabFlowWordmark from "../lib/LabFlowWordmark";
+import LabScene from "../lib/LabScene";
 import { consumeTermsDeclineNotice } from "../lib/legal/termsGate";
+
+function Stage({ children }: { children: ReactNode }) {
+  return (
+    <main className="relative isolate min-h-screen flex items-center justify-center px-6">
+      <LabScene />
+      {children}
+    </main>
+  );
+}
 
 export default function Login() {
   const { user, login, loading, popupBlocked, authError, bootstrapError, termsError, retryBootstrap } =
@@ -48,16 +58,18 @@ export default function Login() {
   // Animation runs during auth resolve only — never blocks redirect above.
   if (loading && !failureMessage && !signingIn) {
     return (
-      <main className="min-h-screen flex items-center justify-center bg-lf-ground px-6">
-        <LabFlowWordmark animate size="lg" />
-      </main>
+      <Stage>
+        <div className="lf-glass-panel px-10 py-8">
+          <LabFlowWordmark animate size="lg" />
+        </div>
+      </Stage>
     );
   }
 
   if (gateError) {
     return (
-      <main className="min-h-screen bg-lf-ground flex items-center justify-center px-6">
-        <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
+      <Stage>
+        <div className="lf-glass-panel max-w-sm w-full px-6 py-8 text-center flex flex-col items-center gap-4">
           <LabFlowWordmark size="lg" />
           <p className="text-lf-ink-2">{gateError}</p>
           <button
@@ -68,27 +80,27 @@ export default function Login() {
             Retry
           </button>
         </div>
-      </main>
+      </Stage>
     );
   }
 
   if (user) {
     return (
-      <main className="min-h-screen bg-lf-ground flex items-center justify-center px-6">
-        <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
+      <Stage>
+        <div className="lf-glass-panel max-w-sm w-full px-6 py-8 text-center flex flex-col items-center gap-4">
           <LabFlowWordmark size="lg" />
           <p className="text-lf-ink-2">Continuing as {user.email}…</p>
           <Link href={continueHref} className="text-lf-ink underline font-medium">
             Continue
           </Link>
         </div>
-      </main>
+      </Stage>
     );
   }
 
   return (
-    <main className="min-h-screen bg-lf-ground flex items-center justify-center px-6">
-      <div className="max-w-sm w-full text-center flex flex-col items-center gap-4">
+    <Stage>
+      <div className="lf-glass-panel max-w-sm w-full px-6 py-8 text-center flex flex-col items-center gap-4">
         <LabFlowWordmark size="lg" />
         <p className="text-lf-ink-2">Sign in with your Google account to continue.</p>
         <button
@@ -100,6 +112,6 @@ export default function Login() {
         {declineMessage && <p className="text-sm text-lf-ink-2">{declineMessage}</p>}
         {failureMessage && <p className="text-sm text-lf-crit">{failureMessage}</p>}
       </div>
-    </main>
+    </Stage>
   );
 }
