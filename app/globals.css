@@ -440,6 +440,30 @@ body {
   to { transform: translate3d(6vmax, -4vmax, 0) scale(1.15); }
 }
 
+/*
+  Reading veil over the content column of a working screen. 82% is the
+  lowest that keeps --lf-ink-2 body text at 4.5:1 when the darkest thing in a
+  scene, a blood-filled tube, passes straight behind it. The side margins of a
+  wide screen stay clear, so the scene still reads there at full strength.
+*/
+.lf-lab-scene-veil {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  width: 100%;
+  max-width: 1248px;
+  transform: translateX(-50%);
+  background: color-mix(in srgb, var(--lf-ground) 82%, transparent);
+}
+
+@media (min-width: 1280px) {
+  .lf-lab-scene-veil {
+    -webkit-mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+    mask-image: linear-gradient(90deg, transparent, #000 24px, #000 calc(100% - 24px), transparent);
+  }
+}
+
 /* ---- Dashboard composition ---- */
 .lf-dash {
   background:

@@ -63,6 +63,7 @@ function ScatterScene({ spec }: { spec: Extract<SceneSpec, { kind: "scatter" }> 
           </div>
         );
       })}
+      {spec.strength === "work" ? <div className="lf-lab-scene-veil" /> : null}
     </div>
   );
 }
@@ -153,6 +154,7 @@ function DashboardScene() {
           ))}
         </div>
       </div>
+      <div className="lf-lab-scene-veil" />
     </div>
   );
 }

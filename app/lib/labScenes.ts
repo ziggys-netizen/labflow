@@ -58,7 +58,11 @@ export type SceneSpec =
       objects: SceneObject[];
       motion: SceneMotion;
       seed: number;
-      /** Entry screens carry the scene at full strength; working screens softer. */
+      /**
+       * "hero" only where the text already sits on its own frosted panel (home,
+       * sign-in). Everywhere else text sits straight on the ground, so the
+       * scene is softer and a reading veil covers the content column.
+       */
       strength: "hero" | "work";
     }
   | { kind: "dashboard" };
@@ -74,8 +78,8 @@ const scatter = (
 export const SCENE_ROUTES: Record<string, SceneSpec> = {
   "/": scatter(["tube"], "drift", 101, "hero"),
   "/login": scatter(["tube", "vial"], "zoom", 102, "hero"),
-  "/join": scatter(["droplet", "bubble"], "rise", 103, "hero"),
-  "/pending": scatter(["clock", "droplet"], "bob", 104, "hero"),
+  "/join": scatter(["droplet", "bubble"], "rise", 103),
+  "/pending": scatter(["clock", "droplet"], "bob", 104),
   "/terms": scatter(["report", "shield"], "sway", 105),
   "/legal/privacy": scatter(["shield", "molecule"], "tumble", 106),
   "/legal/acceptable-use": scatter(["report", "barcodeTag"], "flip", 107),
