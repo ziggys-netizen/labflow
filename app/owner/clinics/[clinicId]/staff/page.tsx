@@ -27,7 +27,7 @@ function ClinicStaffContent() {
 
   if (!allowed) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="max-w-sm mx-auto px-6 py-16 text-center">
           <p className="text-gray-600 mb-4">You can only manage staff for your own clinic.</p>

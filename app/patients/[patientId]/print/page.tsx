@@ -350,7 +350,7 @@ function PatientPrintContent() {
   }
 
   return (
-    <main className="min-h-screen bg-gray-100 py-8 print:bg-white print:py-0">
+    <main className="min-h-screen py-8 print:bg-white print:py-0">
       <style>{PRINT_CSS}</style>
 
       <div className="no-print max-w-[210mm] mx-auto mb-4 flex items-center justify-between px-4">

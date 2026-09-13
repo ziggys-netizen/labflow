@@ -837,7 +837,7 @@ function OrderDetailContent() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="min-h-[50vh] flex items-center justify-center text-gray-600">Loading order...</div>
       </main>
@@ -845,7 +845,7 @@ function OrderDetailContent() {
   }
   if (!order) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="min-h-[50vh] flex items-center justify-center text-gray-600">Order not found.</div>
       </main>
@@ -877,7 +877,7 @@ function OrderDetailContent() {
   const criticalRecord = parseCriticalNotification(order.criticalNotification);
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-2xl mx-auto px-6 py-16">
         {order.reviewNotes?.trim() && (

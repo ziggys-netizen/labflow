@@ -249,7 +249,7 @@ export default function RosterPanel({ clinicId }: { clinicId: string }) {
   }
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-5xl mx-auto px-6 py-16">
         <p className="text-sm text-gray-500 mb-2">

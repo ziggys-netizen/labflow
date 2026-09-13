@@ -843,7 +843,7 @@ export default function StaffPanel({
   if (!canAccess) {
     if (embedded) return null;
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="max-w-sm mx-auto px-6 py-16 text-center">
           <p className="text-gray-600 mb-4">You do not have access to this page.</p>
@@ -907,7 +907,7 @@ export default function StaffPanel({
   const scopedName = scopeClinicId ? clinicNames[scopeClinicId] || scopeClinicId : null;
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="lf-shell py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">

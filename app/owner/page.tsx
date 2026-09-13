@@ -376,7 +376,7 @@ function OwnerContent() {
 
   if (!canAccess) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <AppNav />
         <div className="max-w-sm mx-auto px-6 py-16 text-center">
           <p className="text-gray-600 mb-4">You do not have access to this page.</p>
@@ -389,7 +389,7 @@ function OwnerContent() {
   }
 
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Owner</h1>

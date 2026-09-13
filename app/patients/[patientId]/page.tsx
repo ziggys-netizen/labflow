@@ -116,7 +116,7 @@ function PatientRecordContent() {
   const displayName = patientDisplayName(patient) || patient?.name || "Patient";
 
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <AppNav />
       <div className="lf-shell flex flex-col gap-6 py-8">
         <Link href="/patients" className="lf-touch inline-flex items-center text-sm text-lf-accent">

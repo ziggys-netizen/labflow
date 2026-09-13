@@ -360,7 +360,7 @@ function MovementsContent() {
   const outward = OUT_TYPES.includes(movementType) || (movementType === "adjustment" && adjustmentDirection === "out");
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-5xl mx-auto px-6 py-16">
         <div className="flex flex-wrap items-start justify-between gap-3 mb-1">

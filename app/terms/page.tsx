@@ -62,7 +62,7 @@ function TermsGateContent() {
   }
 
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <div className="lf-shell flex flex-col gap-4 py-12">
         <h1 className="text-2xl font-semibold text-lf-ink">Before you start</h1>
         <p className="text-sm text-lf-ink-2">{formatTermsUpdateNotice()}</p>

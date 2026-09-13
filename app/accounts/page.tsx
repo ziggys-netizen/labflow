@@ -68,7 +68,7 @@ function AccountsContent() {
   const lines = rollup?.byTest ?? [];
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-5xl mx-auto px-6 py-8">
         <h1 className="text-2xl font-semibold text-gray-900">Day’s test value</h1>

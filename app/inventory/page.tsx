@@ -311,7 +311,7 @@ function InventoryContent() {
     !loading && !error && items.length === 0 && movements.length === 0 && specimens.length === 0;
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="lf-shell py-16">
         <div className="flex flex-col gap-4 mb-1 sm:flex-row sm:items-start sm:justify-between">

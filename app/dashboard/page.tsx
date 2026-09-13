@@ -418,7 +418,7 @@ function DashboardContent() {
   if (!allowed) return null;
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <CatalogReviewBanner />
       <div className="max-w-5xl mx-auto px-6 py-16">

@@ -15,7 +15,7 @@ function ClinicAdminContent() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <AppNav />
         <div className="min-h-[50vh] flex items-center justify-center text-gray-600">Loading...</div>
       </main>
@@ -23,7 +23,7 @@ function ClinicAdminContent() {
   }
 
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-3xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">Clinic admin</h1>

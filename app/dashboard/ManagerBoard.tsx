@@ -167,7 +167,7 @@ export default function ManagerBoard({ children }: { children?: ReactNode }) {
   }
 
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <AppNav />
       <CatalogReviewBanner />
       <div className="lf-shell flex flex-col gap-6 py-8">

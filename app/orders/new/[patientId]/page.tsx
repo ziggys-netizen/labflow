@@ -236,7 +236,7 @@ function NewOrderContent() {
 
   if (!allowed) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <AppNav />
         <div className="px-6 py-16 text-center text-gray-600">Redirecting...</div>
       </main>
@@ -245,7 +245,7 @@ function NewOrderContent() {
 
   if (loadingPatient) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <AppNav />
         <div className="px-6 py-16 text-center text-gray-600">Loading patient...</div>
       </main>
@@ -254,7 +254,7 @@ function NewOrderContent() {
 
   if (patientUnavailable) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <AppNav />
         <div className="px-6 py-16 text-center">
           <p className="text-gray-600">This patient is not available for new orders.</p>
@@ -267,7 +267,7 @@ function NewOrderContent() {
   }
 
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-lg mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">

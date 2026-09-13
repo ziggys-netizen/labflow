@@ -128,7 +128,7 @@ function ReviewContent() {
   if (!allowed) return null;
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-5xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Review queue</h1>

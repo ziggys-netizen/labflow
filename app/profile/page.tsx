@@ -128,7 +128,7 @@ function ProfileContent() {
   }
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-2xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Your profile</h1>

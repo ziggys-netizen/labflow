@@ -7,7 +7,7 @@ const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL?.trim() || "";
 
 function SupportContent() {
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <AppNav />
       <div className="lf-shell flex flex-col gap-4 py-12">
         <h1 className="text-2xl font-semibold text-lf-ink">Support</h1>

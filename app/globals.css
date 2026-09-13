@@ -297,13 +297,14 @@ body {
   }
 }
 
-/* Entry-screen laboratory backdrop. See app/lib/LabScene.tsx. */
+/* Laboratory backdrop behind every screen. See app/lib/LabScene.tsx. */
 .lf-lab-scene {
+  --lf-glow-a: var(--lf-cap-blue);
+  --lf-glow-b: var(--lf-cap-lavender);
   background:
     radial-gradient(circle at 18% 12%, var(--lf-accent-soft), transparent 55%),
-    radial-gradient(circle at 85% 85%, color-mix(in srgb, var(--lf-cap-lavender) 22%, transparent), transparent 50%),
+    radial-gradient(circle at 85% 85%, color-mix(in srgb, var(--lf-glow-b) 22%, transparent), transparent 50%),
     linear-gradient(160deg, var(--lf-ground), var(--lf-surface-2));
-  perspective: 900px;
 }
 
 .lf-lab-scene-glow {
@@ -312,7 +313,7 @@ body {
   height: 42vmax;
   border-radius: 50%;
   opacity: 0.35;
-  background: radial-gradient(circle, color-mix(in srgb, var(--lf-cap-blue) 45%, transparent), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--lf-glow-a) 45%, transparent), transparent 70%);
   animation: lf-lab-glow 18s ease-in-out infinite alternate;
 }
 
@@ -325,49 +326,274 @@ body {
   right: -12vmax;
   top: -8vmax;
   animation-delay: -9s;
-  background: radial-gradient(circle, color-mix(in srgb, var(--lf-cap-lavender) 45%, transparent), transparent 70%);
+  background: radial-gradient(circle, color-mix(in srgb, var(--lf-glow-b) 45%, transparent), transparent 70%);
 }
 
-.lf-tube {
-  transform-style: preserve-3d;
+/* Perspective on each object, not the scene: the depth opacity on this
+   element would flatten a shared 3D space anyway. */
+.lf-obj {
+  perspective: 700px;
 }
 
-.lf-tube-drift {
-  transform: rotate(var(--lf-tube-tilt));
-  animation-name: lf-tube-drift;
+.lf-obj-motion {
+  transform: rotate(var(--lf-obj-tilt));
   animation-timing-function: ease-in-out;
   animation-iteration-count: infinite;
   will-change: transform;
   filter: drop-shadow(0 10px 14px rgba(20, 40, 60, 0.18));
 }
 
-/* Rise, lean and turn about the vertical axis — the turn is what reads as 3D. */
-@keyframes lf-tube-drift {
-  0%,
-  100% {
-    transform: translate3d(0, 0, 0) rotate(var(--lf-tube-tilt)) rotateY(0deg);
-  }
-  33% {
-    transform: translate3d(6px, -16px, 40px) rotate(calc(var(--lf-tube-tilt) + 7deg)) rotateY(35deg);
-  }
-  66% {
-    transform: translate3d(-5px, -6px, -30px) rotate(calc(var(--lf-tube-tilt) - 5deg)) rotateY(-30deg);
-  }
+.lf-motion-drift { animation-name: lf-m-drift; }
+.lf-motion-orbit { animation-name: lf-m-orbit; animation-timing-function: linear; }
+.lf-motion-tumble { animation-name: lf-m-tumble; animation-timing-function: linear; }
+.lf-motion-rise { animation-name: lf-m-rise; animation-timing-function: linear; }
+.lf-motion-fall { animation-name: lf-m-fall; animation-timing-function: linear; }
+.lf-motion-wave { animation-name: lf-m-wave; animation-timing-function: linear; }
+.lf-motion-zoom { animation-name: lf-m-zoom; animation-timing-function: cubic-bezier(0.4, 0, 0.8, 1); }
+.lf-motion-bob { animation-name: lf-m-bob; }
+.lf-motion-sway { animation-name: lf-m-sway; transform-origin: 50% 0%; }
+.lf-motion-flip { animation-name: lf-m-flip; }
+.lf-motion-swirl { animation-name: lf-m-swirl; animation-timing-function: linear; }
+
+/* Rise, lean and turn about the vertical axis. */
+@keyframes lf-m-drift {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--lf-obj-tilt)) rotateY(0deg); }
+  33% { transform: translate3d(6px, -16px, 40px) rotate(calc(var(--lf-obj-tilt) + 7deg)) rotateY(35deg); }
+  66% { transform: translate3d(-5px, -6px, -30px) rotate(calc(var(--lf-obj-tilt) - 5deg)) rotateY(-30deg); }
+}
+
+/* A full turn on the spot, like a display carousel. */
+@keyframes lf-m-orbit {
+  from { transform: rotate(var(--lf-obj-tilt)) rotateX(14deg) rotateY(0deg); }
+  to { transform: rotate(var(--lf-obj-tilt)) rotateX(14deg) rotateY(360deg); }
+}
+
+/* Slow end-over-end roll on a skewed axis. */
+@keyframes lf-m-tumble {
+  from { transform: rotate(var(--lf-obj-tilt)) rotate3d(1, 0.7, 0.3, 0deg); }
+  to { transform: rotate(var(--lf-obj-tilt)) rotate3d(1, 0.7, 0.3, 360deg); }
+}
+
+/* Up through the screen, turning, fading in and out at the edges. */
+@keyframes lf-m-rise {
+  0% { transform: translate3d(0, 55vh, 0) rotate(var(--lf-obj-tilt)) rotateY(0deg); opacity: 0; }
+  12% { opacity: 1; }
+  50% { transform: translate3d(18px, 0, 0) rotate(calc(var(--lf-obj-tilt) + 10deg)) rotateY(180deg); }
+  88% { opacity: 1; }
+  100% { transform: translate3d(0, -55vh, 0) rotate(var(--lf-obj-tilt)) rotateY(360deg); opacity: 0; }
+}
+
+/* Down through the screen, rolling forward. */
+@keyframes lf-m-fall {
+  0% { transform: translate3d(0, -55vh, 0) rotate(var(--lf-obj-tilt)) rotateX(0deg); opacity: 0; }
+  12% { opacity: 1; }
+  88% { opacity: 1; }
+  100% { transform: translate3d(0, 55vh, 0) rotate(calc(var(--lf-obj-tilt) + 180deg)) rotateX(360deg); opacity: 0; }
+}
+
+/* Across the screen like a conveyor, swinging toward the viewer mid-way. */
+@keyframes lf-m-wave {
+  0% { transform: translate3d(-50vw, 0, 0) rotate(var(--lf-obj-tilt)) rotateY(-45deg); opacity: 0; }
+  10% { opacity: 1; }
+  25% { transform: translate3d(-25vw, -18px, 30px) rotate(var(--lf-obj-tilt)) rotateY(-20deg); }
+  50% { transform: translate3d(0, 0, 70px) rotate(var(--lf-obj-tilt)) rotateY(0deg); }
+  75% { transform: translate3d(25vw, 18px, 30px) rotate(var(--lf-obj-tilt)) rotateY(20deg); }
+  90% { opacity: 1; }
+  100% { transform: translate3d(50vw, 0, 0) rotate(var(--lf-obj-tilt)) rotateY(45deg); opacity: 0; }
+}
+
+/* Out of the distance and past the viewer. */
+@keyframes lf-m-zoom {
+  0% { transform: translate3d(0, 0, -700px) rotate(var(--lf-obj-tilt)) rotateY(0deg); opacity: 0; }
+  20% { opacity: 1; }
+  80% { opacity: 1; }
+  100% { transform: translate3d(0, 0, 320px) rotate(calc(var(--lf-obj-tilt) + 25deg)) rotateY(60deg); opacity: 0; }
+}
+
+/* Floating on a slow swell. */
+@keyframes lf-m-bob {
+  0%, 100% { transform: translate3d(0, 0, 0) rotate(var(--lf-obj-tilt)) rotateY(-18deg) scale(1); }
+  50% { transform: translate3d(0, -22px, 40px) rotate(calc(var(--lf-obj-tilt) + 4deg)) rotateY(18deg) scale(1.05); }
+}
+
+/* Hung from the top and swinging. */
+@keyframes lf-m-sway {
+  0%, 100% { transform: rotate(calc(var(--lf-obj-tilt) - 14deg)) rotateX(12deg); }
+  50% { transform: rotate(calc(var(--lf-obj-tilt) + 14deg)) rotateX(-12deg); }
+}
+
+/* A somersault, a pause, another. */
+@keyframes lf-m-flip {
+  0% { transform: rotate(var(--lf-obj-tilt)) rotateX(0deg); }
+  40%, 50% { transform: rotate(var(--lf-obj-tilt)) rotateX(180deg); }
+  90%, 100% { transform: rotate(var(--lf-obj-tilt)) rotateX(360deg); }
+}
+
+/* Circling a point while turning. */
+@keyframes lf-m-swirl {
+  from { transform: rotate(0deg) translateX(48px) rotate(0deg) rotate(var(--lf-obj-tilt)) rotateY(0deg); }
+  to { transform: rotate(360deg) translateX(48px) rotate(-360deg) rotate(var(--lf-obj-tilt)) rotateY(360deg); }
 }
 
 @keyframes lf-lab-glow {
-  from {
-    transform: translate3d(0, 0, 0) scale(1);
+  from { transform: translate3d(0, 0, 0) scale(1); }
+  to { transform: translate3d(6vmax, -4vmax, 0) scale(1.15); }
+}
+
+/* ---- Dashboard composition ---- */
+.lf-dash {
+  background:
+    radial-gradient(ellipse at 70% 60%, color-mix(in srgb, var(--lf-cap-blue) 28%, transparent), transparent 55%),
+    radial-gradient(circle at 12% 20%, color-mix(in srgb, var(--lf-cap-lavender) 26%, transparent), transparent 45%),
+    linear-gradient(170deg, var(--lf-ground), var(--lf-accent-soft));
+}
+
+/* A grid floor seen at a low angle, running toward the viewer. */
+.lf-dash-floor {
+  position: absolute;
+  left: -50%;
+  right: -50%;
+  bottom: -10%;
+  height: 60%;
+  transform: perspective(600px) rotateX(72deg);
+  transform-origin: 50% 100%;
+  background-image:
+    linear-gradient(color-mix(in srgb, var(--lf-accent) 30%, transparent) 2px, transparent 2px),
+    linear-gradient(90deg, color-mix(in srgb, var(--lf-accent) 30%, transparent) 2px, transparent 2px);
+  background-size: 64px 64px;
+  -webkit-mask-image: linear-gradient(to top, #000 10%, transparent 90%);
+  mask-image: linear-gradient(to top, #000 10%, transparent 90%);
+  animation: lf-dash-floor 3s linear infinite;
+}
+
+@keyframes lf-dash-floor {
+  from { background-position: 0 0; }
+  to { background-position: 0 64px; }
+}
+
+.lf-dash-stage {
+  --lf-dash-size: clamp(220px, 36vmin, 440px);
+  --lf-dash-radius: calc(var(--lf-dash-size) * 0.62);
+  position: absolute;
+  left: 72%;
+  top: 58%;
+  width: var(--lf-dash-size);
+  height: var(--lf-dash-size);
+  transform: translate(-50%, -50%);
+  perspective: 1100px;
+  transform-style: preserve-3d;
+}
+
+@media (max-width: 639px) {
+  .lf-dash-stage {
+    left: 50%;
+    top: 74%;
   }
-  to {
-    transform: translate3d(6vmax, -4vmax, 0) scale(1.15);
+  .lf-dash-helix--right {
+    display: none;
   }
 }
 
+.lf-dash-rotor-plane {
+  position: absolute;
+  inset: 0;
+  transform: rotateX(64deg);
+  transform-style: preserve-3d;
+}
+
+.lf-dash-rotor {
+  width: 100%;
+  animation: lf-dash-spin 5s linear infinite;
+  filter: drop-shadow(0 18px 24px rgba(20, 40, 60, 0.3));
+}
+
+@keyframes lf-dash-spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Pulses spreading across the plane the rotor spins in. */
+.lf-dash-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  border: 3px solid color-mix(in srgb, var(--lf-cap-blue) 70%, transparent);
+  transform: rotateX(64deg) scale(1);
+  opacity: 0;
+  animation: lf-dash-ring 4s ease-out infinite;
+}
+
+.lf-dash-ring--late {
+  animation-delay: -2s;
+  border-color: color-mix(in srgb, var(--lf-cap-lavender) 70%, transparent);
+}
+
+@keyframes lf-dash-ring {
+  0% { transform: rotateX(64deg) scale(1); opacity: 0.8; }
+  100% { transform: rotateX(64deg) scale(1.9); opacity: 0; }
+}
+
+/* Tubes on a ring orbiting above the rotor. */
+.lf-dash-carousel {
+  position: absolute;
+  inset: 0;
+  transform-style: preserve-3d;
+  animation: lf-dash-carousel 22s linear infinite;
+}
+
+@keyframes lf-dash-carousel {
+  from { transform: translateY(-38%) rotateX(-10deg) rotateY(0deg); }
+  to { transform: translateY(-38%) rotateX(-10deg) rotateY(360deg); }
+}
+
+.lf-dash-carousel-slot {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(var(--lf-dash-size) * 0.11);
+  margin-left: calc(var(--lf-dash-size) * -0.055);
+  margin-top: calc(var(--lf-dash-size) * -0.23);
+  filter: drop-shadow(0 8px 10px rgba(20, 40, 60, 0.25));
+}
+
+.lf-dash-helix {
+  position: absolute;
+  top: 50%;
+  width: clamp(48px, 6vmax, 90px);
+  transform: translateY(-50%);
+  perspective: 800px;
+  opacity: 0.75;
+}
+
+.lf-dash-helix--left { left: 4%; }
+.lf-dash-helix--right { left: 38%; top: 30%; opacity: 0.45; }
+
+.lf-dash-helix-turn {
+  animation: lf-dash-helix 9s linear infinite;
+}
+
+.lf-dash-helix-turn--reverse {
+  animation-direction: reverse;
+  animation-duration: 13s;
+}
+
+@keyframes lf-dash-helix {
+  from { transform: rotateY(0deg); }
+  to { transform: rotateY(360deg); }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .lf-tube-drift,
-  .lf-lab-scene-glow {
+  .lf-obj-motion,
+  .lf-lab-scene-glow,
+  .lf-dash-floor,
+  .lf-dash-rotor,
+  .lf-dash-ring,
+  .lf-dash-carousel,
+  .lf-dash-helix-turn {
     animation: none;
+  }
+  .lf-dash-carousel {
+    transform: translateY(-38%) rotateX(-10deg);
   }
 }
 

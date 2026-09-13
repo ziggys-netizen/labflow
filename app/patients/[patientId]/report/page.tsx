@@ -405,7 +405,7 @@ function ReportContentContent() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <div className="no-print">
           <AppNav />
         </div>
@@ -416,7 +416,7 @@ function ReportContentContent() {
 
   if (loadError) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <div className="no-print">
           <AppNav />
         </div>
@@ -441,7 +441,7 @@ function ReportContentContent() {
 
   if (notFound || !patient) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <div className="no-print">
           <AppNav />
         </div>
@@ -460,7 +460,7 @@ function ReportContentContent() {
   const printing = reports.find((r) => r.id === printingId) || null;
 
   return (
-    <main className="min-h-screen bg-lf-ground print:bg-white">
+    <main className="min-h-screen print:bg-white">
       <style>{PRINT_CSS}</style>
       <div className="no-print">
         <AppNav />

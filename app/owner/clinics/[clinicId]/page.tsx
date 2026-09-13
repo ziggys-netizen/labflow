@@ -54,7 +54,7 @@ function ClinicProfileContent() {
 
   if (!allowed) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="max-w-sm mx-auto px-6 py-16 text-center">
           <p className="text-gray-600 mb-4">You can only open your own clinic.</p>
@@ -308,7 +308,7 @@ function ClinicProfileEditor({
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="min-h-[50vh] flex items-center justify-center text-gray-600">Loading...</div>
       </main>
@@ -317,7 +317,7 @@ function ClinicProfileEditor({
 
   if (!clinic) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="max-w-sm mx-auto px-6 py-16 text-center">
           <p className="text-gray-600 mb-4">Clinic not found.</p>
@@ -339,7 +339,7 @@ function ClinicProfileEditor({
   }
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-3xl mx-auto px-6 py-16">
         {owner && (

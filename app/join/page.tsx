@@ -102,7 +102,7 @@ function JoinContent() {
 
   if (status === "approved" || autoApproved) {
     return (
-      <main className="min-h-screen bg-white flex items-center justify-center px-6">
+      <main className="min-h-screen flex items-center justify-center px-6">
         <div className="max-w-sm w-full text-center">
           <p className="text-gray-600 mb-4">You already have access to LabFlow.</p>
           <a href="/patients" className="text-gray-900 underline font-medium">
@@ -115,7 +115,7 @@ function JoinContent() {
 
   if (submitted || (status === "pending" && clinicId)) {
     return (
-      <main className="min-h-screen bg-white flex items-center justify-center px-6">
+      <main className="min-h-screen flex items-center justify-center px-6">
         <div className="max-w-sm w-full text-center">
           <h1 className="text-2xl font-semibold text-gray-900 mb-2">Request submitted</h1>
           <p className="text-gray-600">
@@ -128,7 +128,7 @@ function JoinContent() {
 
   if (match) {
     return (
-      <main className="min-h-screen bg-white flex items-center justify-center px-6">
+      <main className="min-h-screen flex items-center justify-center px-6">
         <div className="max-w-sm w-full">
           <h1 className="text-2xl font-semibold text-gray-900 mb-2 text-center">Confirm clinic</h1>
           <p className="text-gray-600 mb-6 text-center">
@@ -160,7 +160,7 @@ function JoinContent() {
   }
 
   return (
-    <main className="min-h-screen bg-white flex items-center justify-center px-6">
+    <main className="min-h-screen flex items-center justify-center px-6">
       <div className="max-w-sm w-full">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2 text-center">Join a clinic</h1>
         <p className="text-gray-600 mb-6 text-center">

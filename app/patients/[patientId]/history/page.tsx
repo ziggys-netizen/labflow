@@ -441,7 +441,7 @@ function PatientHistoryContent() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <div className="no-print">
           <AppNav />
         </div>
@@ -452,7 +452,7 @@ function PatientHistoryContent() {
 
   if (loadError) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <div className="no-print">
           <AppNav />
         </div>
@@ -477,7 +477,7 @@ function PatientHistoryContent() {
 
   if (notFound || !patient) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <div className="no-print">
           <AppNav />
         </div>
@@ -495,7 +495,7 @@ function PatientHistoryContent() {
   const allSelected = allIds.length > 0 && allIds.every((id) => selectedIds.includes(id));
 
   return (
-    <main className="min-h-screen bg-lf-ground print:bg-white">
+    <main className="min-h-screen print:bg-white">
       <style>{PRINT_CSS}</style>
       <div className="no-print">
         <AppNav />

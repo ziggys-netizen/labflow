@@ -6,13 +6,11 @@ import { useEffect, useState, type ReactNode } from "react";
 import { useAuth, useSessionAuthInput } from "../lib/AuthContext";
 import { continuePathAfterAuth } from "../lib/authState";
 import LabFlowWordmark from "../lib/LabFlowWordmark";
-import LabScene from "../lib/LabScene";
 import { consumeTermsDeclineNotice } from "../lib/legal/termsGate";
 
 function Stage({ children }: { children: ReactNode }) {
   return (
-    <main className="relative isolate min-h-screen flex items-center justify-center px-6">
-      <LabScene />
+    <main className="min-h-screen flex items-center justify-center px-6">
       {children}
     </main>
   );

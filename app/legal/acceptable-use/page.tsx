@@ -8,7 +8,7 @@ import { formatTermsUpdateNotice, termsRecordedCaption } from "../../lib/legal/t
 
 function AcceptableUseContent() {
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <AppNav />
       <div className="lf-shell flex flex-col gap-4 py-12">
         <h1 className="text-2xl font-semibold text-lf-ink">{ACCEPTABLE_USE.title}</h1>

@@ -105,7 +105,7 @@ function DeletedPatientsContent() {
   }
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-6xl mx-auto px-6 py-16">
         <div className="flex items-center justify-between mb-6">

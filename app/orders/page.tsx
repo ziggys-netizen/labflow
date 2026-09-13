@@ -62,7 +62,7 @@ function OrdersContent() {
     });
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="lf-shell py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-6">Test orders</h1>

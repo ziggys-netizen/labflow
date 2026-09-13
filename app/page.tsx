@@ -1,12 +1,10 @@
 "use client";
 
 import AppNav from "./lib/AppNav";
-import LabScene from "./lib/LabScene";
 
 export default function Home() {
   return (
-    <main className="relative isolate min-h-screen">
-      <LabScene />
+    <main className="min-h-screen">
       <AppNav />
 
       <section className="lf-shell py-16 sm:py-24">

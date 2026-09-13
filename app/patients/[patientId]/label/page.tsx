@@ -173,7 +173,7 @@ function LabelContent() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <div className="no-print">
           <AppNav />
         </div>
@@ -184,7 +184,7 @@ function LabelContent() {
 
   if (loadError) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <div className="no-print">
           <AppNav />
         </div>
@@ -209,7 +209,7 @@ function LabelContent() {
 
   if (notFound) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <div className="no-print">
           <AppNav />
         </div>
@@ -225,7 +225,7 @@ function LabelContent() {
 
   if (labelError || !label) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <div className="no-print">
           <AppNav />
         </div>
@@ -240,7 +240,7 @@ function LabelContent() {
   }
 
   return (
-    <main className="min-h-screen bg-lf-ground print:bg-white">
+    <main className="min-h-screen print:bg-white">
       <style>{labelPageCss(size)}</style>
       <div className="no-print">
         <AppNav />

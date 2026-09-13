@@ -123,7 +123,7 @@ function DataQualityContent() {
 
   if (!owner) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="max-w-sm mx-auto px-6 py-16 text-center">
           <p className="text-gray-600 mb-4">Only the platform owner can repair collection times.</p>
@@ -137,7 +137,7 @@ function DataQualityContent() {
 
   if (!clinicId) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="max-w-sm mx-auto px-6 py-16 text-center">
           <p className="text-gray-600 mb-4">Clinic not found.</p>
@@ -227,7 +227,7 @@ function DataQualityContent() {
 
   if (loading) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="min-h-[50vh] flex items-center justify-center text-gray-600">Loading...</div>
       </main>
@@ -236,7 +236,7 @@ function DataQualityContent() {
 
   if (clinicMissing) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="max-w-sm mx-auto px-6 py-16 text-center">
           <p className="text-gray-600 mb-4">Clinic not found.</p>
@@ -249,7 +249,7 @@ function DataQualityContent() {
   }
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="max-w-5xl mx-auto px-6 py-16">
         <p className="text-sm text-gray-500 mb-2">

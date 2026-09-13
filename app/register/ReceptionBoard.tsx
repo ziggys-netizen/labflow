@@ -114,7 +114,7 @@ export default function ReceptionBoard({ children }: { children: ReactNode }) {
   const loading = patientsQuery.loading || ordersQuery.loading || catalogQuery.loading;
 
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <AppNav />
       <div className="lf-shell flex flex-col gap-6 py-8">
         <a

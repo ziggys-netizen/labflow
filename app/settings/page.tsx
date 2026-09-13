@@ -29,7 +29,7 @@ function SettingsRedirect() {
   }, [loading, role, clinicId, router]);
 
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <AppNav />
       <div className="min-h-[50vh] flex items-center justify-center text-gray-600">Redirecting...</div>
     </main>

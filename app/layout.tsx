@@ -3,6 +3,7 @@ import type { ReactNode } from "react";
 import { IBM_Plex_Mono, IBM_Plex_Sans } from "next/font/google";
 import "./globals.css";
 import Providers from "./lib/Providers";
+import RouteLabScene from "./lib/LabScene";
 
 const ibmPlexSans = IBM_Plex_Sans({
   variable: "--font-ibm-plex-sans",
@@ -33,6 +34,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       className={`${ibmPlexSans.variable} ${ibmPlexMono.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col font-sans">
+        <RouteLabScene />
         <Providers>{children}</Providers>
       </body>
     </html>

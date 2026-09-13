@@ -1178,7 +1178,7 @@ function MigrationContent() {
 
   if (!canAccess) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="mx-auto max-w-lg px-6 py-16 text-center">
           <h1 className="mb-2 text-2xl font-semibold text-gray-900">Migration Center</h1>
@@ -1196,7 +1196,7 @@ function MigrationContent() {
 
   if (loadingClinic) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="flex min-h-[50vh] items-center justify-center text-gray-600">
           Loading clinic...
@@ -1207,7 +1207,7 @@ function MigrationContent() {
 
   if (!clinic) {
     return (
-      <main className="min-h-screen bg-white">
+      <main className="min-h-screen">
         <AppNav />
         <div className="mx-auto max-w-lg px-6 py-16 text-center">
           <h1 className="mb-2 text-2xl font-semibold text-gray-900">Migration Center</h1>
@@ -1221,7 +1221,7 @@ function MigrationContent() {
   }
 
   return (
-    <main className="min-h-screen bg-white">
+    <main className="min-h-screen">
       <AppNav />
       <div className="mx-auto max-w-5xl px-6 py-12">
         <div className="mb-6 flex flex-wrap items-start justify-between gap-4">

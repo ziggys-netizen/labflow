@@ -117,7 +117,7 @@ function QueueAllContent() {
 
   if (!slug) {
     return (
-      <main className="min-h-screen bg-lf-ground">
+      <main className="min-h-screen">
         <AppNav />
         <div className="lf-shell py-8">
           <p className="text-sm text-lf-ink-2">Unknown queue.</p>
@@ -132,7 +132,7 @@ function QueueAllContent() {
   const tile = dashboardQueueTile(slug);
 
   return (
-    <main className="min-h-screen bg-lf-ground">
+    <main className="min-h-screen">
       <AppNav />
       <div className="lf-shell flex flex-col gap-6 py-8">
         <div>
@@ -155,7 +155,7 @@ function QueueAllContent() {
 export default function DashboardQueueAllPage() {
   return (
     <ProtectedRoute require={canViewDashboard}>
-      <Suspense fallback={<main className="min-h-screen bg-lf-ground" />}>
+      <Suspense fallback={<main className="min-h-screen" />}>
         <QueueAllContent />
       </Suspense>
     </ProtectedRoute>
