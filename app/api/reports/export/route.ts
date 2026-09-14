@@ -25,7 +25,14 @@ import {
   type ReportType,
 } from "@/app/lib/reportExport";
 import { buildReportWorkbook } from "@/app/lib/reportWorkbook";
-import { getResend, resendFromAddress, ResendUnavailableError } from "@/app/lib/resendMail";
+import {
+  assertResendConfigured,
+  describeResendFailure,
+  getResend,
+  RESEND_NOT_CONFIGURED_MESSAGE,
+  resendFromAddress,
+  ResendUnavailableError,
+} from "@/app/lib/resendMail";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -114,11 +121,9 @@ async function appendRecentExport(uid: string, entry: RecentExport) {
   await ref.set({ recent, lastExportAt: entry.at }, { merge: true });
 }
 
-function jsonResend503() {
-  return jsonError(
-    503,
-    "Email delivery is not configured. Set RESEND_API_KEY and RESEND_FROM (verified sending domain in Resend)."
-  );
+// 500, not 503: the mail service is not down, LabFlow is missing its settings.
+function jsonResendNotConfigured() {
+  return jsonError(500, RESEND_NOT_CONFIGURED_MESSAGE);
 }
 
 export async function GET(request: Request) {
@@ -163,6 +168,9 @@ export async function POST(request: Request) {
     if (parsed.delivery === "email" && !recipient) {
       return jsonError(400, "No registered email on this account.");
     }
+    // Before the quota, the reads and the workbook: an unfinished mail setup
+    // must not use up one of this person's exports for the hour.
+    if (parsed.delivery === "email") assertResendConfigured();
 
     if (await consumeExportQuota(auth.token.uid)) {
       return jsonError(
@@ -221,7 +229,8 @@ export async function POST(request: Request) {
       });
       if (sent.error) {
         console.error(sent.error);
-        return jsonError(502, "The spreadsheet was built but email delivery failed. Try again shortly.");
+        const failure = describeResendFailure(sent.error);
+        return jsonError(failure.status, failure.message);
       }
     }
 
@@ -286,7 +295,10 @@ export async function POST(request: Request) {
       delivery: parsed.delivery,
     });
   } catch (err) {
-    if (err instanceof ResendUnavailableError) return jsonResend503();
+    if (err instanceof ResendUnavailableError) {
+      console.error(err);
+      return jsonResendNotConfigured();
+    }
     if (isAdminCredentialError(err)) return json503();
     console.error(err);
     return jsonError(500, "Something went wrong. Please try again.");
