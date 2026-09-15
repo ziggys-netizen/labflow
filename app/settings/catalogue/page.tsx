@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
 import { doc, setDoc } from "firebase/firestore";
@@ -585,9 +586,15 @@ function CatalogueContent() {
       <AppNav />
       <CatalogReviewBanner />
       <div className="max-w-3xl mx-auto px-6 py-16">
-        <h1 className="text-2xl font-semibold text-gray-900 mb-2">Catalogue</h1>
+        <div className="flex items-center justify-between mb-2">
+          <h1 className="text-2xl font-semibold text-gray-900">Catalogue</h1>
+          <Link href="/settings/services" className="text-sm text-gray-900 underline">
+            Services →
+          </Link>
+        </div>
         <p className="text-gray-600 mb-6">
           Edit test units, reference ranges, pricing, optional turnaround minutes, and SOP references.
+          Non-lab items a cashier can bill (consultation, a procedure fee) live in Services, not here.
         </p>
         {needsClinic && <ActingClinicPrompt />}
         {!needsClinic && tests.length === 0 && (

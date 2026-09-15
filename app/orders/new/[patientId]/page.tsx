@@ -19,18 +19,8 @@ import {
   paymentRequiredOnOrder,
 } from "../../../lib/permissions";
 import { useWriteIdentity } from "../../../lib/pinSession";
-import {
-  PAYMENT_METHODS,
-  PAYMENT_METHOD_LABELS,
-  PAYMENT_REFERENCE_MAX,
-  buildOrderPayment,
-  formatPaymentAmount,
-  isPaymentMethod,
-  methodNeedsReference,
-  orderChargeTotal,
-  paymentInputError,
-} from "../../../lib/orderPayment";
-import { CURRENCY_SYMBOL } from "../../../lib/currency";
+import { buildOrderPayment, orderChargeTotal, paymentInputError } from "../../../lib/orderPayment";
+import PaymentFieldset from "../../../lib/PaymentFieldset";
 import { isOrderForDeletedPatient, isPatientDeleted } from "../../../lib/patientSoftDelete";
 import { isReleasedResultStatus } from "../../../lib/resultAmendment";
 import { trackedAddDoc, writeActorFromUser } from "../../../lib/trackedWrites";
@@ -295,10 +285,17 @@ function NewOrderContent() {
         }
       }
       setStatus("Order created successfully.");
-      // Cashier cannot open an order's detail page (no collect/enter
-      // capability) — send it back to its own board, where the new order now
-      // shows under "Awaiting collection".
-      router.push(isReceptionBoardRole(role) ? "/register" : `/orders/${docRef.id}`);
+      if (payment) {
+        // A payment was taken: the receipt is the next stop for every role,
+        // cashier included — it is also the one order-adjacent page cashier
+        // may open (cashierAllowedPath), with its own way back to the board.
+        router.push(`/orders/${docRef.id}/receipt`);
+      } else {
+        // Cashier cannot open an order's detail page (no collect/enter
+        // capability) — send it back to its own board, where the new order
+        // now shows under "Awaiting collection".
+        router.push(isReceptionBoardRole(role) ? "/register" : `/orders/${docRef.id}`);
+      }
     } catch (err) {
       console.error(err);
       setStatus("Something went wrong. Please try again.");
@@ -482,64 +479,15 @@ function NewOrderContent() {
             </ul>
 
             {showPayment && (
-              <fieldset className="mb-6 rounded-lg border border-gray-200 p-4">
-                <legend className="px-1 text-sm font-medium text-gray-700">
-                  Payment{paymentRequired ? "" : " (optional)"}
-                </legend>
-                {(() => {
-                  if (selectedTests.length === 0) {
-                    return <p className="text-sm text-gray-500 mb-3">Select tests to see the amount due.</p>;
-                  }
-                  const charge = orderChargeTotal(selectedTests);
-                  if (!charge.ok) {
-                    return (
-                      <p className="text-sm text-red-900 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
-                        <span className="font-semibold">Price missing:</span> {charge.missingPrice.join(", ")}.
-                        Ask the lab manager to set it in Catalogue before taking payment.
-                      </p>
-                    );
-                  }
-                  return (
-                    <p className="text-sm text-gray-900 mb-3">
-                      Amount due:{" "}
-                      <span className="lf-num font-semibold">
-                        {formatPaymentAmount({ amount: charge.amount, currency: CURRENCY_SYMBOL })}
-                      </span>
-                    </p>
-                  );
-                })()}
-                <div className="flex flex-col gap-2 mb-3" role="radiogroup" aria-label="Payment method">
-                  {PAYMENT_METHODS.map((method) => (
-                    <label key={method} className="lf-touch flex items-center gap-3 text-sm text-gray-900">
-                      <input
-                        type="radio"
-                        name="payment-method"
-                        value={method}
-                        checked={paymentMethod === method}
-                        onChange={() => setPaymentMethod(method)}
-                      />
-                      {PAYMENT_METHOD_LABELS[method]}
-                    </label>
-                  ))}
-                </div>
-                {isPaymentMethod(paymentMethod) && methodNeedsReference(paymentMethod) && (
-                  <label className="block text-sm text-gray-700">
-                    Transaction ID
-                    <input
-                      type="text"
-                      value={paymentReference}
-                      onChange={(e) => setPaymentReference(e.target.value)}
-                      maxLength={PAYMENT_REFERENCE_MAX}
-                      autoComplete="off"
-                      placeholder="As shown on the patient's confirmation"
-                      className="lf-num mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"
-                    />
-                  </label>
-                )}
-                <p className="text-xs text-gray-500 mt-3">
-                  Recorded with the order and cannot be changed afterwards.
-                </p>
-              </fieldset>
+              <PaymentFieldset
+                required={paymentRequired}
+                charge={selectedTests.length > 0 ? orderChargeTotal(selectedTests) : null}
+                emptyMessage="Select tests to see the amount due."
+                method={paymentMethod}
+                onMethodChange={setPaymentMethod}
+                reference={paymentReference}
+                onReferenceChange={setPaymentReference}
+              />
             )}
 
             <button

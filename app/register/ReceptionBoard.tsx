@@ -7,7 +7,7 @@ import NotYetSynced from "../lib/NotYetSynced";
 import OperationalRow from "../lib/OperationalRow";
 import { useAuth } from "../lib/AuthContext";
 import { useClinicCollection } from "../lib/clinicListen";
-import { canOrderTests } from "../lib/permissions";
+import { canOrderTests, canRecordPayment } from "../lib/permissions";
 import { isPatientDeleted } from "../lib/patientSoftDelete";
 import { isOrderForDeletedPatient } from "../lib/patientSoftDelete";
 import { useWriteIdentity } from "../lib/pinSession";
@@ -26,6 +26,7 @@ export default function ReceptionBoard({ children }: { children: ReactNode }) {
   const { role, clinicId } = useAuth();
   const writer = useWriteIdentity();
   const canOrder = canOrderTests(role);
+  const canBillService = canRecordPayment(role);
   const [search, setSearch] = useState("");
   const [showAllRegistered, setShowAllRegistered] = useState(false);
   const [showAllAwaiting, setShowAllAwaiting] = useState(false);
@@ -94,13 +95,15 @@ export default function ReceptionBoard({ children }: { children: ReactNode }) {
 
   const registeredToday = useMemo(
     () =>
-      buildTodaysRegistrations(patients, now, { onlyCreatedByUid: writer.uid, canOrder }).filter(
-        (row) => {
-          const patient = patientsById.get(row.id.replace(/^reg:/, ""));
-          return patient ? matchesPatientSearch(patient, search) : true;
-        }
-      ),
-    [patients, now, writer.uid, canOrder, patientsById, search]
+      buildTodaysRegistrations(patients, now, {
+        onlyCreatedByUid: writer.uid,
+        canOrder,
+        canBillService,
+      }).filter((row) => {
+        const patient = patientsById.get(row.id.replace(/^reg:/, ""));
+        return patient ? matchesPatientSearch(patient, search) : true;
+      }),
+    [patients, now, writer.uid, canOrder, canBillService, patientsById, search]
   );
 
   const awaiting = useMemo(() => {
@@ -168,6 +171,14 @@ export default function ReceptionBoard({ children }: { children: ReactNode }) {
                     >
                       {row.actionLabel}
                     </Link>
+                    {row.secondaryHref && (
+                      <Link
+                        href={row.secondaryHref}
+                        className="lf-touch inline-flex items-center justify-center rounded-lf-md border border-lf-line px-3 text-sm font-medium text-lf-ink"
+                      >
+                        {row.secondaryLabel}
+                      </Link>
+                    )}
                   </div>
                 </OperationalRow>
               );

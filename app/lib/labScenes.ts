@@ -122,6 +122,11 @@ export const SCENE_ROUTES: Record<string, SceneSpec> = {
   "/owner/clinics/[clinicId]/migration": scatter(["box", "droplet"], "zoom", 137),
   "/owner/clinics/[clinicId]/roster": scatter(["clock", "pipette"], "sway", 138),
   "/owner/clinics/[clinicId]/staff": scatter(["wbc", "pipette"], "zoom", 139),
+
+  "/orders/[orderId]/receipt": scatter(["report", "droplet"], "zoom", 140),
+  "/services/new/[patientId]": scatter(["cuvette", "atom"], "swirl", 141),
+  "/services/[chargeId]/receipt": scatter(["report", "thermometer"], "orbit", 142),
+  "/settings/services": scatter(["flask", "droplet"], "flip", 143),
 };
 
 /** For an address no route claims — a mistyped link, a removed page. */

@@ -14,6 +14,7 @@ import type { RouteRequire } from "./authState";
 import {
   canAccessClinicSettings,
   canApproveResults,
+  canEditServiceCatalogue,
   canEditTestCatalogue,
   canManageMedicalReports,
   canRestorePatient,
@@ -34,6 +35,7 @@ export const CAPABILITIES = [
   "view:inventory",
   "view:testValue",
   "edit:catalogue",
+  "edit:services",
   "manage:clinic",
   "restore:records",
   "platform:owner",
@@ -51,6 +53,7 @@ export type SurfaceId =
   | "store"
   | "accounts"
   | "catalogue"
+  | "services"
   | "clinicAdmin"
   | "recycleBin"
   | "owner"
@@ -74,6 +77,7 @@ export const SURFACES: readonly Surface[] = [
   { id: "store", path: "/inventory", label: "Store", capability: "view:inventory" },
   { id: "accounts", path: "/accounts", label: "Test value", capability: "view:testValue" },
   { id: "catalogue", path: "/settings/catalogue", label: "Catalogue", capability: "edit:catalogue" },
+  { id: "services", path: "/settings/services", label: "Services", capability: "edit:services" },
   { id: "clinicAdmin", path: "/settings/clinic", label: "Clinic admin", capability: "manage:clinic" },
   {
     id: "recycleBin",
@@ -107,6 +111,7 @@ const CAPABILITY_PREDICATES: Record<Capability, (role: string | null | undefined
   "view:inventory": canViewInventory,
   "view:testValue": canViewTestValueRollup,
   "edit:catalogue": canEditTestCatalogue,
+  "edit:services": canEditServiceCatalogue,
   "manage:clinic": canAccessClinicSettings,
   "restore:records": canRestorePatient,
   "platform:owner": (role) => role === "owner",

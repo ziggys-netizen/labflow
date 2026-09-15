@@ -11,6 +11,7 @@ import { useAuth } from "../lib/AuthContext";
 import { clinicCollectionQuery, isOwner } from "../lib/clinicScope";
 import {
   canOrderTests,
+  canRecordPayment,
   canRegisterPatient,
   canViewPatients,
   isReceptionBoardRole,
@@ -217,6 +218,7 @@ export default function Register() {
   // Only cashier is both reception-locked and able to order: the immediate
   // next step after registering is placing the order for that same patient.
   const showOrderPrompt = internReceipt && canOrderTests(role);
+  const showBillPrompt = internReceipt && canRecordPayment(role);
   const [name, setName] = useState("");
   const [preferredName, setPreferredName] = useState("");
   const [sex, setSex] = useState("");
@@ -645,20 +647,32 @@ export default function Register() {
               Lab ID assigned: {lastLabId}
             </p>
           )}
-          {lastLabId && internReceipt && !showOrderPrompt && (
+          {lastLabId && internReceipt && !showOrderPrompt && !showBillPrompt && (
             <p className="text-sm text-gray-600 mt-2">
               Give this Lab ID to the clinician. You can open Patients to see records you registered.
             </p>
           )}
-          {lastLabId && showOrderPrompt && lastPatientId && (
+          {lastLabId && (showOrderPrompt || showBillPrompt) && lastPatientId && (
             <div className="mt-2 flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
-              <p className="text-sm text-gray-600">Next: order the tests for this patient.</p>
-              <Link
-                href={`/orders/new/${lastPatientId}`}
-                className="lf-touch inline-flex w-fit items-center justify-center rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800"
-              >
-                Order tests
-              </Link>
+              <p className="text-sm text-gray-600">Next: order tests, bill a service, or both.</p>
+              <div className="flex flex-wrap gap-2">
+                {showOrderPrompt && (
+                  <Link
+                    href={`/orders/new/${lastPatientId}`}
+                    className="lf-touch inline-flex w-fit items-center justify-center rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800"
+                  >
+                    Order tests
+                  </Link>
+                )}
+                {showBillPrompt && (
+                  <Link
+                    href={`/services/new/${lastPatientId}`}
+                    className="lf-touch inline-flex w-fit items-center justify-center rounded-lg border border-gray-300 px-4 text-sm font-medium text-gray-900 hover:bg-gray-50"
+                  >
+                    Bill a service
+                  </Link>
+                )}
+              </div>
             </div>
           )}
         </form>

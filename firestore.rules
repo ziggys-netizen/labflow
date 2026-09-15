@@ -445,6 +445,40 @@ service cloud.firestore {
       allow delete: if false;
     }
 
+    // canEditServiceCatalogue: owner, lab_manager — same people as the test catalogue.
+    function canEditServiceCatalogueRole() {
+      return isOwner()
+             || (isApproved() && callerRole() in ["lab_manager"]);
+    }
+
+    match /serviceCatalog/{id} {
+      allow get: if patientDataGet();
+      allow list: if patientDataGet();
+      allow create: if patientDataCreate() && canEditServiceCatalogueRole();
+      allow update: if patientDataUpdate() && canEditServiceCatalogueRole();
+      allow delete: if false;
+    }
+
+    // A service charge is one transaction, written once. There is no status
+    // machine to protect, so unlike orders every update is refused, not only
+    // ones touching payment.
+    function serviceChargeShapeOk() {
+      let d = request.resource.data;
+      return d.patientId is string && d.patientId.size() > 0
+             && d.patientLabId is string && d.patientLabId.size() > 0
+             && d.serviceCode is string && d.serviceCode.size() > 0
+             && d.serviceName is string && d.serviceName.size() > 0
+             && orderPaymentShapeOk(d.payment);
+    }
+
+    match /serviceCharges/{id} {
+      allow get: if patientDataGet();
+      allow list: if patientDataGet();
+      allow create: if patientDataCreate() && canRecordPaymentRole() && serviceChargeShapeOk();
+      allow update: if false;
+      allow delete: if false;
+    }
+
     match /inventoryItems/{id} {
       allow get: if patientDataGet();
       allow list: if patientDataGet();

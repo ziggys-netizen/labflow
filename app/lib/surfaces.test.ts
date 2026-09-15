@@ -26,6 +26,7 @@ const SURFACE_VISIBLE: Record<
     store: true,
     accounts: true,
     catalogue: true,
+    services: true,
     clinicAdmin: true,
     recycleBin: true,
     owner: true,
@@ -40,6 +41,7 @@ const SURFACE_VISIBLE: Record<
     store: true,
     accounts: true,
     catalogue: false,
+    services: false,
     clinicAdmin: true,
     recycleBin: true,
     owner: false,
@@ -54,6 +56,7 @@ const SURFACE_VISIBLE: Record<
     store: true,
     accounts: false,
     catalogue: true,
+    services: true,
     clinicAdmin: false,
     recycleBin: true,
     owner: false,
@@ -68,6 +71,7 @@ const SURFACE_VISIBLE: Record<
     store: false,
     accounts: false,
     catalogue: false,
+    services: false,
     clinicAdmin: false,
     recycleBin: true,
     owner: false,
@@ -82,6 +86,7 @@ const SURFACE_VISIBLE: Record<
     store: false,
     accounts: false,
     catalogue: false,
+    services: false,
     clinicAdmin: false,
     recycleBin: false,
     owner: false,
@@ -96,6 +101,7 @@ const SURFACE_VISIBLE: Record<
     store: false,
     accounts: false,
     catalogue: false,
+    services: false,
     clinicAdmin: false,
     recycleBin: false,
     owner: false,
@@ -110,6 +116,7 @@ const SURFACE_VISIBLE: Record<
     store: false,
     accounts: false,
     catalogue: false,
+    services: false,
     clinicAdmin: false,
     recycleBin: false,
     owner: false,
@@ -124,6 +131,7 @@ const SURFACE_VISIBLE: Record<
     store: false,
     accounts: false,
     catalogue: false,
+    services: false,
     clinicAdmin: false,
     recycleBin: false,
     owner: false,
@@ -138,6 +146,7 @@ const SURFACE_VISIBLE: Record<
     store: true,
     accounts: false,
     catalogue: false,
+    services: false,
     clinicAdmin: false,
     recycleBin: false,
     owner: false,
@@ -152,6 +161,7 @@ const SURFACE_VISIBLE: Record<
     store: false,
     accounts: true,
     catalogue: false,
+    services: false,
     clinicAdmin: false,
     recycleBin: false,
     owner: false,
@@ -231,6 +241,13 @@ describe("I3 surface visibility", () => {
     const ids = primaryNavSurfaces("lab_manager").map((s) => s.id);
     expect(ids).toContain("catalogue");
     expect(ids).not.toContain("clinicAdmin");
+  });
+
+  it("services is visible to the same roles as the test catalogue, and to no one else", () => {
+    for (const role of ROLES) {
+      expect(can(role, "edit:services"), role).toBe(can(role, "edit:catalogue"));
+    }
+    expect(requireSurface("services")("cashier")).toBe(false);
   });
 
   it("intern primary nav has Patients and Dashboard but not Orders", () => {

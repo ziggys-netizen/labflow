@@ -51,6 +51,8 @@ export const AUDIT_ACTIONS = [
   "order.create",
   "order.paymentRecorded",
   "order.sampleCollected",
+  "service.charged",
+  "service.catalogueUpdate",
   "order.resultsEntered",
   "order.approved",
   "order.sentBack",

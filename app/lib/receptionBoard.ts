@@ -47,6 +47,9 @@ export type ReceptionListRow = {
   href: string;
   /** Text on the row's link. "Open list" unless the row leads to ordering. */
   actionLabel: string;
+  /** A second action alongside the first — cashier's "Bill a service", never on an awaiting-collection row. */
+  secondaryHref?: string;
+  secondaryLabel?: string;
   at: string | null;
   notYetSynced?: boolean;
 };
@@ -81,7 +84,7 @@ export function isAwaitingCollection(
 export function buildTodaysRegistrations(
   patients: ReceptionPatient[],
   now: Date,
-  opts?: { onlyCreatedByUid?: string | null; canOrder?: boolean }
+  opts?: { onlyCreatedByUid?: string | null; canOrder?: boolean; canBillService?: boolean }
 ): ReceptionListRow[] {
   return patients
     .filter((patient) => isRegisteredToday(patient, now))
@@ -100,6 +103,11 @@ export function buildTodaysRegistrations(
       // only patient surface it can open.
       href: opts?.canOrder ? `/orders/new/${patient.id}` : `/patients`,
       actionLabel: opts?.canOrder ? "Order tests" : "Open list",
+      // Cashier's second action: bill a non-lab service for this same
+      // patient, independent of whether it also ordered a test.
+      ...(opts?.canBillService
+        ? { secondaryHref: `/services/new/${patient.id}`, secondaryLabel: "Bill a service" }
+        : {}),
       at: patient.createdAt,
       notYetSynced: patient.notYetSynced,
     }))

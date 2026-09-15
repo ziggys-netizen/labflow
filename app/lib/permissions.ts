@@ -12,11 +12,14 @@
  * `accounts` reads daily test-value rollups only. Never patients, orders, or
  * results — totals must not become a clinical access path.
  *
- * `cashier` registers patients, orders tests, and records what the patient paid
- * for that order — cash, mobile money transfer, or bank transfer with its
- * transaction ID (`canRecordPayment`, `paymentRequiredOnOrder`). It is locked
- * to its own board like `intern` (`cashierAllowedPath`), sees only patients it
- * registered, and has no clinical, inventory, or settings capability. LabFlow
+ * `cashier` registers patients, orders tests, and bills a non-lab service
+ * (consultation and the like, from the clinic's own service list — see
+ * `serviceCatalog.ts`) — recording what the patient paid, cash, mobile money
+ * transfer, or bank transfer with its transaction ID (`canRecordPayment`,
+ * `paymentRequiredOnOrder`, `canEditServiceCatalogue` for who maintains the
+ * service list). It is locked to its own board like `intern`
+ * (`cashierAllowedPath`), sees only patients it registered, and has no
+ * clinical, inventory, or settings capability beyond that list. LabFlow
  * records the payment; it does not move money.
  */
 
@@ -210,6 +213,11 @@ export function canSendBackForCorrection(role: string | null | undefined) {
 
 export function canEditTestCatalogue(role: string | null | undefined) {
   // Catalogue surface (`edit:catalogue` /settings/catalogue). Clinic admin is separate.
+  return allows(role, "owner", "lab_manager");
+}
+
+/** Services surface (`edit:services` /settings/services). Same people as the test catalogue. */
+export function canEditServiceCatalogue(role: string | null | undefined) {
   return allows(role, "owner", "lab_manager");
 }
 
@@ -476,11 +484,13 @@ export function internAllowedPath(pathname: string): boolean {
 
 /**
  * Paths a cashier may open. Register plus the same own-registered-patient
- * paths as intern, plus ordering — placing an order for a patient just
- * registered. No general orders list and no order detail page: those require
- * canEnterResults or canRecordSampleCollection, which cashier does not have,
- * so an order it creates is not opened here — the reception board reflects it
- * instead, under "Awaiting collection".
+ * paths as intern, plus ordering and billing a service — for a patient just
+ * registered — and the printable receipt for either. No general orders list
+ * and no order detail page: those require canEnterResults or
+ * canRecordSampleCollection, which cashier does not have, so an order it
+ * creates is not opened here — the reception board reflects it instead,
+ * under "Awaiting collection", and a receipt is its own page cashier may
+ * open without the rest of the order.
  */
 export function cashierAllowedPath(pathname: string): boolean {
   if (isTermsReadablePath(pathname)) return true;
@@ -493,6 +503,9 @@ export function cashierAllowedPath(pathname: string): boolean {
     return true;
   }
   if (pathname.startsWith("/orders/new/")) return true;
+  if (pathname.startsWith("/services/new/")) return true;
+  if (pathname.startsWith("/orders/") && pathname.endsWith("/receipt")) return true;
+  if (pathname.startsWith("/services/") && pathname.endsWith("/receipt")) return true;
   return pathname.startsWith("/patients/") && pathname.endsWith("/print");
 }
 
@@ -540,6 +553,7 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
   canCorrectPatientRecord,
   canRecordCriticalNotification,
   canEditTestCatalogue,
+  canEditServiceCatalogue,
   canViewDashboard,
   canViewOrders,
   canAccessClinicSettings,

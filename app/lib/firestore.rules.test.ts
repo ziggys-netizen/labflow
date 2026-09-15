@@ -969,3 +969,107 @@ describe("firestore rules — order payment", () => {
     await assertFails(updateDoc(doc(db, "orders", "order-pay-later"), { payment: cashPayment }));
   });
 });
+
+describe("firestore rules — service catalogue and service charges", () => {
+  const serviceCharge = {
+    clinicId: MEDIC_AID,
+    patientId: FIXTURE.patient,
+    patientLabId: "LF-ADA",
+    serviceCode: "CONSULT",
+    serviceName: "Consultation",
+    createdAt: "2026-09-15T10:00:00.000Z",
+    payment: {
+      method: "cash",
+      amount: 100,
+      currency: "D",
+      reference: null,
+      recordedAt: "2026-09-15T10:00:00.000Z",
+      recordedByUid: UID.cashierMedicAid,
+      recordedByRole: "cashier",
+    },
+  };
+
+  it("lab_manager can add and edit a service; technician cannot", async () => {
+    const mgr = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertSucceeds(
+      setDoc(doc(mgr, "serviceCatalog", "svc-medic-consult"), {
+        clinicId: MEDIC_AID,
+        code: "CONSULT",
+        name: "Consultation",
+        price: 100,
+        active: true,
+      })
+    );
+    await assertSucceeds(
+      updateDoc(doc(mgr, "serviceCatalog", "svc-medic-consult"), { price: 120 })
+    );
+    const tech = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(
+      setDoc(doc(tech, "serviceCatalog", "svc-medic-tech"), {
+        clinicId: MEDIC_AID,
+        code: "SURGERY",
+        name: "Surgery",
+        price: 5000,
+        active: true,
+      })
+    );
+  });
+
+  it("cashier can create a service charge; technician and lab_manager cannot", async () => {
+    const cashier = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
+    await assertSucceeds(setDoc(doc(cashier, "serviceCharges", "charge-cash"), serviceCharge));
+
+    const tech = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(
+      setDoc(doc(tech, "serviceCharges", "charge-tech"), {
+        ...serviceCharge,
+        payment: { ...serviceCharge.payment, recordedByUid: UID.techMedicAid, recordedByRole: "technician" },
+      })
+    );
+    const mgr = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertFails(
+      setDoc(doc(mgr, "serviceCharges", "charge-mgr"), {
+        ...serviceCharge,
+        payment: { ...serviceCharge.payment, recordedByUid: UID.managerMedicAid, recordedByRole: "lab_manager" },
+      })
+    );
+  });
+
+  it("owner can create a service charge", async () => {
+    const owner = testEnv.authenticatedContext(UID.owner).firestore();
+    await assertSucceeds(
+      setDoc(doc(owner, "serviceCharges", "charge-owner"), {
+        ...serviceCharge,
+        payment: { ...serviceCharge.payment, recordedByUid: UID.owner, recordedByRole: "owner" },
+      })
+    );
+  });
+
+  it("refuses a service charge missing a required field or carrying a malformed payment", async () => {
+    const cashier = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
+    const missingName: Record<string, unknown> = { ...serviceCharge };
+    delete missingName.serviceName;
+    await assertFails(setDoc(doc(cashier, "serviceCharges", "charge-noname"), missingName));
+    await assertFails(
+      setDoc(doc(cashier, "serviceCharges", "charge-badpay"), {
+        ...serviceCharge,
+        payment: { ...serviceCharge.payment, method: "card" },
+      })
+    );
+    await assertFails(
+      setDoc(doc(cashier, "serviceCharges", "charge-noref"), {
+        ...serviceCharge,
+        payment: { ...serviceCharge.payment, method: "mobile_money", reference: null },
+      })
+    );
+  });
+
+  it("a service charge can never be updated or deleted, even by the owner", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "serviceCharges", "charge-locked"), serviceCharge);
+    });
+    const owner = testEnv.authenticatedContext(UID.owner).firestore();
+    await assertFails(updateDoc(doc(owner, "serviceCharges", "charge-locked"), { serviceName: "Changed" }));
+    await assertFails(deleteDoc(doc(owner, "serviceCharges", "charge-locked")));
+  });
+});

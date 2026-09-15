@@ -42,6 +42,7 @@ const CHECKS = {
   canCorrectPatientRecord: permissions.canCorrectPatientRecord,
   canRecordCriticalNotification: permissions.canRecordCriticalNotification,
   canEditTestCatalogue: permissions.canEditTestCatalogue,
+  canEditServiceCatalogue: permissions.canEditServiceCatalogue,
   canViewDashboard: permissions.canViewDashboard,
   canViewOrders: permissions.canViewOrders,
   canAccessClinicSettings: permissions.canAccessClinicSettings,
@@ -89,6 +90,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: true,
     canRecordCriticalNotification: true,
     canEditTestCatalogue: true,
+    canEditServiceCatalogue: true,
     canViewDashboard: true,
     canViewOrders: true,
     canAccessClinicSettings: true,
@@ -126,6 +128,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: false,
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
+    canEditServiceCatalogue: false,
     canViewDashboard: true,
     canViewOrders: true,
     canAccessClinicSettings: true,
@@ -163,6 +166,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: true,
     canRecordCriticalNotification: true,
     canEditTestCatalogue: true,
+    canEditServiceCatalogue: true,
     canViewDashboard: true,
     canViewOrders: true,
     canAccessClinicSettings: false,
@@ -201,6 +205,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: true,
     canRecordCriticalNotification: true,
     canEditTestCatalogue: false,
+    canEditServiceCatalogue: false,
     canViewDashboard: true,
     canViewOrders: true,
     canAccessClinicSettings: false,
@@ -238,6 +243,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: false,
     canRecordCriticalNotification: true,
     canEditTestCatalogue: false,
+    canEditServiceCatalogue: false,
     canViewDashboard: true,
     canViewOrders: true,
     canAccessClinicSettings: false,
@@ -275,6 +281,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: false,
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
+    canEditServiceCatalogue: false,
     canViewDashboard: true,
     canViewOrders: true,
     canAccessClinicSettings: false,
@@ -312,6 +319,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: false,
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
+    canEditServiceCatalogue: false,
     canViewDashboard: true,
     canViewOrders: false,
     canAccessClinicSettings: false,
@@ -349,6 +357,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: false,
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
+    canEditServiceCatalogue: false,
     canViewDashboard: true,
     canViewOrders: false,
     canAccessClinicSettings: false,
@@ -386,6 +395,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: false,
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
+    canEditServiceCatalogue: false,
     canViewDashboard: true,
     canViewOrders: false,
     canAccessClinicSettings: false,
@@ -423,6 +433,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: false,
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
+    canEditServiceCatalogue: false,
     canViewDashboard: true,
     canViewOrders: false,
     canAccessClinicSettings: false,
@@ -460,6 +471,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canCorrectPatientRecord: false,
     canRecordCriticalNotification: false,
     canEditTestCatalogue: false,
+    canEditServiceCatalogue: false,
     canViewDashboard: false,
     canViewOrders: false,
     canAccessClinicSettings: false,
@@ -495,6 +507,7 @@ const SUPERVISOR_DIFFERS_FROM_MANAGER: Capability[] = [
   "canDeletePatient",
   "canManageInventoryItems",
   "canEditTestCatalogue",
+  "canEditServiceCatalogue",
   "canViewInventory",
   "canRecordStockMovement",
   "canManageMedicalReports",
@@ -703,7 +716,7 @@ describe("landingPathForRole", () => {
     expect(internAllowedPath("/owner/clinics/c1/audit")).toBe(false);
   });
 
-  it("cashier may open everything intern can, plus placing an order — not the order list or an order's detail page", () => {
+  it("cashier may open everything intern can, plus placing an order, billing a service, and either's receipt — not the order list or an order's detail page", () => {
     expect(cashierAllowedPath("/register")).toBe(true);
     expect(cashierAllowedPath("/profile")).toBe(true);
     expect(cashierAllowedPath("/patients")).toBe(true);
@@ -712,8 +725,13 @@ describe("landingPathForRole", () => {
     expect(cashierAllowedPath("/patients/abc/history")).toBe(false);
     expect(cashierAllowedPath("/legal/acceptable-use")).toBe(true);
     expect(cashierAllowedPath("/orders/new/p1")).toBe(true);
+    expect(cashierAllowedPath("/services/new/p1")).toBe(true);
+    expect(cashierAllowedPath("/orders/o1/receipt")).toBe(true);
+    expect(cashierAllowedPath("/services/c1/receipt")).toBe(true);
     expect(cashierAllowedPath("/orders")).toBe(false);
     expect(cashierAllowedPath("/orders/o1")).toBe(false);
+    expect(cashierAllowedPath("/services")).toBe(false);
+    expect(cashierAllowedPath("/settings/services")).toBe(false);
     expect(cashierAllowedPath("/review")).toBe(false);
     expect(cashierAllowedPath("/inventory")).toBe(false);
     expect(cashierAllowedPath("/owner/clinics/c1/audit")).toBe(false);
