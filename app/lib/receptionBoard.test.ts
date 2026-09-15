@@ -51,6 +51,16 @@ describe("today's registrations", () => {
     expect(isRegisteredToday(yesterday, NOW)).toBe(false);
     expect(buildTodaysRegistrations([today, yesterday, other], NOW, { onlyCreatedByUid: "u1" })).toHaveLength(1);
   });
+
+  it("links to the patient list by default — intern's only patient surface", () => {
+    const [row] = buildTodaysRegistrations([patient()], NOW);
+    expect(row).toMatchObject({ href: "/patients", actionLabel: "Open list" });
+  });
+
+  it("links straight to ordering tests for a viewer who can order — cashier", () => {
+    const [row] = buildTodaysRegistrations([patient()], NOW, { canOrder: true });
+    expect(row).toMatchObject({ href: "/orders/new/p1", actionLabel: "Order tests" });
+  });
 });
 
 describe("awaiting collection", () => {
@@ -66,6 +76,7 @@ describe("awaiting collection", () => {
     const rows = buildAwaitingCollection([open, collected], patients, []);
     expect(rows).toHaveLength(1);
     expect(rows[0]?.kind).toBe("awaiting_collection");
+    expect(rows[0]).toMatchObject({ href: "/patients", actionLabel: "Open list" });
     expect(operationalForReceptionRow(rows[0]!)).toEqual({ state: "awaiting-sample" });
   });
 });

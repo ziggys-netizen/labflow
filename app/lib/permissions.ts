@@ -11,6 +11,14 @@
  *
  * `accounts` reads daily test-value rollups only. Never patients, orders, or
  * results — totals must not become a clinical access path.
+ *
+ * `cashier` registers patients and orders tests — the same two actions as
+ * reception, plus ordering — and is locked to its own board like `intern`
+ * (`cashierAllowedPath`). It has no access to any other patient, no clinical,
+ * inventory, or settings capability, and no payment/billing fields exist yet:
+ * this role is gatekeeping only. See the deferred billing question in
+ * `docs/LabFlow-PRD-v0.5.md` §11 ("Mobile money at health facilities —
+ * accepted today? Blocks any billing work") before adding money handling.
  */
 
 import { isTermsReadablePath } from "./legal/termsGate";
@@ -23,6 +31,7 @@ export const ROLES = [
   "technician",
   "technician_assistant",
   "intern",
+  "cashier",
   "storekeeper",
   "accounts",
   "pending",
@@ -38,6 +47,7 @@ export const ASSIGNABLE_ROLES = [
   "technician",
   "technician_assistant",
   "intern",
+  "cashier",
   "storekeeper",
   "accounts",
 ] as const;
@@ -68,6 +78,7 @@ export const ROLE_LABELS: Record<Role, string> = {
   technician: "Technician",
   technician_assistant: "Technician Assistant",
   intern: "Intern",
+  cashier: "Cashier",
   storekeeper: "Storekeeper",
   accounts: "Accounts officer",
   pending: "Pending",
@@ -110,7 +121,8 @@ export function canRegisterPatient(role: string | null | undefined) {
     "lab_supervisor",
     "technician",
     "technician_assistant",
-    "intern"
+    "intern",
+    "cashier"
   );
 }
 
@@ -145,9 +157,13 @@ export function isStorekeeperBoardRole(role: string | null | undefined) {
   return allows(role, "storekeeper");
 }
 
-/** Intern landing on /register is the reception board; register stays primary. */
+/**
+ * Intern and cashier land on /register — the reception board; register stays
+ * primary. Cashier additionally orders tests; the board links its own rows to
+ * that action where intern's link only back to the patient list.
+ */
 export function isReceptionBoardRole(role: string | null | undefined) {
-  return allows(role, "intern");
+  return allows(role, "intern", "cashier");
 }
 
 /** Accounts own-work dashboard is the rollup hand-off, not clinic stats. */
@@ -165,7 +181,7 @@ export function canViewClinicQueuePages(role: string | null | undefined) {
 
 export function canOrderTests(role: string | null | undefined) {
   // technician_assistant is excluded — collection only, no ordering.
-  return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");
+  return allows(role, "owner", "lab_manager", "lab_supervisor", "technician", "cashier");
 }
 
 export function canRecordSampleCollection(role: string | null | undefined) {
@@ -212,6 +228,7 @@ export function canViewDashboard(role: string | null | undefined) {
     "technician",
     "technician_assistant",
     "intern",
+    "cashier",
     "storekeeper",
     "accounts"
   );
@@ -335,8 +352,10 @@ export function canAmendResult(role: string | null | undefined) {
   return canApproveResults(role);
 }
 
+// Same roles as canOrderTests except cashier: gatekeeping only — cashier is
+// not the one who decides a clinical order should be cancelled.
 export function canCancelOrder(role: string | null | undefined) {
-  return canOrderTests(role);
+  return allows(role, "owner", "lab_manager", "lab_supervisor", "technician");
 }
 
 export function canExecuteErasure(role: string | null | undefined) {
@@ -357,7 +376,8 @@ export function canViewOwnRegisteredPatients(role: string | null | undefined) {
     "lab_supervisor",
     "technician",
     "technician_assistant",
-    "intern"
+    "intern",
+    "cashier"
   );
 }
 
@@ -410,6 +430,7 @@ export function landingPathForRole(
     case "technician_assistant":
       return "/dashboard";
     case "intern":
+    case "cashier":
       return "/register";
     case "storekeeper":
       return "/inventory";
@@ -437,6 +458,28 @@ export function internAllowedPath(pathname: string): boolean {
   return pathname.startsWith("/patients/") && pathname.endsWith("/print");
 }
 
+/**
+ * Paths a cashier may open. Register plus the same own-registered-patient
+ * paths as intern, plus ordering — placing an order for a patient just
+ * registered. No general orders list and no order detail page: those require
+ * canEnterResults or canRecordSampleCollection, which cashier does not have,
+ * so an order it creates is not opened here — the reception board reflects it
+ * instead, under "Awaiting collection".
+ */
+export function cashierAllowedPath(pathname: string): boolean {
+  if (isTermsReadablePath(pathname)) return true;
+  if (
+    pathname === "/register" ||
+    pathname === "/profile" ||
+    pathname === "/patients" ||
+    pathname === "/dashboard"
+  ) {
+    return true;
+  }
+  if (pathname.startsWith("/orders/new/")) return true;
+  return pathname.startsWith("/patients/") && pathname.endsWith("/print");
+}
+
 /** Accounts officers: rollup page, own-work dashboard, identity, and legal documents. */
 export function accountsAllowedPath(pathname: string): boolean {
   return (
@@ -453,6 +496,9 @@ export function capabilityRedirect(
   pathname: string
 ): string | null {
   if (role === "intern" && !internAllowedPath(pathname)) {
+    return "/register";
+  }
+  if (role === "cashier" && !cashierAllowedPath(pathname)) {
     return "/register";
   }
   if (role === "accounts" && !accountsAllowedPath(pathname)) {

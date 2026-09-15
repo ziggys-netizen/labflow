@@ -43,6 +43,8 @@ export type ReceptionListRow = {
   title: string;
   detail: string;
   href: string;
+  /** Text on the row's link. "Open list" unless the row leads to ordering. */
+  actionLabel: string;
   at: string | null;
   notYetSynced?: boolean;
 };
@@ -77,7 +79,7 @@ export function isAwaitingCollection(
 export function buildTodaysRegistrations(
   patients: ReceptionPatient[],
   now: Date,
-  opts?: { onlyCreatedByUid?: string | null }
+  opts?: { onlyCreatedByUid?: string | null; canOrder?: boolean }
 ): ReceptionListRow[] {
   return patients
     .filter((patient) => isRegisteredToday(patient, now))
@@ -91,7 +93,11 @@ export function buildTodaysRegistrations(
       labId: patient.labId || "—",
       title: patientDisplayName(patient),
       detail: "Registered today",
-      href: `/patients`,
+      // A viewer who can order tests (cashier) goes straight to ordering for
+      // this patient. Everyone else (intern) goes to the patient list, the
+      // only patient surface it can open.
+      href: opts?.canOrder ? `/orders/new/${patient.id}` : `/patients`,
+      actionLabel: opts?.canOrder ? "Order tests" : "Open list",
       at: patient.createdAt,
       notYetSynced: patient.notYetSynced,
     }))
@@ -131,6 +137,7 @@ export function buildAwaitingCollection(
       title,
       detail: tests || "Awaiting sample",
       href: `/patients`,
+      actionLabel: "Open list",
       at: order.createdAt || null,
       notYetSynced: order.notYetSynced,
     });

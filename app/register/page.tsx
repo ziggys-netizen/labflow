@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
 import { db } from "../lib/firebase";
 import { collection, where, getDocs } from "firebase/firestore";
 import ProtectedRoute from "../lib/ProtectedRoute";
@@ -8,7 +9,12 @@ import AppNav from "../lib/AppNav";
 import ActingClinicPrompt from "../lib/ActingClinicPrompt";
 import { useAuth } from "../lib/AuthContext";
 import { clinicCollectionQuery, isOwner } from "../lib/clinicScope";
-import { canRegisterPatient, canViewPatients, isReceptionBoardRole } from "../lib/permissions";
+import {
+  canOrderTests,
+  canRegisterPatient,
+  canViewPatients,
+  isReceptionBoardRole,
+} from "../lib/permissions";
 import ReceptionBoard from "./ReceptionBoard";
 import { isPatientDeleted } from "../lib/patientSoftDelete";
 import { trackedAddDoc, writeActorFromUser } from "../lib/trackedWrites";
@@ -208,6 +214,9 @@ export default function Register() {
   const writer = useWriteIdentity();
   const allowed = canRegisterPatient(role);
   const internReceipt = allowed && !canViewPatients(role);
+  // Only cashier is both reception-locked and able to order: the immediate
+  // next step after registering is placing the order for that same patient.
+  const showOrderPrompt = internReceipt && canOrderTests(role);
   const [name, setName] = useState("");
   const [preferredName, setPreferredName] = useState("");
   const [sex, setSex] = useState("");
@@ -229,6 +238,7 @@ export default function Register() {
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [status, setStatus] = useState("");
   const [lastLabId, setLastLabId] = useState("");
+  const [lastPatientId, setLastPatientId] = useState("");
 
   function validate() {
     const newErrors: Record<string, string> = {};
@@ -387,6 +397,7 @@ export default function Register() {
       }
       setStatus("Patient registered successfully.");
       setLastLabId(labId);
+      setLastPatientId(docRef.id);
       setName("");
       setPreferredName("");
       setSex("");
@@ -634,10 +645,21 @@ export default function Register() {
               Lab ID assigned: {lastLabId}
             </p>
           )}
-          {lastLabId && internReceipt && (
+          {lastLabId && internReceipt && !showOrderPrompt && (
             <p className="text-sm text-gray-600 mt-2">
               Give this Lab ID to the clinician. You can open Patients to see records you registered.
             </p>
+          )}
+          {lastLabId && showOrderPrompt && lastPatientId && (
+            <div className="mt-2 flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3">
+              <p className="text-sm text-gray-600">Next: order the tests for this patient.</p>
+              <Link
+                href={`/orders/new/${lastPatientId}`}
+                className="lf-touch inline-flex w-fit items-center justify-center rounded-lg bg-gray-900 px-4 text-sm font-medium text-white hover:bg-gray-800"
+              >
+                Order tests
+              </Link>
+            </div>
           )}
         </form>
       </>

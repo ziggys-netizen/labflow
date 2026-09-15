@@ -12,7 +12,7 @@ import AppNav from "../../../lib/AppNav";
 import { useAuth } from "../../../lib/AuthContext";
 import { clinicCollectionQuery, isOwner, ownerActingCreateFields } from "../../../lib/clinicScope";
 import ActingClinicPrompt from "../../../lib/ActingClinicPrompt";
-import { canOrderTests } from "../../../lib/permissions";
+import { canOrderTests, isReceptionBoardRole } from "../../../lib/permissions";
 import { isOrderForDeletedPatient, isPatientDeleted } from "../../../lib/patientSoftDelete";
 import { isReleasedResultStatus } from "../../../lib/resultAmendment";
 import { trackedAddDoc, writeActorFromUser } from "../../../lib/trackedWrites";
@@ -227,7 +227,10 @@ function NewOrderContent() {
         });
       }
       setStatus("Order created successfully.");
-      router.push(`/orders/${docRef.id}`);
+      // Cashier cannot open an order's detail page (no collect/enter
+      // capability) — send it back to its own board, where the new order now
+      // shows under "Awaiting collection".
+      router.push(isReceptionBoardRole(role) ? "/register" : `/orders/${docRef.id}`);
     } catch (err) {
       console.error(err);
       setStatus("Something went wrong. Please try again.");

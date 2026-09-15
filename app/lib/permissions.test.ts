@@ -15,6 +15,7 @@ import {
   canRecordSampleCollection,
   canRegisterPatient,
   internAllowedPath,
+  cashierAllowedPath,
   accountsAllowedPath,
   landingPathForRole,
   isManagerBoardRole,
@@ -320,6 +321,42 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canManageInventoryItems: false,
     canRecordSpecimenMovement: false,
   },
+  cashier: {
+    canRestorePatient: false,
+    canViewPatientHistory: false,
+    canManageMedicalReports: false,
+    canRegisterPatient: true,
+    canViewPatients: false,
+    canViewOwnRegisteredPatients: true,
+    canOrderTests: true,
+    canRecordSampleCollection: false,
+    canEnterResults: false,
+    canApproveResults: false,
+    canAmendResult: false,
+    canSendBackForCorrection: false,
+    canRejectSample: false,
+    canCancelOrder: false,
+    canModifyOthersUnreleasedResult: false,
+    canCorrectPatientRecord: false,
+    canRecordCriticalNotification: false,
+    canEditTestCatalogue: false,
+    canViewDashboard: true,
+    canViewOrders: false,
+    canAccessClinicSettings: false,
+    canViewTestValueRollup: false,
+    canExportData: false,
+    canManageStaff: false,
+    canViewJoinCode: false,
+    canEditClinicProfile: false,
+    canImportData: false,
+    canImportStaffPreApprovals: false,
+    canDeletePatient: false,
+    canExecuteErasure: false,
+    canViewInventory: false,
+    canRecordStockMovement: false,
+    canManageInventoryItems: false,
+    canRecordSpecimenMovement: false,
+  },
   storekeeper: {
     canRestorePatient: false,
     canViewPatientHistory: false,
@@ -507,6 +544,17 @@ describe("product rules", () => {
     }
   });
 
+  it("cashier can register, order tests, see their own patients, and open the own-work dashboard — nothing clinical, no inventory, no settings", () => {
+    for (const [name, check] of Object.entries(CHECKS)) {
+      const allowed =
+        name === "canRegisterPatient" ||
+        name === "canViewOwnRegisteredPatients" ||
+        name === "canOrderTests" ||
+        name === "canViewDashboard";
+      expect(check("cashier"), name).toBe(allowed);
+    }
+  });
+
   it("technician_assistant can see/collect orders but cannot create or enter results", () => {
     expect(canRegisterPatient("technician_assistant")).toBe(true);
     expect(permissions.canViewPatients("technician_assistant")).toBe(true);
@@ -580,6 +628,7 @@ describe("landingPathForRole", () => {
     expect(landingPathForRole("technician")).toBe("/dashboard");
     expect(landingPathForRole("technician_assistant")).toBe("/dashboard");
     expect(landingPathForRole("intern")).toBe("/register");
+    expect(landingPathForRole("cashier")).toBe("/register");
     expect(landingPathForRole("storekeeper")).toBe("/inventory");
     expect(landingPathForRole("accounts")).toBe("/accounts");
     expect(landingPathForRole("pending")).toBe("/patients");
@@ -610,8 +659,9 @@ describe("landingPathForRole", () => {
   });
 
 
-  it("turns the intern landing into the reception board", () => {
+  it("turns the intern and cashier landing into the reception board", () => {
     expect(isReceptionBoardRole("intern")).toBe(true);
+    expect(isReceptionBoardRole("cashier")).toBe(true);
     expect(isReceptionBoardRole("technician")).toBe(false);
     expect(isReceptionBoardRole("clinic_admin")).toBe(false);
   });
@@ -626,8 +676,25 @@ describe("landingPathForRole", () => {
     expect(internAllowedPath("/legal/acceptable-use")).toBe(true);
     expect(internAllowedPath("/legal/privacy")).toBe(true);
     expect(internAllowedPath("/orders")).toBe(false);
+    expect(internAllowedPath("/orders/new/p1")).toBe(false);
     expect(internAllowedPath("/review")).toBe(false);
     expect(internAllowedPath("/owner/clinics/c1/audit")).toBe(false);
+  });
+
+  it("cashier may open everything intern can, plus placing an order — not the order list or an order's detail page", () => {
+    expect(cashierAllowedPath("/register")).toBe(true);
+    expect(cashierAllowedPath("/profile")).toBe(true);
+    expect(cashierAllowedPath("/patients")).toBe(true);
+    expect(cashierAllowedPath("/dashboard")).toBe(true);
+    expect(cashierAllowedPath("/patients/abc/print")).toBe(true);
+    expect(cashierAllowedPath("/patients/abc/history")).toBe(false);
+    expect(cashierAllowedPath("/legal/acceptable-use")).toBe(true);
+    expect(cashierAllowedPath("/orders/new/p1")).toBe(true);
+    expect(cashierAllowedPath("/orders")).toBe(false);
+    expect(cashierAllowedPath("/orders/o1")).toBe(false);
+    expect(cashierAllowedPath("/review")).toBe(false);
+    expect(cashierAllowedPath("/inventory")).toBe(false);
+    expect(cashierAllowedPath("/owner/clinics/c1/audit")).toBe(false);
   });
 
   it("accounts may open the rollup, dashboard, profile, and legal documents", () => {

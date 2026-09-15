@@ -116,6 +116,20 @@ const SURFACE_VISIBLE: Record<
     patientHistory: false,
     medicalReport: false,
   },
+  cashier: {
+    dashboard: true,
+    patients: true,
+    orders: false,
+    review: false,
+    store: false,
+    accounts: false,
+    catalogue: false,
+    clinicAdmin: false,
+    recycleBin: false,
+    owner: false,
+    patientHistory: false,
+    medicalReport: false,
+  },
   storekeeper: {
     dashboard: true,
     patients: false,
@@ -225,6 +239,16 @@ describe("I3 surface visibility", () => {
     expect(ids).toContain("patients");
     expect(ids).not.toContain("orders");
     expect(requireSurface("orders")("intern")).toBe(false);
+  });
+
+  it("cashier primary nav has Patients and Dashboard but not the Orders surface, even though it can order tests", () => {
+    const ids = primaryNavSurfaces("cashier").map((s) => s.id);
+    expect(ids).toContain("dashboard");
+    expect(ids).toContain("patients");
+    expect(ids).not.toContain("orders");
+    // "Orders" (the full list) is a different capability from ordering one
+    // patient's tests — cashier's own board is where it places an order.
+    expect(requireSurface("orders")("cashier")).toBe(false);
   });
 
   it("tech_assistant keeps Orders in nav (partial: collect only at action layer)", () => {
