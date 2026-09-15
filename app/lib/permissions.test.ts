@@ -30,6 +30,7 @@ const CHECKS = {
   canViewPatients: permissions.canViewPatients,
   canViewOwnRegisteredPatients: permissions.canViewOwnRegisteredPatients,
   canOrderTests: permissions.canOrderTests,
+  canRecordPayment: permissions.canRecordPayment,
   canRecordSampleCollection: permissions.canRecordSampleCollection,
   canEnterResults: permissions.canEnterResults,
   canApproveResults: permissions.canApproveResults,
@@ -76,6 +77,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
     canOrderTests: true,
+    canRecordPayment: true,
     canRecordSampleCollection: true,
     canEnterResults: true,
     canApproveResults: true,
@@ -112,6 +114,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
     canOrderTests: false,
+    canRecordPayment: false,
     canRecordSampleCollection: false,
     canEnterResults: false,
     canApproveResults: false,
@@ -148,6 +151,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
     canOrderTests: true,
+    canRecordPayment: false,
     canRecordSampleCollection: true,
     canEnterResults: true,
     canApproveResults: true,
@@ -185,6 +189,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
     canOrderTests: true,
+    canRecordPayment: false,
     canRecordSampleCollection: true,
     canEnterResults: true,
     canApproveResults: true,
@@ -221,6 +226,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
     canOrderTests: true,
+    canRecordPayment: false,
     canRecordSampleCollection: true,
     canEnterResults: true,
     canApproveResults: false,
@@ -257,6 +263,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: true,
     canViewOwnRegisteredPatients: true,
     canOrderTests: false,
+    canRecordPayment: false,
     canRecordSampleCollection: true,
     canEnterResults: false,
     canApproveResults: false,
@@ -293,6 +300,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: false,
     canViewOwnRegisteredPatients: true,
     canOrderTests: false,
+    canRecordPayment: false,
     canRecordSampleCollection: false,
     canEnterResults: false,
     canApproveResults: false,
@@ -329,6 +337,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: false,
     canViewOwnRegisteredPatients: true,
     canOrderTests: true,
+    canRecordPayment: true,
     canRecordSampleCollection: false,
     canEnterResults: false,
     canApproveResults: false,
@@ -365,6 +374,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: false,
     canViewOwnRegisteredPatients: false,
     canOrderTests: false,
+    canRecordPayment: false,
     canRecordSampleCollection: false,
     canEnterResults: false,
     canApproveResults: false,
@@ -401,6 +411,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: false,
     canViewOwnRegisteredPatients: false,
     canOrderTests: false,
+    canRecordPayment: false,
     canRecordSampleCollection: false,
     canEnterResults: false,
     canApproveResults: false,
@@ -437,6 +448,7 @@ const EXPECTED: Record<Role, Record<Capability, boolean>> = {
     canViewPatients: false,
     canViewOwnRegisteredPatients: false,
     canOrderTests: false,
+    canRecordPayment: false,
     canRecordSampleCollection: false,
     canEnterResults: false,
     canApproveResults: false,
@@ -544,12 +556,22 @@ describe("product rules", () => {
     }
   });
 
-  it("cashier can register, order tests, see their own patients, and open the own-work dashboard — nothing clinical, no inventory, no settings", () => {
+  it("only owner and cashier record a payment; only cashier must", () => {
+    const records = new Set(["owner", "cashier"]);
+    for (const role of ROLES) {
+      expect(permissions.canRecordPayment(role), role).toBe(records.has(role));
+      expect(permissions.paymentRequiredOnOrder(role), role).toBe(role === "cashier");
+    }
+    expect(permissions.paymentRequiredOnOrder(null)).toBe(false);
+  });
+
+  it("cashier can register, order tests, record payment, see their own patients, and open the own-work dashboard — nothing clinical, no inventory, no settings", () => {
     for (const [name, check] of Object.entries(CHECKS)) {
       const allowed =
         name === "canRegisterPatient" ||
         name === "canViewOwnRegisteredPatients" ||
         name === "canOrderTests" ||
+        name === "canRecordPayment" ||
         name === "canViewDashboard";
       expect(check("cashier"), name).toBe(allowed);
     }

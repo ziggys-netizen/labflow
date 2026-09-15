@@ -86,6 +86,7 @@ export default function ReceptionBoard({ children }: { children: ReactNode }) {
             patientId: typeof data.patientId === "string" ? data.patientId : null,
             patientLabId: typeof data.patientLabId === "string" ? data.patientLabId : null,
             patientName: typeof data.patientName === "string" ? data.patientName : null,
+            payment: data.payment,
           };
         }),
     [ordersQuery.docs]

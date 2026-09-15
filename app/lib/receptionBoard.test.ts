@@ -81,6 +81,30 @@ describe("awaiting collection", () => {
   });
 });
 
+describe("awaiting collection — payment", () => {
+  it("says the order was paid, in words, without the transaction ID", () => {
+    const paid = order({
+      payment: {
+        method: "mobile_money",
+        amount: 350,
+        currency: "D",
+        reference: "MP-SECRETISH",
+        recordedAt: "2026-09-04T09:00:00.000Z",
+        recordedByUid: "u1",
+        recordedByRole: "cashier",
+      },
+    });
+    const [row] = buildAwaitingCollection([paid], new Map([["p1", patient()]]), []);
+    expect(row?.detail).toBe("Full Blood Count · Paid D 350.00 · Mobile money transfer");
+    expect(row?.detail).not.toContain("MP-SECRETISH");
+  });
+
+  it("shows only the tests when no payment is on record", () => {
+    const [row] = buildAwaitingCollection([order()], new Map([["p1", patient()]]), []);
+    expect(row?.detail).toBe("Full Blood Count");
+  });
+});
+
 describe("search and page size", () => {
   it("matches lab id or name and caps the list at ten", () => {
     expect(matchesPatientSearch(patient(), "lab-1")).toBe(true);

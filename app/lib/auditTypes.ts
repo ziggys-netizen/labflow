@@ -49,6 +49,7 @@ export const AUDIT_ACTIONS = [
   "patient.softDelete",
   "patient.restore",
   "order.create",
+  "order.paymentRecorded",
   "order.sampleCollected",
   "order.resultsEntered",
   "order.approved",

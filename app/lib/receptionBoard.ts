@@ -10,6 +10,7 @@ import {
   type OrderTestRef,
 } from "./sampleCollection";
 import type { OperationalFlagInput } from "./operationalFlag";
+import { PAYMENT_METHOD_LABELS, formatPaymentAmount, parseOrderPayment } from "./orderPayment";
 
 export const RECEPTION_PAGE_SIZE = 10;
 
@@ -28,6 +29,7 @@ export type ReceptionOrder = OrderCollectionFields & {
   patientId?: string | null;
   patientLabId?: string | null;
   patientName?: string | null;
+  payment?: unknown;
 };
 
 export type ReceptionCatalogRow = {
@@ -130,12 +132,16 @@ export function buildAwaitingCollection(
       .map((test: OrderTestRef) => test.name || test.code)
       .filter(Boolean)
       .join(", ");
+    const payment = parseOrderPayment(order.payment);
+    const paid = payment
+      ? `Paid ${formatPaymentAmount(payment)} · ${PAYMENT_METHOD_LABELS[payment.method]}`
+      : "";
     rows.push({
       id: `await:${order.id}`,
       kind: "awaiting_collection",
       labId,
       title,
-      detail: tests || "Awaiting sample",
+      detail: [tests || "Awaiting sample", paid].filter(Boolean).join(" · "),
       href: `/patients`,
       actionLabel: "Open list",
       at: order.createdAt || null,

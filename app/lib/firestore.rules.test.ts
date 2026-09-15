@@ -39,6 +39,7 @@ const UID = {
   adminGreenAid: "uid-green-aid-admin",
   otherMedicAid: "uid-medic-aid-other",
   pendingMedicAid: "uid-medic-aid-pending",
+  cashierMedicAid: "uid-medic-aid-cashier",
   owner: "uid-owner",
 } as const;
 
@@ -129,6 +130,11 @@ beforeAll(async () => {
       role: "technician",
       clinicId: MEDIC_AID,
       status: "pending",
+    });
+    await setDoc(doc(db, "users", UID.cashierMedicAid), {
+      role: "cashier",
+      clinicId: MEDIC_AID,
+      status: "approved",
     });
     await setDoc(doc(db, "users", UID.owner), {
       role: "owner",
@@ -833,5 +839,133 @@ describe("firestore rules — auditLogs actor binding", () => {
         clinicId: MEDIC_AID,
       })
     );
+  });
+});
+
+describe("firestore rules — order payment", () => {
+  const cashPayment = {
+    method: "cash",
+    amount: 150,
+    currency: "D",
+    reference: null,
+    recordedAt: "2026-09-15T10:00:00.000Z",
+    recordedByUid: UID.cashierMedicAid,
+    recordedByRole: "cashier",
+  };
+
+  function newOrder(payment?: Record<string, unknown>) {
+    return {
+      clinicId: MEDIC_AID,
+      patientId: FIXTURE.patient,
+      patientLabId: "LF-ADA",
+      status: "pending",
+      tests: [{ code: "FBC", name: "Full Blood Count" }],
+      createdAt: "2026-09-15T10:00:00.000Z",
+      ...(payment ? { payment } : {}),
+    };
+  }
+
+  it("cashier can create an order carrying a cash payment", async () => {
+    const db = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
+    await assertSucceeds(setDoc(doc(db, "orders", "order-pay-cash"), newOrder(cashPayment)));
+  });
+
+  it("cashier can record a mobile money or bank transfer with its transaction ID", async () => {
+    const db = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
+    await assertSucceeds(
+      setDoc(
+        doc(db, "orders", "order-pay-momo"),
+        newOrder({ ...cashPayment, method: "mobile_money", reference: "MP240915.1234" })
+      )
+    );
+    await assertSucceeds(
+      setDoc(
+        doc(db, "orders", "order-pay-bank"),
+        newOrder({ ...cashPayment, method: "bank_transfer", reference: "TRX-0091", amount: 125.5 })
+      )
+    );
+  });
+
+  it("refuses a transfer without a transaction ID, and cash with one", async () => {
+    const db = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
+    await assertFails(
+      setDoc(doc(db, "orders", "order-pay-momo-noref"), newOrder({ ...cashPayment, method: "mobile_money" }))
+    );
+    await assertFails(
+      setDoc(
+        doc(db, "orders", "order-pay-bank-shortref"),
+        newOrder({ ...cashPayment, method: "bank_transfer", reference: "AB" })
+      )
+    );
+    await assertFails(
+      setDoc(doc(db, "orders", "order-pay-cash-ref"), newOrder({ ...cashPayment, reference: "X-123" }))
+    );
+  });
+
+  it("refuses a malformed payment: unknown method, negative amount, extra or missing fields", async () => {
+    const db = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
+    await assertFails(setDoc(doc(db, "orders", "order-pay-card"), newOrder({ ...cashPayment, method: "card" })));
+    await assertFails(setDoc(doc(db, "orders", "order-pay-neg"), newOrder({ ...cashPayment, amount: -1 })));
+    await assertFails(setDoc(doc(db, "orders", "order-pay-extra"), newOrder({ ...cashPayment, discount: 20 })));
+    const missing: Record<string, unknown> = { ...cashPayment };
+    delete missing.recordedByUid;
+    await assertFails(setDoc(doc(db, "orders", "order-pay-missing"), newOrder(missing)));
+  });
+
+  it("technician cannot attach a payment, but still creates orders without one as before", async () => {
+    const db = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertFails(
+      setDoc(
+        doc(db, "orders", "order-pay-tech"),
+        newOrder({ ...cashPayment, recordedByUid: UID.techMedicAid, recordedByRole: "technician" })
+      )
+    );
+    await assertSucceeds(setDoc(doc(db, "orders", "order-nopay-tech"), newOrder()));
+  });
+
+  it("owner may record a payment", async () => {
+    const db = testEnv.authenticatedContext(UID.owner).firestore();
+    await assertSucceeds(
+      setDoc(
+        doc(db, "orders", "order-pay-owner"),
+        newOrder({ ...cashPayment, recordedByUid: UID.owner, recordedByRole: "owner" })
+      )
+    );
+  });
+
+  it("a recorded payment cannot be changed or removed, even by a lab manager", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "orders", "order-pay-locked"), newOrder(cashPayment));
+    });
+    const mgr = testEnv.authenticatedContext(UID.managerMedicAid).firestore();
+    await assertFails(updateDoc(doc(mgr, "orders", "order-pay-locked"), { "payment.amount": 1 }));
+    await assertFails(updateDoc(doc(mgr, "orders", "order-pay-locked"), { payment: null }));
+    const cashier = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
+    await assertFails(
+      updateDoc(doc(cashier, "orders", "order-pay-locked"), {
+        payment: { ...cashPayment, method: "mobile_money", reference: "MP-CHANGED" },
+      })
+    );
+  });
+
+  it("the lab still works an order that carries a payment", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "orders", "order-pay-worked"), newOrder(cashPayment));
+    });
+    const tech = testEnv.authenticatedContext(UID.techMedicAid).firestore();
+    await assertSucceeds(
+      updateDoc(doc(tech, "orders", "order-pay-worked"), {
+        status: "results_entered",
+        results: { FBC: { Hb: "12.1" } },
+      })
+    );
+  });
+
+  it("a payment cannot be added to an order after it was placed", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "orders", "order-pay-later"), newOrder());
+    });
+    const db = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
+    await assertFails(updateDoc(doc(db, "orders", "order-pay-later"), { payment: cashPayment }));
   });
 });

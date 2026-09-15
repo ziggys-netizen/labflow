@@ -346,6 +346,48 @@ service cloud.firestore {
              || canApproveResultsRole();
     }
 
+    // canRecordPayment: owner, cashier (app/lib/permissions.ts).
+    function canRecordPaymentRole() {
+      return isOwner()
+             || (isApproved() && callerRole() in ["cashier"]);
+    }
+
+    // Shape of orders/{id}.payment — app/lib/orderPayment.ts buildOrderPayment.
+    // Cash carries no transaction ID; both transfers carry one of 3–64 chars.
+    function orderPaymentShapeOk(p) {
+      return p is map
+             && p.keys().hasAll(["method", "amount", "currency", "reference",
+                                 "recordedAt", "recordedByUid", "recordedByRole"])
+             && p.keys().hasOnly(["method", "amount", "currency", "reference",
+                                  "recordedAt", "recordedByUid", "recordedByRole"])
+             && p.method in ["cash", "mobile_money", "bank_transfer"]
+             && (p.amount is int || p.amount is float)
+             && p.amount >= 0
+             && p.currency is string && p.currency.size() > 0
+             && p.recordedAt is string && p.recordedAt.size() > 0
+             && p.recordedByUid is string && p.recordedByUid.size() > 0
+             && p.recordedByRole is string
+             && (p.method == "cash"
+                   ? p.reference == null
+                   : (p.reference is string
+                      && p.reference.size() >= 3
+                      && p.reference.size() <= 64));
+    }
+
+    // An order may be created without a payment (every role but cashier
+    // orders that way). With one, the caller must be allowed to record it and
+    // the record must be well formed.
+    function orderPaymentCreateOk() {
+      return !("payment" in request.resource.data)
+             || (canRecordPaymentRole()
+                 && orderPaymentShapeOk(request.resource.data.payment));
+    }
+
+    // A recorded payment is never edited, added later, or removed.
+    function orderPaymentUnchanged() {
+      return request.resource.data.get("payment", null) == resource.data.get("payment", null);
+    }
+
     // canRestorePatient: owner, clinic_admin, lab_manager, lab_supervisor.
     // Deliberately wider than canDeletePatientRole — a supervisor may undo a
     // wrong removal but not make one. The gates below are directional for that
@@ -387,10 +429,11 @@ service cloud.firestore {
     match /orders/{id} {
       allow get: if patientDataGet();
       allow list: if patientDataGet();
-      allow create: if patientDataCreate() && orderCreateStatusOk();
+      allow create: if patientDataCreate() && orderCreateStatusOk() && orderPaymentCreateOk();
       allow update: if patientDataUpdate()
                      && orderStatusGateOk()
-                     && orderPatientDeletedGateOk();
+                     && orderPatientDeletedGateOk()
+                     && orderPaymentUnchanged();
       allow delete: if false;
     }
 

@@ -70,6 +70,7 @@ import { orderHasCriticalResults, parseAgeYears } from "../../lib/resultFlag";
 import ReasonCodeField from "../../lib/ReasonCodeField";
 import ResultValueField from "../../lib/ResultValueField";
 import { useWriteIdentity } from "../../lib/pinSession";
+import { formatPaymentSummary, parseOrderPayment } from "../../lib/orderPayment";
 import { SensitivePinPrompt } from "../../lib/PinGate";
 import type { SensitivePinAction } from "../../lib/pinIdentity";
 import {
@@ -138,6 +139,7 @@ interface OrderData {
   recollectionOfOrderId?: string | null;
   episodeAlreadyCharged?: boolean;
   valueRollupAppliedAt?: string | null;
+  payment?: unknown;
 }
 
 function OrderDetailContent() {
@@ -926,6 +928,15 @@ function OrderDetailContent() {
         <p className="text-sm text-gray-400 mb-2">
           Ordered {new Date(order.createdAt).toLocaleString()}
         </p>
+        {(() => {
+          const payment = parseOrderPayment(order.payment);
+          if (!payment) return null;
+          return (
+            <p className="text-sm text-gray-700 mb-2">
+              Paid: <span className="lf-num">{formatPaymentSummary(payment)}</span>
+            </p>
+          );
+        })()}
         {order.resultsEnteredBy && (
           <p className="text-xs text-gray-400 mb-1">
             Results entered by {order.resultsEnteredBy} at {new Date(order.resultsEnteredAt!).toLocaleString()}

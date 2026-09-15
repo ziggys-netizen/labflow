@@ -12,7 +12,25 @@ import AppNav from "../../../lib/AppNav";
 import { useAuth } from "../../../lib/AuthContext";
 import { clinicCollectionQuery, isOwner, ownerActingCreateFields } from "../../../lib/clinicScope";
 import ActingClinicPrompt from "../../../lib/ActingClinicPrompt";
-import { canOrderTests, isReceptionBoardRole } from "../../../lib/permissions";
+import {
+  canOrderTests,
+  canRecordPayment,
+  isReceptionBoardRole,
+  paymentRequiredOnOrder,
+} from "../../../lib/permissions";
+import { useWriteIdentity } from "../../../lib/pinSession";
+import {
+  PAYMENT_METHODS,
+  PAYMENT_METHOD_LABELS,
+  PAYMENT_REFERENCE_MAX,
+  buildOrderPayment,
+  formatPaymentAmount,
+  isPaymentMethod,
+  methodNeedsReference,
+  orderChargeTotal,
+  paymentInputError,
+} from "../../../lib/orderPayment";
+import { CURRENCY_SYMBOL } from "../../../lib/currency";
 import { isOrderForDeletedPatient, isPatientDeleted } from "../../../lib/patientSoftDelete";
 import { isReleasedResultStatus } from "../../../lib/resultAmendment";
 import { trackedAddDoc, writeActorFromUser } from "../../../lib/trackedWrites";
@@ -34,6 +52,13 @@ function NewOrderContent() {
   const patientId = params.patientId as string;
   const recollectFrom = searchParams.get("recollectFrom")?.trim() || "";
   const allowed = canOrderTests(role);
+  const writer = useWriteIdentity();
+  // A recollection replaces a rejected sample on an order already placed; it
+  // is not a new charge, so it never asks for payment.
+  const showPayment = canRecordPayment(role) && !recollectFrom;
+  const paymentRequired = showPayment && paymentRequiredOnOrder(role);
+  const [paymentMethod, setPaymentMethod] = useState("");
+  const [paymentReference, setPaymentReference] = useState("");
 
   const [patientName, setPatientName] = useState("");
   const [patientLabId, setPatientLabId] = useState("");
@@ -190,6 +215,31 @@ function NewOrderContent() {
       );
       return;
     }
+
+    const createdAt = new Date().toISOString();
+    let payment: ReturnType<typeof buildOrderPayment> | null = null;
+    if (showPayment && (paymentRequired || paymentMethod)) {
+      const charge = orderChargeTotal(selectedTests);
+      if (!charge.ok) {
+        setStatus(
+          `No price is set in the catalogue for: ${charge.missingPrice.join(", ")}. Ask the lab manager to add it before taking payment.`
+        );
+        return;
+      }
+      const inputError = paymentInputError({ method: paymentMethod, reference: paymentReference });
+      if (inputError) {
+        setStatus(inputError);
+        return;
+      }
+      payment = buildOrderPayment({
+        input: { method: paymentMethod, reference: paymentReference },
+        amount: charge.amount,
+        recordedAt: createdAt,
+        recordedByUid: writer.uid || user?.uid || "",
+        recordedByRole: isOwner(role) ? "owner" : writer.role || role || "",
+      });
+    }
+
     setStatus("Creating order...");
     try {
       const docRef = await trackedAddDoc(
@@ -199,11 +249,12 @@ function NewOrderContent() {
           patientLabId,
           tests: orderTestsPayload(selectedTests),
           status: "pending",
-          createdAt: new Date().toISOString(),
+          createdAt,
           clinicId: writeClinicId,
           ...(recollectFrom
             ? { recollectionOfOrderId: recollectFrom, episodeAlreadyCharged }
             : {}),
+          ...(payment ? { payment } : {}),
           ...ownerActingCreateFields(role),
         },
         {
@@ -225,6 +276,23 @@ function NewOrderContent() {
           targetLabel: auditTargetLabel(patientLabId, "order"),
           detail: { fields: ["tests", "status"], testCount: selectedTests.length },
         });
+        if (payment) {
+          // The transaction ID stays on the order, not in the audit trail.
+          safeLogAudit({
+            clinicId: writeClinicId,
+            actor,
+            action: "order.paymentRecorded",
+            targetCollection: "orders",
+            targetId: docRef.id,
+            targetLabel: auditTargetLabel(patientLabId, "order"),
+            detail: {
+              method: payment.method,
+              amount: payment.amount,
+              currency: payment.currency,
+              hasReference: payment.reference !== null,
+            },
+          });
+        }
       }
       setStatus("Order created successfully.");
       // Cashier cannot open an order's detail page (no collect/enter
@@ -412,6 +480,67 @@ function NewOrderContent() {
                 </li>
               ))}
             </ul>
+
+            {showPayment && (
+              <fieldset className="mb-6 rounded-lg border border-gray-200 p-4">
+                <legend className="px-1 text-sm font-medium text-gray-700">
+                  Payment{paymentRequired ? "" : " (optional)"}
+                </legend>
+                {(() => {
+                  if (selectedTests.length === 0) {
+                    return <p className="text-sm text-gray-500 mb-3">Select tests to see the amount due.</p>;
+                  }
+                  const charge = orderChargeTotal(selectedTests);
+                  if (!charge.ok) {
+                    return (
+                      <p className="text-sm text-red-900 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+                        <span className="font-semibold">Price missing:</span> {charge.missingPrice.join(", ")}.
+                        Ask the lab manager to set it in Catalogue before taking payment.
+                      </p>
+                    );
+                  }
+                  return (
+                    <p className="text-sm text-gray-900 mb-3">
+                      Amount due:{" "}
+                      <span className="lf-num font-semibold">
+                        {formatPaymentAmount({ amount: charge.amount, currency: CURRENCY_SYMBOL })}
+                      </span>
+                    </p>
+                  );
+                })()}
+                <div className="flex flex-col gap-2 mb-3" role="radiogroup" aria-label="Payment method">
+                  {PAYMENT_METHODS.map((method) => (
+                    <label key={method} className="lf-touch flex items-center gap-3 text-sm text-gray-900">
+                      <input
+                        type="radio"
+                        name="payment-method"
+                        value={method}
+                        checked={paymentMethod === method}
+                        onChange={() => setPaymentMethod(method)}
+                      />
+                      {PAYMENT_METHOD_LABELS[method]}
+                    </label>
+                  ))}
+                </div>
+                {isPaymentMethod(paymentMethod) && methodNeedsReference(paymentMethod) && (
+                  <label className="block text-sm text-gray-700">
+                    Transaction ID
+                    <input
+                      type="text"
+                      value={paymentReference}
+                      onChange={(e) => setPaymentReference(e.target.value)}
+                      maxLength={PAYMENT_REFERENCE_MAX}
+                      autoComplete="off"
+                      placeholder="As shown on the patient's confirmation"
+                      className="lf-num mt-1 block w-full rounded-lg border border-gray-300 px-3 py-2"
+                    />
+                  </label>
+                )}
+                <p className="text-xs text-gray-500 mt-3">
+                  Recorded with the order and cannot be changed afterwards.
+                </p>
+              </fieldset>
+            )}
 
             <button
               onClick={handleCreateOrder}

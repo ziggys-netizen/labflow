@@ -12,13 +12,12 @@
  * `accounts` reads daily test-value rollups only. Never patients, orders, or
  * results — totals must not become a clinical access path.
  *
- * `cashier` registers patients and orders tests — the same two actions as
- * reception, plus ordering — and is locked to its own board like `intern`
- * (`cashierAllowedPath`). It has no access to any other patient, no clinical,
- * inventory, or settings capability, and no payment/billing fields exist yet:
- * this role is gatekeeping only. See the deferred billing question in
- * `docs/LabFlow-PRD-v0.5.md` §11 ("Mobile money at health facilities —
- * accepted today? Blocks any billing work") before adding money handling.
+ * `cashier` registers patients, orders tests, and records what the patient paid
+ * for that order — cash, mobile money transfer, or bank transfer with its
+ * transaction ID (`canRecordPayment`, `paymentRequiredOnOrder`). It is locked
+ * to its own board like `intern` (`cashierAllowedPath`), sees only patients it
+ * registered, and has no clinical, inventory, or settings capability. LabFlow
+ * records the payment; it does not move money.
  */
 
 import { isTermsReadablePath } from "./legal/termsGate";
@@ -352,6 +351,23 @@ export function canAmendResult(role: string | null | undefined) {
   return canApproveResults(role);
 }
 
+/**
+ * Record what a patient paid when an order is placed (app/lib/orderPayment.ts).
+ * Cashier collects; owner may record one too. No other role handles money.
+ */
+export function canRecordPayment(role: string | null | undefined) {
+  return allows(role, "owner", "cashier");
+}
+
+/**
+ * An order cashier places must carry a payment. Owner may record one but is
+ * not blocked without it, so owner's existing ordering is unchanged. Every
+ * other role orders exactly as before, with no payment section.
+ */
+export function paymentRequiredOnOrder(role: string | null | undefined) {
+  return allows(role, "cashier");
+}
+
 // Same roles as canOrderTests except cashier: gatekeeping only — cashier is
 // not the one who decides a clinical order should be cancelled.
 export function canCancelOrder(role: string | null | undefined) {
@@ -512,6 +528,7 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
   canViewPatients,
   canViewOwnRegisteredPatients,
   canOrderTests,
+  canRecordPayment,
   canRecordSampleCollection,
   canEnterResults,
   canApproveResults,
