@@ -1,9 +1,11 @@
 # S7 — Excel export and email (Resend)
 
-**Date:** 21 August 2026  
+**Date:** 21 August 2026 · **Updated:** 15 September 2026  
 **Branch:** `wip/inventory-and-migration`
 
 Reports are built on the trusted server (`POST /api/reports/export`) and emailed with Resend. The browser never sees a mail API key.
+
+**Live on production since 15 September 2026.** Sending domain `mail.labflowgambia.com`, verified in Resend (region: Ireland, `eu-west-1`). `RESEND_API_KEY` and `RESEND_FROM` are set on Vercel Production. Confirmed working: a real Email copy reached the requesting account's inbox with the workbook attached. `labflowgambia.com` itself is registered through Vercel, uses Vercel's nameservers, and is **not** connected to any project — it exists only to carry this domain's DNS records; `labflow-six.vercel.app` remains the app's address.
 
 ## Limits
 
