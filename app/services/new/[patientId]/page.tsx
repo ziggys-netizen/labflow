@@ -4,17 +4,23 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { db } from "../../../lib/firebase";
-import { doc, getDoc, collection, getDocs } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs } from "firebase/firestore";
 import ProtectedRoute from "../../../lib/ProtectedRoute";
 import AppNav from "../../../lib/AppNav";
 import { useAuth } from "../../../lib/AuthContext";
 import { clinicCollectionQuery, isOwner, ownerActingCreateFields } from "../../../lib/clinicScope";
 import ActingClinicPrompt from "../../../lib/ActingClinicPrompt";
-import { canRecordPayment, paymentRequiredOnOrder } from "../../../lib/permissions";
+import { canAddService, canEditServiceCatalogue, canRecordPayment, paymentRequiredOnOrder } from "../../../lib/permissions";
 import { useWriteIdentity } from "../../../lib/pinSession";
 import { buildOrderPayment, orderChargeTotal, paymentInputError } from "../../../lib/orderPayment";
 import PaymentFieldset from "../../../lib/PaymentFieldset";
-import { matchesServiceSearch, serviceIsActive, type ClinicService } from "../../../lib/serviceCatalog";
+import {
+  generateServiceCode,
+  matchesServiceSearch,
+  serviceIsActive,
+  type ClinicService,
+} from "../../../lib/serviceCatalog";
+import { priceFieldLabel } from "../../../lib/currency";
 import { isPatientDeleted } from "../../../lib/patientSoftDelete";
 import { trackedAddDoc, writeActorFromUser } from "../../../lib/trackedWrites";
 import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../../../lib/audit";
@@ -41,6 +47,12 @@ function BillServiceContent() {
 
   const [paymentMethod, setPaymentMethod] = useState("");
   const [paymentReference, setPaymentReference] = useState("");
+
+  const canAdd = canAddService(role);
+  const [showAddService, setShowAddService] = useState(false);
+  const [newServiceName, setNewServiceName] = useState("");
+  const [newServicePrice, setNewServicePrice] = useState("");
+  const [addServiceStatus, setAddServiceStatus] = useState("");
 
   useEffect(() => {
     async function loadPatient() {
@@ -174,6 +186,77 @@ function BillServiceContent() {
     }
   }
 
+  async function handleAddService() {
+    setAddServiceStatus("");
+    if (!newServiceName.trim()) {
+      setAddServiceStatus("Service name is required.");
+      return;
+    }
+    if (!writeClinicId) {
+      setAddServiceStatus(
+        isOwner(role)
+          ? "Select a clinic from the menu above to create records."
+          : "Your account is not linked to a clinic yet."
+      );
+      return;
+    }
+    const code = generateServiceCode(newServiceName, catalog.map((s) => s.code));
+    const price = parseFloat(newServicePrice);
+    const clean = Number.isFinite(price) && price >= 0 ? price : 0;
+    const firestoreId = `${writeClinicId}_${code}`;
+    // Owner/lab_manager already has edit rights over the catalogue, so its
+    // own entry is trusted immediately. Cashier's is not — see
+    // canEditServiceCatalogue / canAddService in permissions.ts.
+    const selfReviews = canEditServiceCatalogue(role);
+    const createdAt = new Date().toISOString();
+    setAddServiceStatus("Saving...");
+    try {
+      await setDoc(doc(db, "serviceCatalog", firestoreId), {
+        code,
+        name: newServiceName.trim(),
+        price: clean,
+        active: true,
+        clinicId: writeClinicId,
+        reviewed: selfReviews,
+        reviewedAt: selfReviews ? createdAt : null,
+        reviewedBy: selfReviews ? user?.email ?? null : null,
+        addedByRole: isOwner(role) ? "owner" : writer.role || role || "",
+        addedByUid: writer.uid || user?.uid || "",
+        addedAt: createdAt,
+        ...ownerActingCreateFields(role),
+      });
+      const actor = actorFromAuth(user, role, shift);
+      if (actor) {
+        safeLogAudit({
+          clinicId: writeClinicId,
+          actor,
+          action: "service.catalogueUpdate",
+          targetCollection: "serviceCatalog",
+          targetId: firestoreId,
+          targetLabel: newServiceName.trim(),
+          detail: { fields: ["code", "name", "price"], code, reviewed: selfReviews },
+        });
+      }
+      const added: ClinicService = {
+        code,
+        name: newServiceName.trim(),
+        price: clean,
+        active: true,
+        clinicId: writeClinicId,
+        reviewed: selfReviews,
+      };
+      setCatalog((prev) => [...prev, added]);
+      setSelected(added);
+      setNewServiceName("");
+      setNewServicePrice("");
+      setShowAddService(false);
+      setAddServiceStatus("");
+    } catch (err) {
+      console.error(err);
+      setAddServiceStatus("Failed to save. Please try again.");
+    }
+  }
+
   if (!allowed) {
     return (
       <main className="min-h-screen">
@@ -222,7 +305,9 @@ function BillServiceContent() {
           <div className="border-2 border-amber-300 bg-amber-50 rounded-lg p-3 mb-3">
             <p className="font-semibold text-amber-950 text-sm">No services set up yet.</p>
             <p className="text-sm text-amber-900 mt-1">
-              Ask the lab manager to add services (consultation, dressing, etc.) in Settings.
+              {canAdd
+                ? "Add one below — you can bill it right away."
+                : "Ask the lab manager to add services (consultation, dressing, etc.) in Settings."}
             </p>
           </div>
         )}
@@ -251,6 +336,56 @@ function BillServiceContent() {
                 <span className="font-medium text-gray-900">{s.name}</span>
               </button>
             ))}
+          </div>
+        )}
+
+        {canAdd && (
+          <div className="mb-4">
+            <button
+              type="button"
+              onClick={() => setShowAddService((v) => !v)}
+              className="text-sm text-gray-900 underline"
+            >
+              {showAddService ? "Cancel" : "+ Add a new service"}
+            </button>
+            {showAddService && (
+              <div className="border border-gray-200 rounded-lg p-3 mt-2 space-y-3">
+                {!canEditServiceCatalogue(role) && (
+                  <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+                    You can bill this right away, but the lab manager will need to confirm it in
+                    Settings before it&apos;s fully reviewed.
+                  </p>
+                )}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Service name</label>
+                  <input
+                    type="text"
+                    value={newServiceName}
+                    onChange={(e) => setNewServiceName(e.target.value)}
+                    placeholder="e.g. Wound dressing"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">{priceFieldLabel()}</label>
+                  <input
+                    type="number"
+                    min={0}
+                    value={newServicePrice}
+                    onChange={(e) => setNewServicePrice(e.target.value)}
+                    className="w-32 border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={handleAddService}
+                  className="bg-gray-900 text-white text-sm rounded px-3 py-1.5"
+                >
+                  Save and select
+                </button>
+                {addServiceStatus && <p className="text-sm text-gray-600">{addServiceStatus}</p>}
+              </div>
+            )}
           </div>
         )}
 

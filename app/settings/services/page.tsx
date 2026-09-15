@@ -12,7 +12,12 @@ import { getClinicDocs, isOwner, ownerActingCreateFields } from "../../lib/clini
 import { requireSurface } from "../../lib/surfaces";
 import { actorFromAuth, safeLogAudit } from "../../lib/audit";
 import { priceFieldLabel } from "../../lib/currency";
-import { generateServiceCode, serviceIsActive, type ClinicService } from "../../lib/serviceCatalog";
+import {
+  generateServiceCode,
+  serviceIsActive,
+  serviceIsReviewed,
+  type ClinicService,
+} from "../../lib/serviceCatalog";
 
 interface ServiceRow extends ClinicService {
   firestoreId: string;
@@ -93,6 +98,32 @@ function ServicesContent() {
     }
   }
 
+  async function confirmService(firestoreId: string, code: string, name: string) {
+    const reviewedAt = new Date().toISOString();
+    const actor = actorFromAuth(user, role, shift);
+    const reviewedBy = actor?.email || null;
+    setServices((prev) =>
+      prev.map((s) => (s.firestoreId === firestoreId ? { ...s, reviewed: true, reviewedAt, reviewedBy } : s))
+    );
+    try {
+      await setDoc(doc(db, "serviceCatalog", firestoreId), { reviewed: true, reviewedAt, reviewedBy }, { merge: true });
+      if (actor) {
+        await safeLogAudit({
+          clinicId: writeClinicId || clinicId,
+          actor,
+          action: "service.catalogueUpdate",
+          targetCollection: "serviceCatalog",
+          targetId: firestoreId,
+          targetLabel: name,
+          detail: { fields: ["reviewed"], code },
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      setStatus("Failed to confirm.");
+    }
+  }
+
   async function toggleActive(firestoreId: string, code: string, name: string, active: boolean) {
     setServices((prev) =>
       prev.map((s) => (s.firestoreId === firestoreId ? { ...s, active } : s))
@@ -135,6 +166,11 @@ function ServicesContent() {
     const price = parseFloat(newPrice);
     const clean = Number.isFinite(price) && price >= 0 ? price : 0;
     const firestoreId = `${writeClinicId}_${code}`;
+    const actor = actorFromAuth(user, role, shift);
+    // This page is owner/lab_manager only (requireSurface("services")), so a
+    // service created here is reviewed by the act of creating it — same as
+    // owner/lab_manager adding a test to the catalogue.
+    const reviewedAt = new Date().toISOString();
     setAddStatus("Saving...");
     try {
       await setDoc(doc(db, "serviceCatalog", firestoreId), {
@@ -143,9 +179,11 @@ function ServicesContent() {
         price: clean,
         active: true,
         clinicId: writeClinicId,
+        reviewed: true,
+        reviewedAt,
+        reviewedBy: actor?.email || null,
         ...ownerActingCreateFields(role),
       });
-      const actor = actorFromAuth(user, role, shift);
       if (actor) {
         await safeLogAudit({
           clinicId: writeClinicId,
@@ -158,9 +196,20 @@ function ServicesContent() {
         });
       }
       setServices((prev) =>
-        [...prev, { code, name: newName.trim(), price: clean, active: true, clinicId: writeClinicId, firestoreId }].sort(
-          (a, b) => a.name.localeCompare(b.name)
-        )
+        [
+          ...prev,
+          {
+            code,
+            name: newName.trim(),
+            price: clean,
+            active: true,
+            clinicId: writeClinicId,
+            reviewed: true,
+            reviewedAt,
+            reviewedBy: actor?.email || null,
+            firestoreId,
+          },
+        ].sort((a, b) => a.name.localeCompare(b.name))
       );
       setNewName("");
       setNewPrice("");
@@ -259,6 +308,11 @@ function ServicesContent() {
               <div>
                 <p className="font-medium text-gray-900">{service.name}</p>
                 <p className="text-xs text-gray-500 lf-num">{service.code}</p>
+                {!serviceIsReviewed(service) && (
+                  <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
+                    Not reviewed{service.addedByRole ? ` — added by ${service.addedByRole}` : ""}
+                  </span>
+                )}
               </div>
               <div className="flex items-center gap-3">
                 <label className="text-sm text-gray-600">{priceFieldLabel()}:</label>
@@ -279,6 +333,15 @@ function ServicesContent() {
                   />
                   Active
                 </label>
+                {!serviceIsReviewed(service) && (
+                  <button
+                    type="button"
+                    onClick={() => void confirmService(service.firestoreId, service.code, service.name)}
+                    className="text-sm text-gray-900 underline"
+                  >
+                    Confirm
+                  </button>
+                )}
               </div>
             </div>
           ))}

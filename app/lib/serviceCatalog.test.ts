@@ -4,6 +4,7 @@ import {
   matchesServiceSearch,
   serviceHasPrice,
   serviceIsActive,
+  serviceIsReviewed,
 } from "./serviceCatalog";
 
 describe("serviceIsActive", () => {
@@ -11,6 +12,16 @@ describe("serviceIsActive", () => {
     expect(serviceIsActive({})).toBe(true);
     expect(serviceIsActive({ active: true })).toBe(true);
     expect(serviceIsActive({ active: false })).toBe(false);
+  });
+});
+
+describe("serviceIsReviewed", () => {
+  it("treats missing or false as unreviewed, only true as reviewed", () => {
+    expect(serviceIsReviewed(undefined)).toBe(false);
+    expect(serviceIsReviewed(null)).toBe(false);
+    expect(serviceIsReviewed({})).toBe(false);
+    expect(serviceIsReviewed({ reviewed: false })).toBe(false);
+    expect(serviceIsReviewed({ reviewed: true })).toBe(true);
   });
 });
 

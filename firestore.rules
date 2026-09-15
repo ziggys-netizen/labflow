@@ -445,16 +445,38 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // canEditServiceCatalogue: owner, lab_manager — same people as the test catalogue.
+    // canEditServiceCatalogue: owner, lab_manager — edit price, activate,
+    // confirm. Same people as the test catalogue.
     function canEditServiceCatalogueRole() {
       return isOwner()
              || (isApproved() && callerRole() in ["lab_manager"]);
     }
 
+    // canAddService: owner, lab_manager, cashier — a brand new entry only,
+    // from the billing screen. Cashier's own create must arrive already
+    // unreviewed: it cannot mark its own entry trusted. Not checked against
+    // request.auth.uid — the app writes the PIN-session identity
+    // (writer.uid) here, which is not always request.auth.uid on a shared
+    // device; requiring equality would silently deny cashier's own writes
+    // there, the same trap the auditLogs actor binding already has.
+    // Owner/lab_manager's create carries no such constraint — same as
+    // creating a test catalogue entry, its own act of creation reviews it.
+    function serviceCatalogCreateOk() {
+      let d = request.resource.data;
+      let hasShape = d.code is string && d.code.size() > 0
+                     && d.name is string && d.name.size() > 0;
+      return hasShape && (
+        canEditServiceCatalogueRole()
+        || (isApproved() && callerRole() == "cashier"
+            && d.get("reviewed", false) == false
+            && d.get("addedByRole", "") == "cashier")
+      );
+    }
+
     match /serviceCatalog/{id} {
       allow get: if patientDataGet();
       allow list: if patientDataGet();
-      allow create: if patientDataCreate() && canEditServiceCatalogueRole();
+      allow create: if patientDataCreate() && serviceCatalogCreateOk();
       allow update: if patientDataUpdate() && canEditServiceCatalogueRole();
       allow delete: if false;
     }

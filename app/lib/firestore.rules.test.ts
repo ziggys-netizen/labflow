@@ -1015,6 +1015,62 @@ describe("firestore rules — service catalogue and service charges", () => {
     );
   });
 
+  it("cashier can add a new service, unreviewed, and bill it right away — but cannot mark its own entry reviewed", async () => {
+    const cashier = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
+    await assertSucceeds(
+      setDoc(doc(cashier, "serviceCatalog", "svc-medic-cashier-dressing"), {
+        clinicId: MEDIC_AID,
+        code: "DRESSING",
+        name: "Wound dressing",
+        price: 50,
+        active: true,
+        reviewed: false,
+        addedByRole: "cashier",
+      })
+    );
+    await assertFails(
+      setDoc(doc(cashier, "serviceCatalog", "svc-medic-cashier-selfreview"), {
+        clinicId: MEDIC_AID,
+        code: "SELFREVIEW",
+        name: "Self-reviewed attempt",
+        price: 50,
+        active: true,
+        reviewed: true,
+        addedByRole: "cashier",
+      })
+    );
+    await assertFails(
+      setDoc(doc(cashier, "serviceCatalog", "svc-medic-cashier-mislabeled"), {
+        clinicId: MEDIC_AID,
+        code: "MISLABEL",
+        name: "Mislabeled attempt",
+        price: 50,
+        active: true,
+        reviewed: false,
+        addedByRole: "lab_manager",
+      })
+    );
+  });
+
+  it("cashier cannot edit or confirm an existing service entry", async () => {
+    await testEnv.withSecurityRulesDisabled(async (context) => {
+      await setDoc(doc(context.firestore(), "serviceCatalog", "svc-medic-locked"), {
+        clinicId: MEDIC_AID,
+        code: "LOCKED",
+        name: "Locked service",
+        price: 50,
+        active: true,
+        reviewed: false,
+        addedByRole: "cashier",
+      });
+    });
+    const cashier = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
+    await assertFails(updateDoc(doc(cashier, "serviceCatalog", "svc-medic-locked"), { price: 75 }));
+    await assertFails(
+      updateDoc(doc(cashier, "serviceCatalog", "svc-medic-locked"), { reviewed: true })
+    );
+  });
+
   it("cashier can create a service charge; technician and lab_manager cannot", async () => {
     const cashier = testEnv.authenticatedContext(UID.cashierMedicAid).firestore();
     await assertSucceeds(setDoc(doc(cashier, "serviceCharges", "charge-cash"), serviceCharge));

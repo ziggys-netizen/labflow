@@ -95,6 +95,7 @@ export const SCENE_ROUTES: Record<string, SceneSpec> = {
   "/patients/[patientId]/label": scatter(["barcodeTag", "tube"], "bob", 115),
   "/patients/[patientId]/print": scatter(["report", "microplate"], "rise", 116),
   "/patients/[patientId]/report": scatter(["microscope", "slide", "petri"], "sway", 117),
+  "/patients/[patientId]/receipts": scatter(["report", "barcodeTag"], "bob", 144),
 
   "/register": scatter(["tube", "droplet"], "fall", 118),
   "/orders": scatter(["rack", "tube"], "wave", 119),

@@ -21,6 +21,7 @@ import {
   canDeletePatient,
   canEnterResults,
   canOrderTests,
+  canRecordPayment,
   canRecordSampleCollection,
   canRegisterPatient,
   canViewOwnRegisteredPatients,
@@ -151,6 +152,7 @@ function PatientsContent() {
   const canEnter = canEnterResults(role);
   const canReview = canApproveResults(role);
   const canAmend = canAmendResult(role);
+  const canBill = canRecordPayment(role);
 
   const patientsQuery = useClinicCollection("patients", role, clinicId, {
     sortBy: "createdAt",
@@ -450,6 +452,34 @@ function PatientsContent() {
         Print Lab ID
       </Link>
     );
+    if (canBill) {
+      items.push(
+        <Link
+          key="receipts"
+          role="menuitem"
+          href={`/patients/${patient.id}/receipts`}
+          className={moreMenuItemClass()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpenMenuId(null);
+          }}
+        >
+          Receipts
+        </Link>,
+        <Link
+          key="bill"
+          role="menuitem"
+          href={`/services/new/${patient.id}`}
+          className={moreMenuItemClass()}
+          onClick={(e) => {
+            e.stopPropagation();
+            setOpenMenuId(null);
+          }}
+        >
+          Bill a service
+        </Link>
+      );
+    }
     if (items.length === 0) return null;
 
     return (

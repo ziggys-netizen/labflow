@@ -16,10 +16,12 @@
  * (consultation and the like, from the clinic's own service list — see
  * `serviceCatalog.ts`) — recording what the patient paid, cash, mobile money
  * transfer, or bank transfer with its transaction ID (`canRecordPayment`,
- * `paymentRequiredOnOrder`, `canEditServiceCatalogue` for who maintains the
- * service list). It is locked to its own board like `intern`
- * (`cashierAllowedPath`), sees only patients it registered, and has no
- * clinical, inventory, or settings capability beyond that list. LabFlow
+ * `paymentRequiredOnOrder`). It may add a new service on the spot while
+ * billing (`canAddService`) but cannot confirm its own entry — only owner or
+ * lab_manager can (`canEditServiceCatalogue`), same document-control shape
+ * as an unreviewed test catalogue entry. It is locked to its own board like
+ * `intern` (`cashierAllowedPath`), sees only patients it registered, and has
+ * no clinical, inventory, or settings capability beyond that. LabFlow
  * records the payment; it does not move money.
  */
 
@@ -216,9 +218,27 @@ export function canEditTestCatalogue(role: string | null | undefined) {
   return allows(role, "owner", "lab_manager");
 }
 
-/** Services surface (`edit:services` /settings/services). Same people as the test catalogue. */
+/**
+ * Services surface (`edit:services` /settings/services): edit an existing
+ * entry's price, activate/deactivate it, confirm one cashier added. Same
+ * people as the test catalogue — not cashier; see canAddService.
+ */
 export function canEditServiceCatalogue(role: string | null | undefined) {
   return allows(role, "owner", "lab_manager");
+}
+
+/**
+ * Add a brand new service entry — from the billing screen, not Settings.
+ * Cashier gets this alone, without canEditServiceCatalogue: it can create an
+ * entry and bill it immediately, but the entry starts unreviewed
+ * (serviceCatalog.ts `serviceIsReviewed`) and cashier cannot mark its own
+ * entry reviewed — the same shape ISO 15189 / SLIPTA document control wants
+ * for the test catalogue already (catalogSeed.ts `isTestReviewed`): real-time
+ * work is not blocked, but pricing still gets a second set of eyes and a
+ * traceable author.
+ */
+export function canAddService(role: string | null | undefined) {
+  return allows(role, "owner", "lab_manager", "cashier");
 }
 
 /**
@@ -484,13 +504,13 @@ export function internAllowedPath(pathname: string): boolean {
 
 /**
  * Paths a cashier may open. Register plus the same own-registered-patient
- * paths as intern, plus ordering and billing a service — for a patient just
- * registered — and the printable receipt for either. No general orders list
- * and no order detail page: those require canEnterResults or
- * canRecordSampleCollection, which cashier does not have, so an order it
- * creates is not opened here — the reception board reflects it instead,
- * under "Awaiting collection", and a receipt is its own page cashier may
- * open without the rest of the order.
+ * paths as intern, plus ordering and billing a service — for a patient it
+ * registered — the printable receipt for either, and the list of receipts
+ * for one patient (reprinting an earlier one, not just the one just made).
+ * No general orders list and no order detail page: those require
+ * canEnterResults or canRecordSampleCollection, which cashier does not have,
+ * so an order it creates is not opened here — the reception board reflects
+ * it instead, under "Awaiting collection".
  */
 export function cashierAllowedPath(pathname: string): boolean {
   if (isTermsReadablePath(pathname)) return true;
@@ -506,6 +526,7 @@ export function cashierAllowedPath(pathname: string): boolean {
   if (pathname.startsWith("/services/new/")) return true;
   if (pathname.startsWith("/orders/") && pathname.endsWith("/receipt")) return true;
   if (pathname.startsWith("/services/") && pathname.endsWith("/receipt")) return true;
+  if (pathname.startsWith("/patients/") && pathname.endsWith("/receipts")) return true;
   return pathname.startsWith("/patients/") && pathname.endsWith("/print");
 }
 
@@ -554,6 +575,7 @@ export const CAPABILITY_CHECKS: Record<string, (role: string | null | undefined)
   canRecordCriticalNotification,
   canEditTestCatalogue,
   canEditServiceCatalogue,
+  canAddService,
   canViewDashboard,
   canViewOrders,
   canAccessClinicSettings,
