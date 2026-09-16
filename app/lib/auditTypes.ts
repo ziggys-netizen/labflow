@@ -80,6 +80,7 @@ export const AUDIT_ACTIONS = [
   "import.run",
   "legacyRecords.claim",
   "dataQuality.clearCollectionTime",
+  "inventory.adjustment",
   "preApproval.create",
   "preApproval.revoke",
   "preApproval.consume",

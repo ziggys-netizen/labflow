@@ -7,6 +7,7 @@ import AppNav from "../../lib/AppNav";
 import NotYetSynced from "../../lib/NotYetSynced";
 import { useAuth } from "../../lib/AuthContext";
 import { db } from "../../lib/firebase";
+import { actorFromAuth, safeLogAudit } from "../../lib/audit";
 import { isOwner, ownerActingCreateFields } from "../../lib/clinicScope";
 import { useClinicCollection } from "../../lib/clinicListen";
 import { trackedBatchCommit, writeActorFromUser } from "../../lib/trackedWrites";
@@ -60,7 +61,7 @@ function Td({ children }: { children: React.ReactNode }) {
 }
 
 function MovementsContent() {
-  const { user, role, clinicId, writeClinicId, username } = useAuth();
+  const { user, role, clinicId, writeClinicId, username, shift } = useAuth();
   const owner = isOwner(role);
   const allowed = canViewInventory(role);
   const canRecord = canRecordStockMovement(role);
@@ -341,6 +342,28 @@ function MovementsContent() {
       });
 
       await trackedBatchCommit(write, parts);
+
+      if (type === "adjustment") {
+        const auditActor = actorFromAuth(user, role, shift);
+        if (auditActor) {
+          await safeLogAudit({
+            clinicId: targetClinicId,
+            actor: auditActor,
+            action: "inventory.adjustment",
+            targetCollection: "inventoryMovements",
+            targetId: movementRef.id,
+            targetLabel: `${selectedItem.name} · lot ${targetBatch?.lotNumber ?? "—"}`,
+            detail: {
+              direction,
+              quantity: qty,
+              reason: reason || null,
+              packingUnit: selectedItem.packingUnit,
+              department,
+            },
+          });
+        }
+      }
+
       setStatus(
         mode === "receive"
           ? `Recorded ${qty} ${selectedItem.packingUnit} of ${selectedItem.name} into lot ${lotNumber.trim()}.`
