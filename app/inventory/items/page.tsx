@@ -20,7 +20,9 @@ import {
   LAB_DEPARTMENTS,
   PACKING_UNITS,
   STORAGE_CONDITIONS,
+  hasNoReorderLevel,
   mapItem,
+  minimumStockError,
   packDescription,
 } from "../../lib/inventory";
 
@@ -61,7 +63,7 @@ const BLANK: FormState = {
   packsPerCarton: "",
   storageCondition: "Room temperature",
   department: "Main store",
-  minimumStock: "0",
+  minimumStock: "",
   clinicId: "",
 };
 
@@ -192,11 +194,12 @@ function ItemsContent() {
       setStatus("Units per pack must be 1 or more.");
       return;
     }
-    const minimumStock = Number(form.minimumStock);
-    if (!Number.isFinite(minimumStock) || minimumStock < 0) {
-      setStatus("Minimum stock cannot be negative.");
+    const minimumStockProblem = minimumStockError(form.minimumStock);
+    if (minimumStockProblem) {
+      setStatus(minimumStockProblem);
       return;
     }
+    const minimumStock = Number(form.minimumStock.trim().replace(/,/g, ""));
 
     const payload = {
       clinicId: targetClinicId,
@@ -453,10 +456,14 @@ function ItemsContent() {
                   ))}
                 </select>
               </Field>
-              <Field label="Minimum stock" hint="Packs. Triggers the low-stock flag at or below this.">
+              <Field
+                label="Minimum stock (required)"
+                hint="Packs. Reordering is raised at or below this level, so it cannot be zero."
+              >
                 <input
                   type="number"
-                  min={0}
+                  min={1}
+                  required
                   value={form.minimumStock}
                   onChange={(e) => set("minimumStock", e.target.value)}
                   className={inputClass}
@@ -515,11 +522,19 @@ function ItemsContent() {
                       item.supplier && `Supplier: ${item.supplier}`,
                       item.catalogueCode && `Cat. ${item.catalogueCode}`,
                       `Store at ${item.storageCondition}`,
-                      `Minimum ${item.minimumStock} ${item.packingUnit}`,
+                      hasNoReorderLevel(item)
+                        ? null
+                        : `Minimum ${item.minimumStock} ${item.packingUnit}`,
                     ]
                       .filter(Boolean)
                       .join(" · ")}
                   </p>
+                  {item.active && hasNoReorderLevel(item) && (
+                    <p className="text-xs font-medium text-amber-700 mt-1">
+                      No reorder level set — this item will not warn before it runs out. Edit it to
+                      set one.
+                    </p>
+                  )}
                   {owner && item.clinicId && (
                     <p className="text-xs text-gray-400">
                       Clinic: {clinicNames[item.clinicId] || item.clinicId}

@@ -5,6 +5,7 @@ import {
   LAB_DEPARTMENTS,
   PACKING_UNITS,
   STORAGE_CONDITIONS,
+  minimumStockError,
 } from "./inventory";
 import type { SpecimenType, TestParameter } from "./testCatalog";
 import { parseSpecimenType } from "./testCatalog";
@@ -575,7 +576,7 @@ const INVENTORY_FIELDS: MigrationField[] = [
     key: "minimumStock",
     label: "Minimum stock",
     aliases: ["reorder level", "min stock", "par level"],
-    help: "Optional. Defaults to 0 when blank.",
+    help: "Required. The level at which the item is reordered; it cannot be zero.",
   },
   {
     key: "lotNumber",
@@ -1923,15 +1924,12 @@ function validateInventory(
       if (!department) issues.push("Department is not a recognised laboratory section.");
     }
 
+    // Required, like the store item form: an item imported without a reorder
+    // level can never raise an early warning, only report itself empty.
     let minimumStock = 0;
-    if (values.minimumStock) {
-      const parsed = Number(values.minimumStock.replace(/,/g, ""));
-      if (!Number.isFinite(parsed) || parsed < 0) {
-        issues.push("Minimum stock cannot be negative.");
-      } else {
-        minimumStock = parsed;
-      }
-    }
+    const minimumStockProblem = minimumStockError(values.minimumStock || "");
+    if (minimumStockProblem) issues.push(minimumStockProblem);
+    else minimumStock = Number((values.minimumStock || "").trim().replace(/,/g, ""));
 
     let packsPerCarton: number | null = null;
     if (values.packsPerCarton) {

@@ -80,29 +80,25 @@ because staff wait instead of acting.
 
 ## Recently closed (verified 16 September 2026)
 
-This list exists because the open items below sat unreviewed long enough that two of them — D4 and Excel formula escaping — were found already shipped when a coding agent went to build them, one day *before* this document's own "Updated" date at the time. Each line here carries the evidence so the same mistake doesn't repeat: check the commit before treating anything below as still open.
+This list exists because the numbered open items went unreviewed long enough that, when they were finally checked against the code on 16 September 2026, **every one of them turned out to be already built** — several of them days before this document's own "Updated" date at the time. Each line here carries its commit so the same mistake does not repeat: check the evidence before treating anything as still open, and move an item down here the day it ships.
 
+- **E3R** — patient history remediation. All three defects were fixed together in `bec3ff8`, 8 September 2026: `page n of m` now counts real print sheets (`paginateByWeight`, `app/lib/patientHistory.ts`), a stable `analyteId` joins cumulative rows across test codes (`resultModel.ts`, `cumulativeJoinKey`), and the disclosure log names Lab IDs (`historyDisclosureDetail`). One loose end, not a defect: the same detail blob still carries a raw `orderIds` array alongside the Lab IDs.
+- **I2 / I3** — the surface registry and role matrix. The four flagged rows were settled in `a8c2818`, 12 September 2026: `clinic_admin→Review` kept denied, `clinic_admin→Patient history` granted, `lab_supervisor→Catalogue` kept denied, `lab_supervisor→Recycle bin` granted restore-only (which required splitting `canRestorePatient` from `canDeletePatient`). The rules deployment that commit warned about is done — restore confirmed working by Isaac on 16 September 2026.
+- **Clinical letters in the queue panel** — done since `14afd5c`, 8 September 2026, by separation rather than by a per-row mark. An order carrying an unreleased critical result is diverted out of "Awaiting review" into the Blocked tile with the word `CRITICAL` (`managerBoard.ts`), and the generic dashboard carries its own "Critical results awaiting communication" tile (`dashboardQueue.ts`). A critical result is therefore never hidden inside a plain count on either board.
 - **D4** — per-test turnaround targets on the technician board. Already complete: `app/lib/technicianBoard.ts` (`computeTatClock`, `TechWorkItem.tatMinutes`, `attentionSubLabel`). Not part of this pass — found already built.
 - **D5** — turnaround target on the manager board's in-progress bench. Built 15–16 September 2026: `app/lib/managerBoard.ts` (`inProgressTatClock`, `progressSubLabel`), commit `22399b6`.
 - **Excel formula escaping at export** — `app/lib/reportWorkbook.ts` (`escapeForSpreadsheet`), tested in `app/lib/reportExport.test.ts`. Shipped `14270d2`, 8 September 2026 — already live before this document's prior "Updated" date.
 - **Security headers** — `Referrer-Policy`, HSTS, `nosniff`, `Permissions-Policy`, and `frame-ancestors 'self'` (not `'none'` — `'self'` is required so Firebase Auth's same-origin iframe still loads; cross-origin framing is blocked either way). Shipped `5599aaa`, 8 September 2026. Confirmed live on `www.labflowgambia.com` by curl on 16 September 2026.
-- **Content Security Policy** — shipped as `Content-Security-Policy-Report-Only` on 16 September 2026, commit `35a15e2`, directives derived from an audit of actual client traffic (Firestore, Auth, Storage; no third-party scripts, fonts, or analytics anywhere in the app). Violations post to `/api/csp-report` (server logs only). **Not fully closed — see item 4 below.**
+- **Content Security Policy** — shipped as `Content-Security-Policy-Report-Only` on 16 September 2026, commit `35a15e2`, directives derived from an audit of actual client traffic (Firestore, Auth, Storage; no third-party scripts, fonts, or analytics anywhere in the app). Violations post to `/api/csp-report` (server logs only). **Not fully closed — see item 1 below.**
 - **Inventory adjustments into the audit log** — recording an adjustment now also writes an `inventory.adjustment` entry to `auditLogs` (direction, quantity, reason, department). Shipped `49d0618`, 16 September 2026.
 - **Low-stock reorder alerting** — a minimum stock level existed but nothing acted on it. A nightly digest (`/api/cron/low-stock`, 07:00) now emails the lab manager, clinic administrator and storekeeper: the first fall to the minimum sends a message, every further fall sends another, and zero sends one final message that says OUT OF STOCK in words as well as in red. A delivery clearing the minimum closes the cycle. Alert state is stored only after the mail has actually left, so a send failure retries rather than being swallowed. An in-app banner carries the same warning live from the ledger. `app/lib/lowStock.ts`, `app/lib/lowStockServer.ts`, `app/lib/LowStockBanner.tsx`. Shipped `bad10f7`, 16 September 2026.
+- **Minimum stock is required** — a reorder level of zero silently opted an item out of every early warning, so both ways an item reaches the store now refuse it: the item form and the spreadsheet import share one validator (`minimumStockError`, `app/lib/inventory.ts`). Items saved before this carry a visible "No reorder level set" warning on the items list rather than being given an invented number. Shipped 16 September 2026.
 
 ---
 
 ## Open items, in order
 
-**1. E3R** — patient history remediation. Page `n of m` is currently a lie — `m` counts chunks, not sheets, so two physical pages can carry the same stamp. Cumulative rows split a trend across test codes because there is no stable `analyteId`. The disclosure log names Firestore document IDs rather than Lab IDs.
-
-**2. I2 / I3** — the surface registry and the role matrix, once I confirm the four rows I flagged.
-
-**3. Clinical letters in the queue panel** — a manager scanning "6 awaiting review" should see which one carries a critical value.
-
-**4. Content Security Policy — enforce** — `Content-Security-Policy-Report-Only` has been live since 16 September 2026 (see above). Once a week has passed with no unexpected entries in the `/api/csp-report` server logs, fold its directives into the enforced `Content-Security-Policy` header in `next.config.ts` alongside the existing `frame-ancestors 'self'`.
-
-**5. Minimum stock defaults to zero** — the store item form accepts a minimum of 0, and `stockLevel` only reports "low" when the minimum is above zero. An item added without a deliberate minimum therefore never warns; it jumps straight from healthy to out of stock. The reorder digest still sends its out-of-stock message for those items, so they are not silent, but the early warning the rest of the feature is built on never fires for them. Decide whether the form should require a minimum above zero.
+**1. Content Security Policy — enforce** — `Content-Security-Policy-Report-Only` has been live since 16 September 2026 (see above). Once a week has passed with no unexpected entries in the `/api/csp-report` server logs, fold its directives into the enforced `Content-Security-Policy` header in `next.config.ts` alongside the existing `frame-ancestors 'self'`.
 
 ---
 

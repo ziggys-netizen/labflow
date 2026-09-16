@@ -177,6 +177,28 @@ export const DISPOSAL_REASONS = [
   "Returned to supplier",
 ] as const;
 
+/**
+ * A reorder level of zero opts an item out of every early warning: `stockLevel`
+ * can only ever call it empty, never "running out". Items therefore carry a
+ * real minimum, and `hasNoReorderLevel` finds the ones saved before that was so.
+ */
+export const MINIMUM_STOCK_REQUIRED =
+  "Minimum stock is required. Enter the level at which this item should be reordered.";
+
+export function minimumStockError(raw: string): string | null {
+  const trimmed = raw.trim();
+  if (!trimmed) return MINIMUM_STOCK_REQUIRED;
+  const parsed = Number(trimmed.replace(/,/g, ""));
+  if (!Number.isFinite(parsed)) return "Minimum stock must be a number.";
+  if (!Number.isInteger(parsed)) return "Minimum stock must be a whole number of packs.";
+  if (parsed < 1) return MINIMUM_STOCK_REQUIRED;
+  return null;
+}
+
+export function hasNoReorderLevel(item: { minimumStock: number }): boolean {
+  return !(item.minimumStock >= 1);
+}
+
 export const ADJUSTMENT_REASONS = [
   "Physical count correction",
   "Data entry correction",
