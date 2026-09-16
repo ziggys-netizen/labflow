@@ -16,11 +16,13 @@ import {
   buildManagerStages,
   clinicReleaseWindow,
   filterBoardItems,
+  inProgressTatClock,
   isCriticalUnreleased,
   medianElapsedTatHours,
   openOrdersAffectedByTestCode,
   operationalForManagerStage,
   orderWorklist,
+  progressSubLabel,
   releasedTatSubLabel,
   reviewSubLabel,
   sessionOverlapsWindow,
@@ -232,6 +234,70 @@ describe("tile definitions", () => {
     expect(isCriticalUnreleased(order({ status: "approved", results: { FBC: { Hb: "4" } } }), CATALOG, "Female")).toBe(
       false
     );
+  });
+});
+
+describe("in-progress TAT clock", () => {
+  it("gives no clock when no test in the order has a target", () => {
+    const rows = stages({
+      orders: [order({ status: "pending", sampleCollectedAt: "2026-09-04T08:00:00.000Z" })],
+    });
+    const bench = rows.find((row) => row.kind === "in_progress");
+    expect(bench?.tatClock).toBeNull();
+    expect(operationalForManagerStage(bench!)).toEqual({ state: "collected" });
+    expect(progressSubLabel(rows)).toBe("ON BENCH");
+  });
+
+  it("is overdue once elapsed time since collection passes the target", () => {
+    const catalog: ManagerCatalogRow[] = [{ ...CATALOG[0], tatMinutes: 60 }];
+    const collectedTwoHoursAgo = order({ status: "pending", sampleCollectedAt: "2026-09-04T08:00:00.000Z" });
+    expect(inProgressTatClock(collectedTwoHoursAgo, catalog, NOW)).toMatchObject({ overdue: true });
+    const rows = stages({ catalog, orders: [collectedTwoHoursAgo] });
+    const bench = rows.find((row) => row.kind === "in_progress")!;
+    expect(operationalForManagerStage(bench).state).toBe("overdue");
+    expect(bench.detail).toContain("OVERDUE");
+    expect(progressSubLabel(rows)).toBe("1 OVERDUE");
+  });
+
+  it("is due within the hour, not overdue, before the target passes", () => {
+    const catalog: ManagerCatalogRow[] = [{ ...CATALOG[0], tatMinutes: 90 }];
+    const collected45MinAgo = order({ status: "pending", sampleCollectedAt: "2026-09-04T09:15:00.000Z" });
+    const clock = inProgressTatClock(collected45MinAgo, catalog, NOW);
+    expect(clock).toMatchObject({ overdue: false, dueWithin1h: true });
+    const rows = stages({ catalog, orders: [collected45MinAgo] });
+    expect(operationalForManagerStage(rows[0]).state).toBe("due");
+    expect(progressSubLabel(rows)).toBe("1 DUE WITHIN 1H");
+  });
+
+  it("uses the tightest target among the order's tests, not an average or the first one", () => {
+    const catalog: ManagerCatalogRow[] = [
+      { code: "FBC", name: "Full Blood Count", parameters: [HB], tatMinutes: 120 },
+      { code: "HB", name: "Haemoglobin", parameters: [HB], tatMinutes: 30 },
+    ];
+    const multiTest = order({
+      tests: [
+        { code: "FBC", name: "Full Blood Count" },
+        { code: "HB", name: "Haemoglobin" },
+      ],
+      status: "pending",
+      sampleCollectedAt: "2026-09-04T09:15:00.000Z", // 45 minutes ago
+    });
+    // FBC alone (120min target) would not be overdue at 45 minutes; HB's
+    // 30-minute target already has, so the order as a whole is overdue.
+    expect(inProgressTatClock(multiTest, catalog, NOW)).toMatchObject({ overdue: true });
+  });
+
+  it("skips a test whose catalogue entry has no target, and one with no matching entry at all", () => {
+    const catalog: ManagerCatalogRow[] = [{ code: "FBC", name: "Full Blood Count", parameters: [HB] }];
+    const mixed = order({
+      tests: [
+        { code: "FBC", name: "Full Blood Count" }, // catalogued, no target
+        { code: "MISSING", name: "Not in catalogue" },
+      ],
+      status: "pending",
+      sampleCollectedAt: "2026-09-04T08:00:00.000Z",
+    });
+    expect(inProgressTatClock(mixed, catalog, NOW)).toBeNull();
   });
 });
 

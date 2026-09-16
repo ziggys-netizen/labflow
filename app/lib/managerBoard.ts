@@ -4,7 +4,15 @@
  *
  * Stock-out → orders-affected is joined only when an inventory item has
  * testCode. No testCode means no count — never guessed.
- * Median TAT is classifyTurnaround elapsed hours (collection → review), not a target.
+ * Median TAT (released tile) is classifyTurnaround elapsed hours
+ * (collection → review) — a retrospective stat, not a target.
+ *
+ * The in-progress tile is different: it is live open work, so it gets a real
+ * target, the same clock the technician board already runs per test
+ * (technicianBoard.ts `computeTatClock`). An order names several tests; its
+ * own clock is set by the tightest of them — the order is not done until the
+ * most time-sensitive test is, so that is the one worth a manager's
+ * attention. An order with no timed test gets no clock — never a guessed one.
  */
 
 import {
@@ -28,10 +36,12 @@ import {
   type OrderTestRef,
 } from "./sampleCollection";
 import { classifyTurnaround, summarizeTurnaround, type TurnaroundSample } from "./datetime";
-import type { TestParameter } from "./testCatalog";
+import { parseTatMinutes, type TestParameter } from "./testCatalog";
 import {
+  computeTatClock,
   releaseWindowForBoard,
   visibleWorklist,
+  type TechTatClock,
   type TechReleaseWindow,
 } from "./technicianBoard";
 
@@ -57,6 +67,7 @@ export type ManagerCatalogRow = {
   name?: string;
   specimenType?: unknown;
   parameters: TestParameter[];
+  tatMinutes?: unknown;
 };
 
 export type ManagerOrder = OrderCollectionFields & {
@@ -90,6 +101,8 @@ export type ManagerStageRow = {
   elapsedMinutes: number | null;
   ordersAffected: number | null;
   notYetSynced?: boolean;
+  /** In-progress rows only — the tightest test's clock, or null with no timed test. */
+  tatClock?: TechTatClock | null;
 };
 
 export function clinicReleaseWindow(
@@ -175,6 +188,26 @@ export function isInProgressStage(order: ManagerOrder, catalog: ManagerCatalogRo
   if (order.status === "needs_correction") return true;
   if (order.status !== "pending") return false;
   return interpretCollection(order, catalog).allCollected;
+}
+
+/**
+ * The order's own TAT clock: the tightest target among its tests, started
+ * from collection. Null when no test in the order has a target set, or the
+ * clock cannot start yet — never a guessed target.
+ */
+export function inProgressTatClock(
+  order: ManagerOrder,
+  catalog: ManagerCatalogRow[],
+  now: Date
+): TechTatClock | null {
+  const tatByCode = new Map(catalog.map((row) => [row.code, parseTatMinutes(row.tatMinutes)]));
+  const targets = order.tests
+    .map((test) => (test.code ? tatByCode.get(test.code) : null))
+    .filter((value): value is number => value != null);
+  if (targets.length === 0) return null;
+  const tightest = Math.min(...targets);
+  const startedAt = interpretCollection(order, catalog).latestCollectedAt;
+  return computeTatClock(tightest, startedAt, now);
 }
 
 export function isReleasedInWindow(order: ManagerOrder, window: TechReleaseWindow): boolean {
@@ -377,19 +410,25 @@ export function buildManagerStages(input: {
     }
 
     if (isInProgressStage(order, catalog)) {
+      const tatClock = inProgressTatClock(order, catalog, now);
+      const detail =
+        tatClock == null
+          ? names
+          : `${names} · ${tatClock.overdue ? "OVERDUE" : `DUE ${formatHoursToken(Math.max(0, tatClock.remainingMinutes) / 60)}`}`;
       rows.push({
         id: `progress:${order.id}`,
         tile: "progress",
         kind: "in_progress",
         labId: identity.labId,
         title: identity.name,
-        detail: names,
+        detail,
         href: `/orders/${order.id}`,
         actionLabel: "Open",
         at: order.createdAt || null,
         elapsedMinutes: null,
         ordersAffected: null,
         notYetSynced: order.notYetSynced,
+        tatClock,
       });
       continue;
     }
@@ -489,6 +528,16 @@ export function reviewSubLabel(rows: ManagerStageRow[]): string {
   return "RESULTS ENTERED";
 }
 
+/** "N OVERDUE" beats "N DUE" beats the plain default — same priority as the technician board. */
+export function progressSubLabel(rows: ManagerStageRow[]): string {
+  const bench = rows.filter((row) => row.tile === "progress");
+  const overdue = bench.filter((row) => row.tatClock?.overdue).length;
+  if (overdue > 0) return `${overdue} OVERDUE`;
+  const due = bench.filter((row) => row.tatClock && !row.tatClock.overdue && row.tatClock.dueWithin1h).length;
+  if (due > 0) return `${due} DUE WITHIN 1H`;
+  return "ON BENCH";
+}
+
 export function operationalForManagerStage(row: ManagerStageRow): OperationalFlagInput {
   switch (row.kind) {
     case "stock_out":
@@ -503,6 +552,12 @@ export function operationalForManagerStage(row: ManagerStageRow): OperationalFla
     case "awaiting_review":
       return { state: "results-entered" };
     case "in_progress":
+      if (row.tatClock?.overdue) {
+        return { state: "overdue", elapsedMinutes: row.tatClock.elapsedMinutes };
+      }
+      if (row.tatClock) {
+        return { state: "due", elapsedMinutes: row.tatClock.remainingMinutes };
+      }
       return { state: "collected" };
     case "released":
       return { state: "released" };

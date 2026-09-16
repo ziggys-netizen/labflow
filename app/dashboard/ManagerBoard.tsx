@@ -27,6 +27,7 @@ import {
   medianElapsedTatHours,
   operationalForManagerStage,
   orderWorklist,
+  progressSubLabel,
   releasedOrdersForTat,
   releasedTatSubLabel,
   reviewSubLabel,
@@ -77,6 +78,7 @@ export default function ManagerBoard({ children }: { children?: ReactNode }) {
           name: typeof data.name === "string" ? data.name : "",
           specimenType: data.specimenType,
           parameters: data.parameters ?? [],
+          tatMinutes: data.tatMinutes,
         };
       }),
     [catalogQuery.docs]
@@ -147,7 +149,7 @@ export default function ManagerBoard({ children }: { children?: ReactNode }) {
   const sublabels = {
     blocked: blockedSubLabel(rows),
     review: reviewSubLabel(rows),
-    progress: "ON BENCH",
+    progress: progressSubLabel(rows),
     released: releasedTatSubLabel(medianHours, window),
   } as const;
 
