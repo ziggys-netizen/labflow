@@ -318,6 +318,45 @@ describe("nightly digest", () => {
     expect(result.skipped).toBe("no-alerts");
   });
 
+  /**
+   * The whole cascade over consecutive days, through the real digest, with the
+   * stored state fed back between runs exactly as Firestore would.
+   */
+  it("runs Isaac's RDT scenario day by day", async () => {
+    seed({ onHand: 40 });
+
+    function setStock(onHand: number) {
+      hoisted.store.inventoryMovements = stockOf(onHand);
+    }
+    function carryStateForward() {
+      const write = alertWrites().at(-1);
+      if (!write) return;
+      hoisted.store.inventoryItems[0].data.reorderAlert = write.data.reorderAlert;
+    }
+    async function day(onHand: number) {
+      hoisted.writes = [];
+      hoisted.send.mockClear();
+      setStock(onHand);
+      await runClinicReorderDigest(CLINIC, "Medic Aid", NOW);
+      carryStateForward();
+      const mail = hoisted.send.mock.calls[0]?.[0];
+      return mail ? String(mail.subject) : null;
+    }
+
+    expect(await day(40)).toBeNull(); // healthy
+    expect(await day(10)).toContain("1 low"); // reaches the minimum
+    expect(await day(10)).toBeNull(); // nothing moved
+    expect(await day(9)).toContain("1 low"); // fell by one
+    expect(await day(8)).toContain("1 low"); // fell again
+    expect(await day(6)).toContain("1 low"); // fell by two
+    expect(await day(0)).toContain("1 out of stock"); // empty, final message
+    expect(await day(0)).toBeNull(); // stays quiet at zero
+    expect(await day(5)).toBeNull(); // partial delivery, re-baselined
+    expect(await day(4)).toContain("1 low"); // heard again after that
+    expect(await day(40)).toBeNull(); // delivery clears the minimum
+    expect(await day(10)).toContain("1 low"); // a fresh cycle starts
+  });
+
   it("writes one audit entry naming what was sent", async () => {
     seed({ onHand: 10 });
     await runClinicReorderDigest(CLINIC, "Medic Aid", NOW);

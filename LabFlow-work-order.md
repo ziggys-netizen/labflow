@@ -88,6 +88,7 @@ This list exists because the open items below sat unreviewed long enough that tw
 - **Security headers** — `Referrer-Policy`, HSTS, `nosniff`, `Permissions-Policy`, and `frame-ancestors 'self'` (not `'none'` — `'self'` is required so Firebase Auth's same-origin iframe still loads; cross-origin framing is blocked either way). Shipped `5599aaa`, 8 September 2026. Confirmed live on `www.labflowgambia.com` by curl on 16 September 2026.
 - **Content Security Policy** — shipped as `Content-Security-Policy-Report-Only` on 16 September 2026, commit `35a15e2`, directives derived from an audit of actual client traffic (Firestore, Auth, Storage; no third-party scripts, fonts, or analytics anywhere in the app). Violations post to `/api/csp-report` (server logs only). **Not fully closed — see item 4 below.**
 - **Inventory adjustments into the audit log** — recording an adjustment now also writes an `inventory.adjustment` entry to `auditLogs` (direction, quantity, reason, department). Shipped `49d0618`, 16 September 2026.
+- **Low-stock reorder alerting** — a minimum stock level existed but nothing acted on it. A nightly digest (`/api/cron/low-stock`, 07:00) now emails the lab manager, clinic administrator and storekeeper: the first fall to the minimum sends a message, every further fall sends another, and zero sends one final message that says OUT OF STOCK in words as well as in red. A delivery clearing the minimum closes the cycle. Alert state is stored only after the mail has actually left, so a send failure retries rather than being swallowed. An in-app banner carries the same warning live from the ledger. `app/lib/lowStock.ts`, `app/lib/lowStockServer.ts`, `app/lib/LowStockBanner.tsx`. Shipped `bad10f7`, 16 September 2026.
 
 ---
 
@@ -100,6 +101,8 @@ This list exists because the open items below sat unreviewed long enough that tw
 **3. Clinical letters in the queue panel** — a manager scanning "6 awaiting review" should see which one carries a critical value.
 
 **4. Content Security Policy — enforce** — `Content-Security-Policy-Report-Only` has been live since 16 September 2026 (see above). Once a week has passed with no unexpected entries in the `/api/csp-report` server logs, fold its directives into the enforced `Content-Security-Policy` header in `next.config.ts` alongside the existing `frame-ancestors 'self'`.
+
+**5. Minimum stock defaults to zero** — the store item form accepts a minimum of 0, and `stockLevel` only reports "low" when the minimum is above zero. An item added without a deliberate minimum therefore never warns; it jumps straight from healthy to out of stock. The reorder digest still sends its out-of-stock message for those items, so they are not silent, but the early warning the rest of the feature is built on never fires for them. Decide whether the form should require a minimum above zero.
 
 ---
 
