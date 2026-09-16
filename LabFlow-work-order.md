@@ -2,7 +2,7 @@
 
 **From:** Isaac Kanu, founder and owner of this project
 **To:** the coding agent working in this repository
-**Updated:** 9 September 2026
+**Updated:** 16 September 2026
 **Status:** standing. Every instruction here is a direct command from me. It applies to every task, whether or not the prompt repeats it.
 
 **Put this file in the repository root and reference it from `CLAUDE.md` or `.cursor/rules` so it is always in context.**
@@ -78,29 +78,34 @@ because staff wait instead of acting.
 
 ---
 
+## Recently closed (verified 16 September 2026)
+
+This list exists because the open items below sat unreviewed long enough that two of them — D4 and Excel formula escaping — were found already shipped when a coding agent went to build them, one day *before* this document's own "Updated" date at the time. Each line here carries the evidence so the same mistake doesn't repeat: check the commit before treating anything below as still open.
+
+- **D4** — per-test turnaround targets on the technician board. Already complete: `app/lib/technicianBoard.ts` (`computeTatClock`, `TechWorkItem.tatMinutes`, `attentionSubLabel`). Not part of this pass — found already built.
+- **D5** — turnaround target on the manager board's in-progress bench. Built 15–16 September 2026: `app/lib/managerBoard.ts` (`inProgressTatClock`, `progressSubLabel`), commit `22399b6`.
+- **Excel formula escaping at export** — `app/lib/reportWorkbook.ts` (`escapeForSpreadsheet`), tested in `app/lib/reportExport.test.ts`. Shipped `14270d2`, 8 September 2026 — already live before this document's prior "Updated" date.
+- **Security headers** — `Referrer-Policy`, HSTS, `nosniff`, `Permissions-Policy`, and `frame-ancestors 'self'` (not `'none'` — `'self'` is required so Firebase Auth's same-origin iframe still loads; cross-origin framing is blocked either way). Shipped `5599aaa`, 8 September 2026. Confirmed live on `www.labflowgambia.com` by curl on 16 September 2026.
+- **Content Security Policy** — shipped as `Content-Security-Policy-Report-Only` on 16 September 2026, commit `35a15e2`, directives derived from an audit of actual client traffic (Firestore, Auth, Storage; no third-party scripts, fonts, or analytics anywhere in the app). Violations post to `/api/csp-report` (server logs only). **Not fully closed — see item 4 below.**
+- **Inventory adjustments into the audit log** — recording an adjustment now also writes an `inventory.adjustment` entry to `auditLogs` (direction, quantity, reason, department). Shipped `49d0618`, 16 September 2026.
+
+---
+
 ## Open items, in order
 
 **1. E3R** — patient history remediation. Page `n of m` is currently a lie — `m` counts chunks, not sheets, so two physical pages can carry the same stamp. Cumulative rows split a trend across test codes because there is no stable `analyteId`. The disclosure log names Firestore document IDs rather than Lab IDs.
 
 **2. I2 / I3** — the surface registry and the role matrix, once I confirm the four rows I flagged.
 
-**3. D4 / D5** — role dashboards. D4 needs `tatMinutes` on catalogue entries; no per-test turnaround targets exist yet, and the clinic sets them, not us.
+**3. Clinical letters in the queue panel** — a manager scanning "6 awaiting review" should see which one carries a critical value.
 
-**4. Clinical letters in the queue panel** — a manager scanning "6 awaiting review" should see which one carries a critical value.
-
-**5. Excel formula escaping at export** — a cell beginning `=`, `+`, `-` or `@` executes on open, and exports are meant to reach the Ministry. Escape at export time only; never alter the stored value. **Now urgent: export works for the first time.**
-
-**6. Security headers** — `Referrer-Policy: no-referrer` first: following an external link from `/patients/{id}` currently sends that path in the `Referer` header. Then HSTS, `nosniff`, `frame-ancestors 'none'`, `Permissions-Policy`.
-
-**7. Content Security Policy** — derived from observed traffic, shipped `Report-Only` for a week before enforcing. A wrong `connect-src` silently kills Firebase sign-in in production.
-
-**8. Inventory adjustments into the audit log** — the stock ledger is sound, but `ADJUSTMENT` is the movement most able to hide error or theft and it never appears where oversight happens.
+**4. Content Security Policy — enforce** — `Content-Security-Policy-Report-Only` has been live since 16 September 2026 (see above). Once a week has passed with no unexpected entries in the `/api/csp-report` server logs, fold its directives into the enforced `Content-Security-Policy` header in `next.config.ts` alongside the existing `frame-ancestors 'self'`.
 
 ---
 
 ## Backlog — after the pilot is running
 
-Green Aid population and isolation tests · catalogue migration for existing clinics · structured reference intervals by sex and age band · corrective patient edit with before-and-after to the audit log · collision-safe offline Lab IDs · referral tracking · duplicate patient merge · staff offboarding · inventory adjustments in the audit log · DHIS2 / IDSR aggregate export (**blocked**: dataset not established, do not guess one) · ISO 15189 clause 7.6 evidence pack · SLIPTA evidence pack · environmental monitoring, equipment register, document control, reagent lot verification, internal QC with Levey-Jennings, EQA records, complaints register.
+Green Aid population and isolation tests · catalogue migration for existing clinics · structured reference intervals by sex and age band · corrective patient edit with before-and-after to the audit log · collision-safe offline Lab IDs · referral tracking · duplicate patient merge · staff offboarding · DHIS2 / IDSR aggregate export (**blocked**: dataset not established, do not guess one) · ISO 15189 clause 7.6 evidence pack · SLIPTA evidence pack · environmental monitoring, equipment register, document control, reagent lot verification, internal QC with Levey-Jennings, EQA records, complaints register.
 
 ---
 
