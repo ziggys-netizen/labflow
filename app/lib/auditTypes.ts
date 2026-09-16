@@ -81,6 +81,7 @@ export const AUDIT_ACTIONS = [
   "legacyRecords.claim",
   "dataQuality.clearCollectionTime",
   "inventory.adjustment",
+  "inventory.lowStockAlert",
   "preApproval.create",
   "preApproval.revoke",
   "preApproval.consume",

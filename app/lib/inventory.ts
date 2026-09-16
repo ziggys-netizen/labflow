@@ -1,4 +1,6 @@
-import { QueryDocumentSnapshot } from "firebase/firestore";
+// Type-only: keeps the browser Firestore SDK out of server bundles that reuse
+// the document readers below (the nightly reorder digest).
+import type { QueryDocumentSnapshot } from "firebase/firestore";
 import { ActorStamp, readActorStamp } from "./actorStamp";
 
 /**
@@ -368,10 +370,19 @@ function number(value: unknown, fallback = 0): number {
   return typeof value === "number" && Number.isFinite(value) ? value : fallback;
 }
 
-export function mapItem(snap: QueryDocumentSnapshot): InventoryItem {
-  const d = snap.data();
+/**
+ * Document readers are split from the client snapshot mappers so the Admin SDK
+ * (the nightly reorder digest) parses stock exactly as the browser does. Two
+ * parsers would eventually disagree, and an email that contradicts the screen
+ * is worse than no email.
+ */
+export function itemFromData(
+  id: string,
+  d: Record<string, unknown>,
+  notYetSynced = false
+): InventoryItem {
   return {
-    id: snap.id,
+    id,
     clinicId: optionalText(d.clinicId),
     name: text(d.name),
     category: text(d.category, "Other"),
@@ -391,14 +402,17 @@ export function mapItem(snap: QueryDocumentSnapshot): InventoryItem {
     createdAt: optionalText(d.createdAt),
     createdBy: readActorStamp(d.createdBy),
     updatedAt: optionalText(d.updatedAt),
-    notYetSynced: snap.metadata.hasPendingWrites,
+    notYetSynced,
   };
 }
 
-export function mapBatch(snap: QueryDocumentSnapshot): InventoryBatch {
-  const d = snap.data();
+export function batchFromData(
+  id: string,
+  d: Record<string, unknown>,
+  notYetSynced = false
+): InventoryBatch {
   return {
-    id: snap.id,
+    id,
     clinicId: optionalText(d.clinicId),
     itemId: text(d.itemId),
     itemName: text(d.itemName),
@@ -410,15 +424,18 @@ export function mapBatch(snap: QueryDocumentSnapshot): InventoryBatch {
     acceptance: text(d.acceptance, "accepted"),
     createdAt: optionalText(d.createdAt),
     createdBy: readActorStamp(d.createdBy),
-    notYetSynced: snap.metadata.hasPendingWrites,
+    notYetSynced,
   };
 }
 
-export function mapMovement(snap: QueryDocumentSnapshot): InventoryMovement {
-  const d = snap.data();
+export function movementFromData(
+  id: string,
+  d: Record<string, unknown>,
+  notYetSynced = false
+): InventoryMovement {
   const type = text(d.type, "receipt") as MovementType;
   return {
-    id: snap.id,
+    id,
     clinicId: optionalText(d.clinicId),
     itemId: text(d.itemId),
     itemName: text(d.itemName),
@@ -443,8 +460,20 @@ export function mapMovement(snap: QueryDocumentSnapshot): InventoryMovement {
     destination: optionalText(d.destination),
     reason: optionalText(d.reason),
     note: optionalText(d.note),
-    notYetSynced: snap.metadata.hasPendingWrites,
+    notYetSynced,
   };
+}
+
+export function mapItem(snap: QueryDocumentSnapshot): InventoryItem {
+  return itemFromData(snap.id, snap.data(), snap.metadata.hasPendingWrites);
+}
+
+export function mapBatch(snap: QueryDocumentSnapshot): InventoryBatch {
+  return batchFromData(snap.id, snap.data(), snap.metadata.hasPendingWrites);
+}
+
+export function mapMovement(snap: QueryDocumentSnapshot): InventoryMovement {
+  return movementFromData(snap.id, snap.data(), snap.metadata.hasPendingWrites);
 }
 
 export function mapSpecimen(snap: QueryDocumentSnapshot): SpecimenMovement {

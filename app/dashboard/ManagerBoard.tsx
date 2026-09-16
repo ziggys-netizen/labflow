@@ -4,6 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import Link from "next/link";
 import AppNav from "../lib/AppNav";
 import CatalogReviewBanner from "../lib/CatalogReviewBanner";
+import LowStockBanner from "../lib/LowStockBanner";
 import NotYetSynced from "../lib/NotYetSynced";
 import OperationalRow from "../lib/OperationalRow";
 import { useAuth } from "../lib/AuthContext";
@@ -172,6 +173,7 @@ export default function ManagerBoard({ children }: { children?: ReactNode }) {
     <main className="min-h-screen">
       <AppNav />
       <CatalogReviewBanner />
+      <LowStockBanner />
       <div className="lf-shell flex flex-col gap-6 py-8">
         <header className="flex flex-col gap-1">
           <h1 className="text-[19px] font-semibold text-lf-ink">{formatGreetingLine(now, firstName)}</h1>

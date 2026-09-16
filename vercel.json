@@ -6,6 +6,10 @@
     {
       "path": "/api/cron/pre-approvals/lapse",
       "schedule": "0 0 * * *"
+    },
+    {
+      "path": "/api/cron/low-stock",
+      "schedule": "0 7 * * *"
     }
   ]
 }

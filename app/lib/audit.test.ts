@@ -155,6 +155,7 @@ describe("audit action vocabulary", () => {
       "roster.breakGlass",
       "terms.accept",
       "inventory.adjustment",
+      "inventory.lowStockAlert",
     ];
     for (const action of required) {
       expect(AUDIT_ACTIONS).toContain(action);

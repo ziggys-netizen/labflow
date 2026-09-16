@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import ProtectedRoute from "../lib/ProtectedRoute";
 import AppNav from "../lib/AppNav";
+import LowStockBanner from "../lib/LowStockBanner";
 import NotYetSynced from "../lib/NotYetSynced";
 import { useAuth } from "../lib/AuthContext";
 import { isOwner, loadClinicNames } from "../lib/clinicScope";
@@ -313,6 +314,7 @@ function InventoryContent() {
   return (
     <main className="min-h-screen">
       <AppNav />
+      <LowStockBanner />
       <div className="lf-shell py-16">
         <div className="flex flex-col gap-4 mb-1 sm:flex-row sm:items-start sm:justify-between">
           <h1 className="text-2xl font-semibold text-gray-900">Store &amp; inventory</h1>

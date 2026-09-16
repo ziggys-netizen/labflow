@@ -14,6 +14,7 @@ import CurrentQueue from "./CurrentQueue";
 import { isOrderForDeletedPatient, isPatientDeleted } from "../lib/patientSoftDelete";
 import { getTimeWindow, isWithin, summarizeTurnaround, formatTurnaroundExclusionCopy, TimeWindowKey, TURNAROUND_DEFINITION } from "../lib/datetime";
 import CatalogReviewBanner from "../lib/CatalogReviewBanner";
+import LowStockBanner from "../lib/LowStockBanner";
 import { orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../lib/sampleCollection";
 import { countAmendmentsInWindow, isReleasedResultStatus } from "../lib/resultAmendment";
 import { SAMPLE_REJECTION_CODES } from "../lib/reasonCodes";
@@ -421,6 +422,7 @@ function DashboardContent() {
     <main className="min-h-screen">
       <AppNav />
       <CatalogReviewBanner />
+      <LowStockBanner />
       <div className="max-w-5xl mx-auto px-6 py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-1 inline-flex items-center gap-2">
           Laboratory dashboard
