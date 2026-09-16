@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { MINIMUM_STOCK_REQUIRED, hasNoReorderLevel, minimumStockError } from "./inventory";
-import { validateImportRows, type ValidationContext } from "./migration";
+import { validateImportRows, validateMapping, type ValidationContext } from "./migration";
 
 describe("minimum stock is required", () => {
   it("refuses a blank level", () => {
@@ -74,6 +74,22 @@ describe("inventory import", () => {
       context
     )[0];
   }
+
+  /**
+   * Caught in review: the row check alone would let someone map their columns,
+   * be told the mapping is fine, and only then see every row rejected. The
+   * column has to be demanded at the mapping step, where it is fixed once.
+   */
+  it("demands the column at the mapping step, not once per row", () => {
+    const errors = validateMapping({ A: "name", B: "category" }, "inventory");
+    expect(errors).toContain("Map a column to Minimum stock.");
+
+    const mapped = validateMapping(
+      { A: "name", B: "category", D: "minimumStock" },
+      "inventory"
+    );
+    expect(mapped).not.toContain("Map a column to Minimum stock.");
+  });
 
   it("blocks a row with no minimum stock", () => {
     const row = importRow("");

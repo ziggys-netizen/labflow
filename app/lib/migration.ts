@@ -576,6 +576,7 @@ const INVENTORY_FIELDS: MigrationField[] = [
     key: "minimumStock",
     label: "Minimum stock",
     aliases: ["reorder level", "min stock", "par level"],
+    required: true,
     help: "Required. The level at which the item is reordered; it cannot be zero.",
   },
   {
