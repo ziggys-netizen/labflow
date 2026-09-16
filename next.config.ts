@@ -58,6 +58,33 @@ const nextConfig: NextConfig = {
             key: "Content-Security-Policy",
             value: "frame-ancestors 'self'",
           },
+          {
+            // Report-only for a week (work order item 7) before this becomes
+            // the enforced policy. Directives below are the actual origins
+            // this app calls: Firestore, Auth token refresh, Storage (SOP
+            // uploads), and the Firebase Auth relay iframe/handler. That last
+            // origin is listed even though the /__/ rewrite above makes it
+            // same-origin in production, because NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN
+            // could still be set to the *.firebaseapp.com default in some
+            // environment — dropping it there would silently break sign-in.
+            // No analytics, fonts, images, or scripts are loaded from any
+            // other third party, so those directives stay 'self'/'none'.
+            // Violations land at /api/csp-report (server logs only).
+            key: "Content-Security-Policy-Report-Only",
+            value: [
+              "default-src 'self'",
+              "script-src 'self'",
+              "style-src 'self'",
+              "font-src 'self'",
+              "img-src 'self'",
+              "connect-src 'self' https://firestore.googleapis.com https://identitytoolkit.googleapis.com https://securetoken.googleapis.com https://firebasestorage.googleapis.com https://labflow-6cb9e.firebaseapp.com",
+              "frame-src 'self' https://labflow-6cb9e.firebaseapp.com",
+              "object-src 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+              "report-uri /api/csp-report",
+            ].join("; "),
+          },
         ],
       },
     ];
