@@ -890,7 +890,7 @@ function OrderDetailContent() {
             <p className="text-sm text-amber-900 mt-1 whitespace-pre-wrap">{order.reviewNotes.trim()}</p>
           </div>
         )}
-        <div className="flex items-center justify-between mb-1">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-1">
           <h1 className="text-2xl font-semibold text-gray-900 inline-flex items-center gap-2">
             Order details
             <NotYetSynced show={order.notYetSynced} />
@@ -991,7 +991,7 @@ function OrderDetailContent() {
                   )}
 
                   {canCollect && !editing && (
-                    <div className="flex gap-3 mt-2">
+                    <div className="flex flex-wrap gap-3 mt-2">
                       {!collected && (
                         <button
                           onClick={() => recordSampleCollection(specimen.type, new Date().toISOString())}
@@ -1159,7 +1159,7 @@ function OrderDetailContent() {
               onNote={setSendBackNote}
               label="Send-back reason"
             />
-            <div className="flex gap-3 mt-3">
+            <div className="flex flex-wrap gap-3 mt-3">
               <button
                 onClick={approveAndRelease}
                 disabled={ownResults && !justificationReady(SELF_RELEASE_CODES, selfReleaseCode, selfReleaseNote)}
@@ -1227,7 +1227,7 @@ function OrderDetailContent() {
             {!isOnline && (
               <p className="text-sm text-amber-800 mb-3">{OFFLINE_AMENDMENT_MESSAGE}</p>
             )}
-            <div className="flex gap-3">
+            <div className="flex flex-wrap gap-3">
               {!pendingInitiator && (
                 <button
                   onClick={() => void confirmPendingAmendment()}
@@ -1312,7 +1312,7 @@ function OrderDetailContent() {
                   onNote={setAmendNote}
                   label="Amendment reason"
                 />
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-3">
                   <button
                     onClick={() => withPin("amendment", () => void submitAmendment())}
                     disabled={!isOnline}

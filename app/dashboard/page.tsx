@@ -432,7 +432,7 @@ function DashboardContent() {
           {role === "owner" ? "All clinics" : "Your clinic"}. {TURNAROUND_DEFINITION}
         </p>
 
-        <div className="flex gap-2 mb-8">
+        <div className="flex flex-wrap gap-2 mb-8">
           {WINDOWS.map((w) => (
             <button
               key={w.key}
@@ -458,7 +458,7 @@ function DashboardContent() {
             </Suspense>
 
             <h2 className="text-sm font-medium text-gray-900 mb-3">{stats.window.label}</h2>
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mb-6">
               <Metric label="Patients registered" value={String(stats.patientsRegistered)} />
               <Metric label="Tests ordered" value={String(stats.testsOrdered)} />
               <Metric label="Approved / released" value={String(stats.approved)} />

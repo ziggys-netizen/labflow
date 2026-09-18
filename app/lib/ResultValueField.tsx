@@ -33,7 +33,7 @@ export default function ResultValueField({
 
   return (
     <div className="grid grid-cols-3 gap-2 items-center">
-      <div>
+      <div className="min-w-0 [overflow-wrap:break-word]">
         <p className="text-sm text-gray-900">{normalized.name}</p>
         <p className="text-xs text-gray-500">
           {range}

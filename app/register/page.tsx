@@ -523,7 +523,7 @@ export default function Register() {
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Phone number <span className="text-gray-500 font-normal">(optional)</span>
             </label>
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               <select
                 value={countryCode}
                 onChange={(e) => setCountryCode(e.target.value)}
@@ -538,7 +538,7 @@ export default function Register() {
                 value={phoneLocal}
                 onChange={(e) => setPhoneLocal(e.target.value)}
                 placeholder="7267765"
-                className={`flex-1 border rounded-lg px-3 py-2 ${errors.phone ? "border-red-500" : "border-gray-300"}`}
+                className={`min-w-[8rem] flex-1 border rounded-lg px-3 py-2 ${errors.phone ? "border-red-500" : "border-gray-300"}`}
               />
             </div>
             {errors.phone && <p className="text-sm text-red-600 mt-1">{errors.phone}</p>}

@@ -140,7 +140,7 @@ function ReviewContent() {
 
         {scopeId && (
           <>
-            <div className="flex gap-2 mb-6">
+            <div className="flex flex-wrap gap-2 mb-6">
               <button
                 type="button"
                 onClick={() => setTab("results_entered")}

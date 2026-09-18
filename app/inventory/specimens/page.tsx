@@ -216,7 +216,7 @@ function SpecimensContent() {
 
         {canRecord && (
           <form onSubmit={handleSubmit} className="border border-gray-200 rounded-lg p-4 mb-10 space-y-4">
-            <div className="flex gap-2">
+            <div className="flex flex-wrap gap-2">
               {(["received", "sent"] as const).map((d) => (
                 <button
                   key={d}

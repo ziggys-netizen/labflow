@@ -421,7 +421,7 @@ export default function CurrentQueue({ className = "" }: { className?: string })
       <p className="mb-3 text-sm text-lf-ink-3">
         Live counts across all open work, not limited to the selected period.
       </p>
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 md:grid-cols-3">
         {DASHBOARD_QUEUE_TILES.map((tile) => {
           const count = counts[tile.slug];
           const selected = openSlug === tile.slug;

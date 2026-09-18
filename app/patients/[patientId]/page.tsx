@@ -126,13 +126,13 @@ function PatientRecordContent() {
         {!loading && notFound && <p className="text-lf-ink-2">Patient not found.</p>}
         {!loading && patient && (
           <div className="flex flex-col gap-6">
-            <div className="flex items-start justify-between gap-3">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
               <div className="flex min-w-0 flex-col gap-2">
                 <p className="lf-num text-sm text-lf-ink-2">{patient.labId || "No Lab ID"}</p>
                 <h1 className="text-2xl font-semibold text-lf-ink">{displayName}</h1>
                 <p className="text-sm text-lf-ink-2">{formatSexAge(patient)}</p>
               </div>
-              <div className="flex shrink-0 items-center gap-2">
+              <div className="flex shrink-0 flex-wrap items-center gap-2">
                 {canViewPatientHistory(role) && (
                   <Link
                     href={patientHistoryHref(patientId)}
