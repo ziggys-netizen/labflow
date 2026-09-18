@@ -280,6 +280,47 @@ function OrderDetailContent() {
 
   const resultsEditable = order && canEnterResultsForStatus(order.status);
 
+  /**
+   * Arriving from a scan (`?enter=1`), open the sheet for the test that is
+   * waiting for a result and put the cursor in its first box, so a scan is
+   * followed by typing rather than by hunting for the right panel. It runs
+   * once, and never overrides a panel the person opened themselves.
+   */
+  useEffect(() => {
+    if (openedFromScan.current) return;
+    if (!order || !resultsEditable || !canEnterResults(writer.role || role)) return;
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("enter") !== "1") return;
+
+    const empty = order.tests.find((test) => {
+      const entered = results[test.code] || {};
+      return !Object.values(entered).some((value) => (value || "").trim());
+    });
+    const target = empty || order.tests[0];
+    if (!target) return;
+
+    openedFromScan.current = true;
+    let focusTimer = 0;
+    const openTimer = window.setTimeout(() => {
+      setExpandedTest(target.code);
+      // Once the panel is on screen, take the person to it.
+      focusTimer = window.setTimeout(() => {
+        const list = testListRef.current;
+        if (!list) return;
+        list.scrollIntoView({ block: "start", behavior: "smooth" });
+        const field = list.querySelector<HTMLInputElement | HTMLSelectElement>(
+          "input:not([disabled]), select:not([disabled])"
+        );
+        field?.focus();
+      }, 120);
+    }, 0);
+
+    return () => {
+      window.clearTimeout(openTimer);
+      window.clearTimeout(focusTimer);
+    };
+  }, [order, resultsEditable, writer.role, role, results]);
+
   function withPin(action: SensitivePinAction, run: () => void) {
     setPendingSensitive(() => run);
     setPinAction(action);
@@ -861,41 +902,6 @@ function OrderDetailContent() {
   const canCorrect = canSendBackForCorrection(actingRole);
   const canCollect = canRecordSampleCollection(actingRole);
   const canEnter = canEnterResults(actingRole);
-
-  /**
-   * Arriving from a scan (`?enter=1`), open the sheet for the test that is
-   * waiting for a result and put the cursor in its first box, so a scan is
-   * followed by typing rather than by hunting for the right panel. It runs
-   * once, and never overrides a panel the person opened themselves.
-   */
-  useEffect(() => {
-    if (openedFromScan.current) return;
-    if (!order || !resultsEditable || !canEnter) return;
-    if (typeof window === "undefined") return;
-    if (new URLSearchParams(window.location.search).get("enter") !== "1") return;
-
-    const empty = order.tests.find((test) => {
-      const entered = results[test.code] || {};
-      return !Object.values(entered).some((value) => (value || "").trim());
-    });
-    const target = empty || order.tests[0];
-    if (!target) return;
-
-    openedFromScan.current = true;
-    setExpandedTest(target.code);
-
-    // After the panel has rendered.
-    const timer = window.setTimeout(() => {
-      const list = testListRef.current;
-      if (!list) return;
-      list.scrollIntoView({ block: "start", behavior: "smooth" });
-      const field = list.querySelector<HTMLInputElement | HTMLSelectElement>(
-        "input:not([disabled]), select:not([disabled])"
-      );
-      field?.focus();
-    }, 120);
-    return () => window.clearTimeout(timer);
-  }, [order, resultsEditable, canEnter, results]);
 
   const ownResults = isSelfRelease(order.resultsEnteredBy, writer.email);
   const patientSex = patientRecord?.id === order.patientId ? patientRecord.sex : null;
