@@ -8,9 +8,14 @@ import {
   signOut,
   User,
 } from "firebase/auth";
-import { auth, googleProvider, db } from "./firebase";
+import { auth, googleProvider, db, reconnectFirestore } from "./firebase";
 import { doc, getDoc, getDocFromCache, setDoc, updateDoc, onSnapshot, type DocumentReference } from "firebase/firestore";
-import { reportFirestoreMetadata } from "./firestoreConnectivity";
+import {
+  OFFLINE_FIRST_SIGN_IN,
+  RECONNECT_RETRY_MS,
+  reportFirestoreMetadata,
+  unreachableMessage,
+} from "./firestoreConnectivity";
 import {
   ClinicMembership,
   EMPTY_IDENTITY,
@@ -46,9 +51,18 @@ const REDIRECT_PENDING_KEY = "labflow.authRedirectPending";
 /** Upper bound for any await that can hold the auth loading gate open. */
 export const AUTH_BOOTSTRAP_DEADLINE_MS = 8000;
 
-/** Shown when bootstrap times out with no cached user doc. */
-export const AUTH_BOOTSTRAP_UNREACHABLE =
-  "Cannot reach the server. Sign in once while connected before working offline.";
+/**
+ * Shown when bootstrap times out with no cached user doc and the device is
+ * offline. When the browser says it is online the slower, truer message from
+ * unreachableMessage() is shown instead; see unreachableNow().
+ */
+export const AUTH_BOOTSTRAP_UNREACHABLE = OFFLINE_FIRST_SIGN_IN;
+
+/** The right words for "the server has not answered", for this moment. */
+function unreachableNow(): string {
+  const online = typeof navigator === "undefined" ? true : navigator.onLine !== false;
+  return unreachableMessage(online);
+}
 
 /**
  * Google completed the sign-in but the result never reached this origin.
@@ -292,6 +306,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const retryBootstrap = useCallback(() => {
+    // Re-listening alone waits out Firestore's back-off; restart the connection.
+    void reconnectFirestore();
     setBootstrapError(null);
     setTermsError(null);
     setAuthOffline(false);
@@ -336,7 +352,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         if (gen !== bootstrapGenRef.current) return;
         setIdentityLoading(false);
         if (!identityReceivedRef.current) {
-          setBootstrapError(AUTH_BOOTSTRAP_UNREACHABLE);
+          setBootstrapError(unreachableNow());
           setTermsChecked(true);
         }
       }, AUTH_BOOTSTRAP_DEADLINE_MS);
@@ -391,7 +407,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           setIdentityLoading(false);
           setTermsChecked(true);
           if (!identityReceivedRef.current) {
-            setBootstrapError(AUTH_BOOTSTRAP_UNREACHABLE);
+            setBootstrapError(unreachableNow());
           }
         }
       );
@@ -402,6 +418,33 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       clearBootstrapTimer();
     };
   }, [applyIdentity, clearActingClinic, clearBootstrapTimer, bootstrapEpoch]);
+
+  // While a screen says the server cannot be reached, keep nudging the
+  // connection instead of waiting for someone to press Retry. A nudge does not
+  // reset the screen: the listeners are still attached and clear the message
+  // the moment the server answers. A real network change (the "online" event)
+  // redoes the whole check, because a request that has already failed will not
+  // come back by itself.
+  const gateStuck = Boolean(bootstrapError || termsError);
+  useEffect(() => {
+    if (!gateStuck || typeof window === "undefined") return;
+    const nudge = () => {
+      if (document.visibilityState === "hidden") return;
+      void reconnectFirestore();
+    };
+    const onVisible = () => {
+      if (document.visibilityState === "visible") nudge();
+    };
+    const onOnline = () => retryBootstrap();
+    const timer = window.setInterval(nudge, RECONNECT_RETRY_MS);
+    document.addEventListener("visibilitychange", onVisible);
+    window.addEventListener("online", onOnline);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("online", onOnline);
+    };
+  }, [gateStuck, retryBootstrap]);
 
   // Completes the signInWithRedirect round-trip. onAuthStateChanged above
   // fires independently once Firebase recognises the signed-in user — this
@@ -547,8 +590,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setTermsTimeoutGrace(false);
     setTermsError(null);
 
+    // Not guarded by `settled`: an answer that arrives after the timeout has
+    // already shown "cannot reach the server" must still clear it, or a staff
+    // member on a slow link stays stuck after the connection has come back.
     const finishResolved = (version: string | null) => {
-      if (cancelled || settled) return;
+      if (cancelled) return;
       settled = true;
       if (termsTimer) clearTimeout(termsTimer);
       setAcceptedTermsVersion(version);
@@ -571,7 +617,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setAcceptedTermsVersion(null);
         setTermsTimeoutGrace(false);
         setTermsChecked(true);
-        setTermsError(AUTH_BOOTSTRAP_UNREACHABLE);
+        setTermsError(unreachableNow());
       }
     };
 
