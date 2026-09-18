@@ -90,22 +90,28 @@ export default function ScanBarcodeButton({
     return () => window.removeEventListener("keydown", onKey);
   }, [open, close]);
 
+  /** The bench scans one container after another, so the box takes the next one. */
+  function readyForNextScan() {
+    const input = inputRef.current;
+    if (!input) return;
+    input.focus();
+    input.select();
+  }
+
   const act = useCallback(
     (raw: string) => {
       const next = resolveLabIdScan(raw, patients);
       setOutcome(next);
-      if (next.kind === "order") {
-        // A note is worth reading, so let it be read before moving on.
-        if (!next.note) {
-          stopCamera();
-          close();
-          router.push(`/orders/${next.orderId}`);
-        } else {
-          stopCamera();
-        }
-      } else if (next.kind === "choose" || next.kind === "unknown" || next.kind === "patient_only") {
+      // A clean hit goes straight to the order. Everything else stays put with
+      // its reason on screen, and the box takes the next scan.
+      if (next.kind === "order" && !next.note) {
         stopCamera();
+        close();
+        router.push(`/orders/${next.orderId}`);
+        return;
       }
+      stopCamera();
+      window.setTimeout(readyForNextScan, 0);
     },
     [patients, router, stopCamera, close]
   );
