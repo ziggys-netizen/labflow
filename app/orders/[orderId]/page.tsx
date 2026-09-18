@@ -181,6 +181,8 @@ function OrderDetailContent() {
     dob: string | null;
     ageYears: number | null;
   } | null>(null);
+  const testListRef = useRef<HTMLDivElement>(null);
+  const openedFromScan = useRef(false);
   const resultsDirty = useRef(false);
   const amendDirty = useRef(false);
   const releasing = useRef(false);
@@ -859,6 +861,42 @@ function OrderDetailContent() {
   const canCorrect = canSendBackForCorrection(actingRole);
   const canCollect = canRecordSampleCollection(actingRole);
   const canEnter = canEnterResults(actingRole);
+
+  /**
+   * Arriving from a scan (`?enter=1`), open the sheet for the test that is
+   * waiting for a result and put the cursor in its first box, so a scan is
+   * followed by typing rather than by hunting for the right panel. It runs
+   * once, and never overrides a panel the person opened themselves.
+   */
+  useEffect(() => {
+    if (openedFromScan.current) return;
+    if (!order || !resultsEditable || !canEnter) return;
+    if (typeof window === "undefined") return;
+    if (new URLSearchParams(window.location.search).get("enter") !== "1") return;
+
+    const empty = order.tests.find((test) => {
+      const entered = results[test.code] || {};
+      return !Object.values(entered).some((value) => (value || "").trim());
+    });
+    const target = empty || order.tests[0];
+    if (!target) return;
+
+    openedFromScan.current = true;
+    setExpandedTest(target.code);
+
+    // After the panel has rendered.
+    const timer = window.setTimeout(() => {
+      const list = testListRef.current;
+      if (!list) return;
+      list.scrollIntoView({ block: "start", behavior: "smooth" });
+      const field = list.querySelector<HTMLInputElement | HTMLSelectElement>(
+        "input:not([disabled]), select:not([disabled])"
+      );
+      field?.focus();
+    }, 120);
+    return () => window.clearTimeout(timer);
+  }, [order, resultsEditable, canEnter, results]);
+
   const ownResults = isSelfRelease(order.resultsEnteredBy, writer.email);
   const patientSex = patientRecord?.id === order.patientId ? patientRecord.sex : null;
   const patientDob = patientRecord?.id === order.patientId ? patientRecord.dob : null;
@@ -1068,7 +1106,7 @@ function OrderDetailContent() {
           )}
         </div>
 
-        <div className="space-y-3 mt-4">
+        <div id="results" ref={testListRef} className="space-y-3 mt-4">
           {order.tests.map((t) => {
             const definition = getTestDefinition(t.code);
             const isExpanded = expandedTest === t.code;

@@ -11,6 +11,7 @@
  */
 
 import { LAB_ID_PATTERN } from "./labId";
+import { interpretCollection, type OrderCollectionFields } from "./sampleCollection";
 import { canEnterResultsForStatus, isTerminalOrderStatus } from "./orderLifecycle";
 import { isReleasedResultStatus } from "./resultAmendment";
 
@@ -28,6 +29,14 @@ export type ScanPatient = {
   labId: string;
   orders: ScanOrder[];
 };
+
+/**
+ * What the person scanning is trying to do. A technician scanning a specimen
+ * wants the result sheet; a cashier scanning a receipt wants that patient's
+ * receipts. Same barcode, same Lab ID, different destination, and a cashier is
+ * never taken to result entry.
+ */
+export type ScanIntent = "results" | "receipts";
 
 export type ScanOutcome =
   | { kind: "empty" }
@@ -172,4 +181,77 @@ export function scanOutcomeMessage(outcome: ScanOutcome): string {
     default:
       return "";
   }
+}
+
+/**
+ * Where a scan should land, or null when there is nothing to open and the
+ * panel must explain itself instead.
+ *
+ * `enter=1` asks the order page to open the sheet for the test that is waiting
+ * for a result, so a scan is followed by typing rather than by more clicks.
+ */
+export function scanDestination(outcome: ScanOutcome, intent: ScanIntent): string | null {
+  if (intent === "receipts") {
+    if (outcome.kind === "order" || outcome.kind === "choose" || outcome.kind === "patient_only") {
+      if (outcome.patientId) return `/patients/${outcome.patientId}/receipts`;
+      if (outcome.kind === "order") return `/orders/${outcome.orderId}/receipt`;
+    }
+    return null;
+  }
+  if (outcome.kind === "order") {
+    return outcome.note ? `/orders/${outcome.orderId}` : `/orders/${outcome.orderId}?enter=1`;
+  }
+  if (outcome.kind === "patient_only" && outcome.patientId) {
+    return `/patients/${outcome.patientId}`;
+  }
+  return null;
+}
+
+export type ScanOrderInput = OrderCollectionFields & {
+  patientId?: string | null;
+  patientLabId?: string | null;
+};
+
+/**
+ * The scan list every surface hands the panel, built from the patients and
+ * orders it is already listening to. Patients with no orders are kept, so a
+ * scan of a freshly registered person says "no tests ordered yet" instead of
+ * "no such Lab ID".
+ */
+export function buildScanPatients(
+  patients: { id: string; labId?: string | null }[],
+  orders: ScanOrderInput[],
+  catalog?: Parameters<typeof interpretCollection>[1]
+): ScanPatient[] {
+  const byLabId = new Map<string, ScanPatient>();
+  const labIdByPatient = new Map<string, string>();
+
+  for (const patient of patients) {
+    const labId = (patient.labId || "").trim();
+    if (!labId) continue;
+    labIdByPatient.set(patient.id, labId);
+    if (!byLabId.has(labId)) byLabId.set(labId, { patientId: patient.id, labId, orders: [] });
+  }
+
+  for (const order of orders) {
+    const patientId = order.patientId || null;
+    const labId = (order.patientLabId || "").trim() || (patientId ? labIdByPatient.get(patientId) || "" : "");
+    if (!labId) continue;
+    let entry = byLabId.get(labId);
+    if (!entry) {
+      entry = { patientId, labId, orders: [] };
+      byLabId.set(labId, entry);
+    }
+    entry.orders.push({
+      orderId: order.id,
+      status: order.status,
+      collected: interpretCollection(order, catalog).allCollected,
+      label: (order.tests || [])
+        .map((test) => test.code || test.name || "")
+        .filter(Boolean)
+        .join(", "),
+    });
+  }
+
+  return [...byLabId.values()];
 }

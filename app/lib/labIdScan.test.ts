@@ -1,5 +1,11 @@
 import { describe, it, expect } from "vitest";
-import { extractLabId, resolveLabIdScan, scanOutcomeMessage, type ScanPatient } from "./labIdScan";
+import {
+  extractLabId,
+  resolveLabIdScan,
+  scanDestination,
+  scanOutcomeMessage,
+  type ScanPatient,
+} from "./labIdScan";
 
 const LAB = "LF-20260918-4A7C";
 
@@ -146,5 +152,61 @@ describe("resolveLabIdScan", () => {
     for (const outcome of cases) {
       expect(scanOutcomeMessage(outcome).length).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("where a scan lands", () => {
+  const waiting = patient({
+    orders: [{ orderId: "o1", status: "pending", collected: true, label: "FBC" }],
+  });
+
+  it("takes the laboratory straight to the sheet that is waiting for a result", () => {
+    const outcome = resolveLabIdScan(LAB, [waiting]);
+    expect(scanDestination(outcome, "results")).toBe("/orders/o1?enter=1");
+  });
+
+  it("opens an order without the entry flag when there is something to read first", () => {
+    const outcome = resolveLabIdScan(LAB, [
+      patient({ orders: [{ orderId: "o1", status: "pending", collected: false }] }),
+    ]);
+    expect(scanDestination(outcome, "results")).toBe("/orders/o1");
+  });
+
+  it("sends a cashier to that patient's receipts, never to result entry", () => {
+    for (const p of [
+      waiting,
+      patient({ orders: [{ orderId: "o1", status: "results_entered", collected: true }] }),
+      patient({ orders: [] }),
+      patient({
+        orders: [
+          { orderId: "o1", status: "pending", collected: true },
+          { orderId: "o2", status: "pending", collected: true },
+        ],
+      }),
+    ]) {
+      const dest = scanDestination(resolveLabIdScan(LAB, [p]), "receipts");
+      expect(dest).toBe("/patients/p1/receipts");
+      expect(dest).not.toContain("enter=1");
+    }
+  });
+
+  it("falls back to the order's own receipt when the patient record is not to hand", () => {
+    const outcome = resolveLabIdScan(LAB, [
+      { patientId: null, labId: LAB, orders: [{ orderId: "o7", status: "pending", collected: true }] },
+    ]);
+    expect(scanDestination(outcome, "receipts")).toBe("/orders/o7/receipt");
+  });
+
+  it("has nowhere to send a scan it could not place, whatever the intent", () => {
+    for (const intent of ["results", "receipts"] as const) {
+      expect(scanDestination(resolveLabIdScan("", []), intent)).toBeNull();
+      expect(scanDestination(resolveLabIdScan("rubbish", []), intent)).toBeNull();
+      expect(scanDestination(resolveLabIdScan(LAB, []), intent)).toBeNull();
+    }
+  });
+
+  it("opens the patient record when the laboratory scans someone with no orders", () => {
+    const outcome = resolveLabIdScan(LAB, [patient({ orders: [] })]);
+    expect(scanDestination(outcome, "results")).toBe("/patients/p1");
   });
 });

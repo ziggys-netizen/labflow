@@ -8,6 +8,8 @@ import OperationalRow from "../lib/OperationalRow";
 import { useAuth } from "../lib/AuthContext";
 import { useClinicCollection } from "../lib/clinicListen";
 import { canOrderTests, canRecordPayment } from "../lib/permissions";
+import ScanBarcodeButton from "../lib/ScanBarcodeButton";
+import { buildScanPatients } from "../lib/labIdScan";
 import { isPatientDeleted } from "../lib/patientSoftDelete";
 import { isOrderForDeletedPatient } from "../lib/patientSoftDelete";
 import { useWriteIdentity } from "../lib/pinSession";
@@ -121,6 +123,14 @@ export default function ReceptionBoard({ children }: { children: ReactNode }) {
   const visibleAwaiting = visibleReceptionList(awaiting, showAllAwaiting);
   const loading = patientsQuery.loading || ordersQuery.loading || catalogQuery.loading;
 
+  // A receipt carries the same Lab ID barcode as the specimen label, so one
+  // scan finds the patient whichever piece of paper is handed over.
+  const scanPatients = useMemo(() => buildScanPatients(patients, orders, catalog), [
+    patients,
+    orders,
+    catalog,
+  ]);
+
   return (
     <main className="min-h-screen">
       <AppNav />
@@ -131,6 +141,10 @@ export default function ReceptionBoard({ children }: { children: ReactNode }) {
         >
           Register a new patient
         </a>
+
+        {canBillService && (
+          <ScanBarcodeButton patients={scanPatients} intent="receipts" busy={loading} />
+        )}
 
         <label className="flex flex-col gap-2">
           <span className="text-[13px] text-lf-ink-2">Search patients</span>

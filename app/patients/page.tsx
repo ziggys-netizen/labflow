@@ -64,7 +64,7 @@ import {
   type PatientListOrder,
 } from "../lib/patientList";
 import ScanBarcodeButton from "../lib/ScanBarcodeButton";
-import { type ScanPatient } from "../lib/labIdScan";
+import { buildScanPatients } from "../lib/labIdScan";
 import TechnicianBoard from "./TechnicianBoard";
 import { isTechnicianBoardRole } from "../lib/permissions";
 
@@ -152,6 +152,7 @@ function PatientsContent() {
   const canOrder = canOrderTests(role);
   const canRegister = canRegisterPatient(role);
   const canEnter = canEnterResults(role);
+  const canPay = canRecordPayment(role);
   const canReview = canApproveResults(role);
   const canAmend = canAmendResult(role);
   const canBill = canRecordPayment(role);
@@ -210,18 +211,14 @@ function PatientsContent() {
   );
 
   // Scanning resolves against the list already on screen: no extra read.
-  const scanPatients = useMemo<ScanPatient[]>(
+  const scanPatients = useMemo(
     () =>
-      patients.map((p) => ({
-        patientId: p.id,
-        labId: p.labId,
-        orders: (ordersByPatient[p.id] || []).map((order) => ({
-          orderId: order.id,
-          status: order.status,
-          collected: interpretCollection(order).allCollected,
-          label: order.tests.map((t) => t.code || t.name).filter(Boolean).join(", "),
-        })),
-      })),
+      buildScanPatients(
+        patients,
+        patients.flatMap((p) =>
+          (ordersByPatient[p.id] || []).map((order) => ({ ...order, patientId: p.id }))
+        )
+      ),
     [patients, ordersByPatient]
   );
 
@@ -587,7 +584,11 @@ function PatientsContent() {
                 Register a patient
               </Link>
             )}
-            {canEnter && <ScanBarcodeButton patients={scanPatients} busy={loading} />}
+            {canEnter ? (
+              <ScanBarcodeButton patients={scanPatients} busy={loading} />
+            ) : canPay ? (
+              <ScanBarcodeButton patients={scanPatients} intent="receipts" busy={loading} />
+            ) : null}
             {canDelete && (
               <Link
                 href="/patients/deleted"

@@ -19,7 +19,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   resolveLabIdScan,
+  scanDestination,
   scanOutcomeMessage,
+  type ScanIntent,
   type ScanOutcome,
   type ScanPatient,
 } from "./labIdScan";
@@ -37,13 +39,17 @@ function barcodeReaderConstructor(): BarcodeReaderConstructor | null {
 
 export default function ScanBarcodeButton({
   patients,
+  intent = "results",
   busy = false,
   className = "",
 }: {
   patients: ScanPatient[];
+  /** "results" opens the sheet to type into; "receipts" is the cashier's. */
+  intent?: ScanIntent;
   busy?: boolean;
   className?: string;
 }) {
+  const forReceipts = intent === "receipts";
   const router = useRouter();
   const [open, setOpen] = useState(false);
   const [typed, setTyped] = useState("");
@@ -108,18 +114,22 @@ export default function ScanBarcodeButton({
     (raw: string) => {
       const next = resolveLabIdScan(raw, patients);
       setOutcome(next);
-      // A clean hit goes straight to the order. Everything else stays put with
-      // its reason on screen, and the box takes the next scan.
-      if (next.kind === "order" && !next.note) {
+      const dest = scanDestination(next, intent);
+
+      // A cashier wants the receipts and nothing else, so any match goes
+      // straight there. For the laboratory, a clean hit opens the sheet; a
+      // scan with something worth reading first stops and says so.
+      const goNow = dest && (forReceipts || (next.kind === "order" && !next.note));
+      if (goNow) {
         stopCamera();
         close();
-        router.push(`/orders/${next.orderId}`);
+        router.push(dest);
         return;
       }
       stopCamera();
       window.setTimeout(readyForNextScan, 0);
     },
-    [patients, router, stopCamera, close]
+    [patients, router, stopCamera, close, intent, forReceipts]
   );
 
   /** Chrome on Android and friends: the browser reads the symbol for us. */
@@ -279,7 +289,7 @@ export default function ScanBarcodeButton({
         }
       >
         <BarcodeGlyph />
-        Scan barcode
+        {forReceipts ? "Scan a receipt" : "Scan barcode"}
       </button>
 
       {open && (
@@ -291,11 +301,12 @@ export default function ScanBarcodeButton({
             className="max-h-[90vh] w-full max-w-md overflow-y-auto rounded-lf-md bg-lf-surface p-6 shadow-lg"
           >
             <h2 id="scan-barcode-title" className="text-lg font-semibold text-lf-ink">
-              Scan a specimen
+              {forReceipts ? "Scan a receipt" : "Scan a specimen"}
             </h2>
             <p className="mt-2 text-sm text-lf-ink-2">
-              Scan the Lab ID barcode on the container with a handheld scanner, or type it in. This
-              opens the order so the result can be entered.
+              {forReceipts
+                ? "Scan the barcode on the patient's receipt with a handheld scanner, or type the Lab ID in. This opens their receipts."
+                : "Scan the Lab ID barcode on the container with a handheld scanner, or type it in. This opens the sheet so the result can be entered."}
             </p>
 
             <form
@@ -326,7 +337,7 @@ export default function ScanBarcodeButton({
                   type="submit"
                   className="lf-touch inline-flex items-center justify-center rounded-lf-md bg-lf-accent px-4 text-sm font-medium text-lf-on-accent"
                 >
-                  Open order
+                  {forReceipts ? "Open receipts" : "Open results"}
                 </button>
                 {cameraState === "on" ? (
                   <button
@@ -380,7 +391,7 @@ export default function ScanBarcodeButton({
                     type="button"
                     onClick={() => {
                       close();
-                      router.push(`/orders/${order.orderId}`);
+                      router.push(`/orders/${order.orderId}?enter=1`);
                     }}
                     className="lf-touch inline-flex items-center justify-between rounded-lf-md border border-lf-line px-4 text-sm font-medium text-lf-ink hover:bg-lf-surface-2"
                   >

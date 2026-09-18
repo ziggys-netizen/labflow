@@ -1,4 +1,11 @@
+"use client";
+
+import { useEffect, useRef } from "react";
+import JsBarcode from "jsbarcode";
 import { formatPaymentAmount, PAYMENT_METHOD_LABELS, type OrderPayment } from "./orderPayment";
+
+/** One module. Wide enough that a phone camera reads it off printed paper. */
+const RECEIPT_BARCODE_MODULE_PX = 2;
 
 /**
  * What a cashier's receipt says. One receipt covers one transaction — an
@@ -22,6 +29,31 @@ export interface ReceiptData {
 export const RECEIPT_PAGE_CSS = "@page { size: A4; margin: 15mm; }";
 
 export default function ReceiptPaper({ data }: { data: ReceiptData }) {
+  const barcodeRef = useRef<SVGSVGElement>(null);
+
+  // The same Lab ID, in the same symbology as the specimen label, so one
+  // scanner reads both. A Lab ID it cannot carry is not worth a broken symbol:
+  // the printed number above stays either way.
+  useEffect(() => {
+    const value = (data.patientLabId || "").trim();
+    if (!barcodeRef.current || !value) return;
+    try {
+      JsBarcode(barcodeRef.current, value, {
+        format: "CODE128",
+        displayValue: false,
+        // Quiet zone either side, or a scanner refuses a symbol that looks fine.
+        marginLeft: 10 * RECEIPT_BARCODE_MODULE_PX,
+        marginRight: 10 * RECEIPT_BARCODE_MODULE_PX,
+        marginTop: 0,
+        marginBottom: 0,
+        height: 46,
+        width: RECEIPT_BARCODE_MODULE_PX,
+      });
+    } catch (err) {
+      console.error("Receipt barcode could not be drawn", err);
+    }
+  }, [data.patientLabId]);
+
   return (
     <div className="mx-auto max-w-[110mm] border border-gray-300 p-6 print:border-0 print:p-0">
       <p className="text-center text-lg font-semibold text-gray-900">{data.clinicName}</p>
@@ -30,6 +62,13 @@ export default function ReceiptPaper({ data }: { data: ReceiptData }) {
       <div className="border-t border-b border-gray-300 py-3 mb-4">
         <p className="text-xs uppercase tracking-wide text-gray-500">Lab ID</p>
         <p className="lf-num text-xl font-bold text-gray-900">{data.patientLabId}</p>
+        {data.patientLabId?.trim() ? (
+          <svg
+            ref={barcodeRef}
+            className="mt-2 block w-full"
+            aria-label={`Barcode for Lab ID ${data.patientLabId}`}
+          />
+        ) : null}
       </div>
 
       <div className="text-sm text-gray-700 mb-4 space-y-0.5">

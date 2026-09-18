@@ -11,7 +11,7 @@ import { useStaffSession } from "../lib/pinSession";
 import { canEnterResults, canRecordSampleCollection } from "../lib/permissions";
 import { interpretCollection, orderCollectionFromData } from "../lib/sampleCollection";
 import ScanBarcodeButton from "../lib/ScanBarcodeButton";
-import { type ScanPatient } from "../lib/labIdScan";
+import { buildScanPatients } from "../lib/labIdScan";
 import { parseRosterEntry, rosterShiftWindow } from "../lib/roster";
 import OperationalRow from "../lib/OperationalRow";
 import NotYetSynced from "../lib/NotYetSynced";
@@ -95,44 +95,27 @@ export default function TechnicianBoard() {
   }, [ordersQuery.docs, patientsById, catalog]);
 
   // A scan resolves against the orders and patients this board already holds.
-  const scanPatients = useMemo<ScanPatient[]>(() => {
-    const byLabId = new Map<string, ScanPatient>();
-    function entryFor(labId: string, patientId: string | null): ScanPatient {
-      const existing = byLabId.get(labId);
-      if (existing) return existing;
-      const created: ScanPatient = { patientId, labId, orders: [] };
-      byLabId.set(labId, created);
-      return created;
-    }
-
-    const labIdByPatient = new Map<string, string>();
-    for (const docSnap of patientsQuery.docs) {
-      const data = docSnap.data();
-      const labId = typeof data.labId === "string" ? data.labId.trim() : "";
-      if (!labId) continue;
-      labIdByPatient.set(docSnap.id, labId);
-      entryFor(labId, docSnap.id);
-    }
-
-    for (const docSnap of ordersQuery.docs) {
-      const data = docSnap.data();
-      if (isOrderForDeletedPatient(data)) continue;
-      const patientId = typeof data.patientId === "string" ? data.patientId : null;
-      const fromOrder = typeof data.patientLabId === "string" ? data.patientLabId.trim() : "";
-      const fromPatient = patientId ? labIdByPatient.get(patientId) || "" : "";
-      const labId = fromOrder || fromPatient;
-      if (!labId) continue;
-      const order = orderCollectionFromData(docSnap.id, data, docSnap.metadata.hasPendingWrites);
-      entryFor(labId, patientId).orders.push({
-        orderId: docSnap.id,
-        status: order.status,
-        collected: interpretCollection(order, catalog).allCollected,
-        label: order.tests.map((t) => t.code || t.name).filter(Boolean).join(", "),
-      });
-    }
-
-    return [...byLabId.values()];
-  }, [patientsQuery.docs, ordersQuery.docs, catalog]);
+  const scanPatients = useMemo(
+    () =>
+      buildScanPatients(
+        patientsQuery.docs.map((docSnap) => ({
+          id: docSnap.id,
+          labId: typeof docSnap.data().labId === "string" ? (docSnap.data().labId as string) : "",
+        })),
+        ordersQuery.docs
+          .filter((docSnap) => !isOrderForDeletedPatient(docSnap.data()))
+          .map((docSnap) => {
+            const data = docSnap.data();
+            return {
+              ...orderCollectionFromData(docSnap.id, data, docSnap.metadata.hasPendingWrites),
+              patientId: typeof data.patientId === "string" ? data.patientId : null,
+              patientLabId: typeof data.patientLabId === "string" ? data.patientLabId : null,
+            };
+          }),
+        catalog
+      ),
+    [patientsQuery.docs, ordersQuery.docs, catalog]
+  );
 
   const shift = useMemo(() => {
     const uid = acting?.uid || user?.uid;
