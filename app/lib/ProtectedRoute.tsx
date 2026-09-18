@@ -4,6 +4,7 @@ import { useAuth, useSessionAuthInput } from "./AuthContext";
 import { protectedRouteDestination, type RouteRequire } from "./authState";
 import { useRouter, usePathname } from "next/navigation";
 import { useEffect, useRef } from "react";
+import LabFlowWordmark from "./LabFlowWordmark";
 
 /**
  * Optional page capability. P1 predicates (`canViewPatients`, …) are assignable.
@@ -47,50 +48,34 @@ export default function ProtectedRoute({
   }, [loading, gateError, dest, pathname, router]);
 
   if (loading) {
-    return (
-      <main className="min-h-screen flex items-center justify-center text-gray-600">
-        Loading...
-      </main>
-    );
+    return <GateCard>Loading...</GateCard>;
   }
 
   if (gateError) {
     return (
-      <main className="min-h-screen flex flex-col items-center justify-center gap-4 px-4 text-center">
-        <p className="text-gray-800 max-w-md">{gateError}</p>
+      <GateCard alert>
+        <span className="block">{gateError}</span>
         <button
           type="button"
           onClick={retryBootstrap}
-          className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-900 hover:bg-gray-50"
+          className="lf-touch mt-4 inline-flex w-full items-center justify-center rounded-lf-md bg-lf-ink px-4 font-medium text-lf-surface hover:opacity-90"
         >
           Retry
         </button>
-      </main>
+      </GateCard>
     );
   }
 
   if (!user) {
-    return (
-      <main className="min-h-screen flex items-center justify-center text-gray-600">
-        Redirecting to login...
-      </main>
-    );
+    return <GateCard>Redirecting to sign in...</GateCard>;
   }
 
   if (dest && pathname !== dest) {
-    return (
-      <main className="min-h-screen flex items-center justify-center text-gray-600">
-        Redirecting...
-      </main>
-    );
+    return <GateCard>Redirecting...</GateCard>;
   }
 
   if (require && !require(role)) {
-    return (
-      <main className="min-h-screen flex items-center justify-center text-gray-600">
-        Redirecting...
-      </main>
-    );
+    return <GateCard>Redirecting...</GateCard>;
   }
 
   return (
@@ -102,5 +87,27 @@ export default function ProtectedRoute({
       )}
       {children}
     </>
+  );
+}
+
+/**
+ * Every waiting and "cannot reach" state sits on the same solid panel as the
+ * sign-in card. Bare text over the moving laboratory scene was unreadable
+ * wherever a tube passed behind it.
+ */
+function GateCard({ children, alert = false }: { children: React.ReactNode; alert?: boolean }) {
+  return (
+    <main className="flex min-h-screen items-center justify-center px-4">
+      <div className="lf-glass-panel flex w-full max-w-sm flex-col items-center gap-4 px-6 py-8 text-center">
+        <LabFlowWordmark size="lg" />
+        <div
+          role={alert ? "alert" : "status"}
+          aria-live={alert ? "assertive" : "polite"}
+          className="w-full text-lf-ink"
+        >
+          {children}
+        </div>
+      </div>
+    </main>
   );
 }

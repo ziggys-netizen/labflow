@@ -357,10 +357,19 @@ function drawWbc(id: string) {
   );
 }
 
+/**
+ * Trigonometry on the server (Node) and in the browser can differ in the last
+ * binary digit, so an unrounded coordinate renders as two different strings and
+ * React reports a hydration mismatch. Two decimals is far below a pixel.
+ */
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
+
 /* ------------------------------------------------------------------- dna */
 const DNA_RUNGS = Array.from({ length: 14 }, (_, i) => 12 + i * 16);
 function helixX(y: number, phase: number) {
-  return 40 + 28 * Math.sin(y / 18 + phase);
+  return round2(40 + 28 * Math.sin(y / 18 + phase));
 }
 const DNA_A = Array.from({ length: 58 }, (_, i) => `${helixX(4 + i * 4, 0).toFixed(1)},${4 + i * 4}`).join(" ");
 const DNA_B = Array.from({ length: 58 }, (_, i) => `${helixX(4 + i * 4, Math.PI).toFixed(1)},${4 + i * 4}`).join(" ");
@@ -389,7 +398,7 @@ function drawDna() {
 function drawMolecule(id: string) {
   const ring = Array.from({ length: 6 }, (_, i) => {
     const a = (Math.PI / 3) * i - Math.PI / 2;
-    return [80 + 36 * Math.cos(a), 70 + 36 * Math.sin(a)] as const;
+    return [round2(80 + 36 * Math.cos(a)), round2(70 + 36 * Math.sin(a))] as const;
   });
   const colours = ["c", "o", "c", "n", "c", "c"];
   return (

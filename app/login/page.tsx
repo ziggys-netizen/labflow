@@ -69,7 +69,7 @@ export default function Login() {
       <Stage>
         <div className="lf-glass-panel max-w-sm w-full px-6 py-8 text-center flex flex-col items-center gap-4">
           <LabFlowWordmark size="lg" />
-          <p className="text-lf-ink-2">{gateError}</p>
+          <p role="alert" className="text-lf-ink">{gateError}</p>
           <button
             type="button"
             onClick={retryBootstrap}

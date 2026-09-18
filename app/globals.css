@@ -103,35 +103,16 @@
   --radius-lf-md: var(--lf-r-md);
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-
-    --lf-ground: #0F151A;
-    --lf-surface: #171F26;
-    --lf-surface-2: #1E2830;
-    --lf-ink: #E3EAEF;
-    --lf-ink-2: #A6B4BF;
-    --lf-ink-3: #8C99A4;
-    --lf-line: #2A353E;
-    --lf-line-strong: #3A4854;
-    --lf-accent: #6BA8D6;
-    --lf-accent-soft: #1B2C3A;
-    --lf-on-accent: #0F151A;
-    --lf-crit: #E4796A;
-    --lf-crit-soft: #33201D;
-    --lf-warn: #D6A544;
-    --lf-warn-soft: #2F2717;
-    --lf-ok: #55B183;
-    --lf-ok-soft: #162B21;
-    --lf-cap-lavender: #B9A4DE;
-    --lf-cap-blue: #7FB6DC;
-    --lf-cap-gold: #D8AE45;
-    --lf-cap-grey: #9DAAB3;
-    --lf-cap-red: #CB6B67;
-    --lf-cap-green: #62AE85;
-  }
+/*
+  One theme, light, everywhere. The screens were designed and checked in
+  light: about 1,250 colour classes are fixed light-theme greys, and only the
+  lf-* tokens used to switch when a device was set to dark. On a tablet in
+  dark mode that turned the backgrounds dark blue while most text stayed dark
+  grey, so words vanished. "only light" also tells browsers that darken pages
+  by themselves (some Android phones and tablets) to leave this one alone.
+*/
+:root {
+  color-scheme: only light;
 }
 
 html,
