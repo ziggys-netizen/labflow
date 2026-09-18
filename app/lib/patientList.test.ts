@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  ageFromDob,
   canPerformPrimaryAction,
+  describeAge,
   formatActivityDay,
   formatPatientAge,
   formatSexAbbrev,
@@ -46,6 +48,50 @@ describe("formatSexAge", () => {
     expect(formatPatientAge({ ageYears: 34 }, NOW)).toBe("34y");
     expect(formatPatientAge({ ageMonths: 8 }, NOW)).toBe("8m");
     expect(formatPatientAge({ dob: "2026-03-04" }, NOW)).toBe("6m");
+  });
+});
+
+describe("ageFromDob", () => {
+  const on = (y: number, m: number, d: number) => new Date(y, m - 1, d, 10, 30);
+
+  it("counts completed years and months", () => {
+    expect(ageFromDob("1992-06-15", on(2026, 9, 18))).toEqual({ years: 34, months: 3 });
+  });
+
+  it("turns over exactly on the birthday, not the day before", () => {
+    expect(ageFromDob("1990-09-18", on(2026, 9, 18))).toEqual({ years: 36, months: 0 });
+    expect(ageFromDob("1990-09-19", on(2026, 9, 18))).toEqual({ years: 35, months: 11 });
+  });
+
+  it("gives a newborn zero years and zero months", () => {
+    expect(ageFromDob("2026-09-10", on(2026, 9, 18))).toEqual({ years: 0, months: 0 });
+    expect(ageFromDob("2026-09-18", on(2026, 9, 18))).toEqual({ years: 0, months: 0 });
+  });
+
+  it("handles a leap-day birthday in a non-leap year", () => {
+    expect(ageFromDob("2000-02-29", on(2026, 2, 28))).toEqual({ years: 25, months: 11 });
+    expect(ageFromDob("2000-02-29", on(2026, 3, 1))).toEqual({ years: 26, months: 0 });
+  });
+
+  it("refuses a date in the future", () => {
+    expect(ageFromDob("2026-09-19", on(2026, 9, 18))).toBeNull();
+  });
+
+  it("refuses anything that is not a real calendar date", () => {
+    expect(ageFromDob("2026-02-30", on(2026, 9, 18))).toBeNull();
+    expect(ageFromDob("", on(2026, 9, 18))).toBeNull();
+    expect(ageFromDob(null, on(2026, 9, 18))).toBeNull();
+    expect(ageFromDob("not a date", on(2026, 9, 18))).toBeNull();
+  });
+});
+
+describe("describeAge", () => {
+  it("writes the age out in words, with correct singulars", () => {
+    expect(describeAge({ years: 34, months: 3 })).toBe("34 years, 3 months");
+    expect(describeAge({ years: 1, months: 1 })).toBe("1 year, 1 month");
+    expect(describeAge({ years: 36, months: 0 })).toBe("36 years");
+    expect(describeAge({ years: 0, months: 7 })).toBe("7 months");
+    expect(describeAge({ years: 0, months: 0 })).toBe("under 1 month");
   });
 });
 

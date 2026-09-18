@@ -21,6 +21,7 @@ import { isPatientDeleted } from "../lib/patientSoftDelete";
 import { trackedAddDoc, writeActorFromUser } from "../lib/trackedWrites";
 import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../lib/audit";
 import { generateLabId } from "../lib/labId";
+import { ageFromDob, describeAge } from "../lib/patientList";
 import { useWriteIdentity } from "../lib/pinSession";
 
 const COUNTRY_CODES = [
@@ -225,6 +226,7 @@ export default function Register() {
   const [dob, setDob] = useState("");
   const [ageYears, setAgeYears] = useState("");
   const [ageMonths, setAgeMonths] = useState("");
+  const dobAge = ageFromDob(dob);
   const [lawfulBasis, setLawfulBasis] = useState("contract");
   const [referredOutside, setReferredOutside] = useState(false);
   const [referringFacility, setReferringFacility] = useState("");
@@ -352,8 +354,10 @@ export default function Register() {
           preferredName: cleanPreferredName,
           sex,
           dob: dob || null,
-          ageYears: ageYears.trim() ? Number(ageYears) : null,
-          ageMonths: ageMonths.trim() ? Number(ageMonths) : null,
+          // A date of birth always wins downstream, so a typed age beside it
+          // could only ever disagree with it or go stale. Keep one source.
+          ageYears: !dob && ageYears.trim() ? Number(ageYears) : null,
+          ageMonths: !dob && ageMonths.trim() ? Number(ageMonths) : null,
           phone: fullPhone,
           address: address.trim() || null,
           nationalId: nationalId.trim() || null,
@@ -404,6 +408,8 @@ export default function Register() {
       setPreferredName("");
       setSex("");
       setDob("");
+      setAgeYears("");
+      setAgeMonths("");
       setPhoneLocal("");
       setAddress("");
       setNationalId("");
@@ -469,25 +475,41 @@ export default function Register() {
               onChange={(e) => setDob(e.target.value)}
               className={`w-full border rounded-lg px-3 py-2 ${errors.dob ? "border-red-500" : "border-gray-300"}`}
             />
-            <p className="text-xs text-gray-500 mt-1">If unknown, enter age instead.</p>
+            <p className="text-xs text-gray-500 mt-1" aria-live="polite">
+              {dobAge
+                ? `Age worked out from the date of birth: ${describeAge(dobAge)}.`
+                : "If unknown, enter age instead."}
+            </p>
             <div className="grid grid-cols-2 gap-2 mt-2">
-              <input
-                type="number"
-                min={0}
-                value={ageYears}
-                onChange={(e) => setAgeYears(e.target.value)}
-                placeholder="Age (years)"
-                className="border border-gray-300 rounded-lg px-3 py-2"
-              />
-              <input
-                type="number"
-                min={0}
-                max={11}
-                value={ageMonths}
-                onChange={(e) => setAgeMonths(e.target.value)}
-                placeholder="Months"
-                className="border border-gray-300 rounded-lg px-3 py-2"
-              />
+              <label className="block">
+                <span className="block text-xs text-gray-500 mb-1">Age (years)</span>
+                <input
+                  type="number"
+                  min={0}
+                  value={dobAge ? String(dobAge.years) : ageYears}
+                  onChange={(e) => setAgeYears(e.target.value)}
+                  readOnly={Boolean(dobAge)}
+                  placeholder="Years"
+                  className={`w-full border border-gray-300 rounded-lg px-3 py-2 ${
+                    dobAge ? "bg-gray-50 text-gray-700" : ""
+                  }`}
+                />
+              </label>
+              <label className="block">
+                <span className="block text-xs text-gray-500 mb-1">Months</span>
+                <input
+                  type="number"
+                  min={0}
+                  max={11}
+                  value={dobAge ? String(dobAge.months) : ageMonths}
+                  onChange={(e) => setAgeMonths(e.target.value)}
+                  readOnly={Boolean(dobAge)}
+                  placeholder="Months"
+                  className={`w-full border border-gray-300 rounded-lg px-3 py-2 ${
+                    dobAge ? "bg-gray-50 text-gray-700" : ""
+                  }`}
+                />
+              </label>
             </div>
             {errors.dob && <p className="text-sm text-red-600 mt-1">{errors.dob}</p>}
             {!dob && !ageYears.trim() && !ageMonths.trim() && (

@@ -79,25 +79,50 @@ export function formatSexAbbrev(sex: string | null | undefined): string {
   return raw || "—";
 }
 
+/**
+ * Completed years and months from a date of birth, on the local calendar of
+ * `now`. Null for a missing, invalid or future date. The registration form
+ * and the patient list both use this, so they can never disagree.
+ */
+export function ageFromDob(
+  dob: string | null | undefined,
+  now: Date = new Date()
+): { years: number; months: number } | null {
+  const ymd = parseDobYmd(dob ?? null);
+  if (!ymd) return null;
+  const [year, month, day] = ymd.split("-").map(Number);
+  const birth = new Date(year, month - 1, day);
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  let years = today.getFullYear() - birth.getFullYear();
+  let months = today.getMonth() - birth.getMonth();
+  if (today.getDate() < birth.getDate()) months -= 1;
+  if (months < 0) {
+    years -= 1;
+    months += 12;
+  }
+  if (years < 0) return null;
+  return { years, months };
+}
+
+/** "34 years, 3 months" — in words, for the registration form. */
+export function describeAge(age: { years: number; months: number }): string {
+  const y = `${age.years} ${age.years === 1 ? "year" : "years"}`;
+  const m = `${age.months} ${age.months === 1 ? "month" : "months"}`;
+  if (age.years === 0 && age.months === 0) return "under 1 month";
+  if (age.years === 0) return m;
+  if (age.months === 0) return y;
+  return `${y}, ${m}`;
+}
+
 export function formatPatientAge(
   input: { dob?: string | null; ageYears?: unknown; ageMonths?: unknown },
   now: Date = new Date()
 ): string {
-  const ymd = parseDobYmd(input.dob ?? null);
-  if (ymd) {
-    const [year, month, day] = ymd.split("-").map(Number);
-    const birth = new Date(year, month - 1, day);
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    let years = today.getFullYear() - birth.getFullYear();
-    let months = today.getMonth() - birth.getMonth();
-    if (today.getDate() < birth.getDate()) months -= 1;
-    if (months < 0) {
-      years -= 1;
-      months += 12;
-    }
-    if (years < 0) return "—";
-    if (years === 0) return `${months}m`;
-    return `${years}y`;
+  if (parseDobYmd(input.dob ?? null)) {
+    const age = ageFromDob(input.dob, now);
+    if (!age) return "—";
+    if (age.years === 0) return `${age.months}m`;
+    return `${age.years}y`;
   }
   const years = parseAgeYears(input.ageYears);
   const months = parseAgeMonths(input.ageMonths);
