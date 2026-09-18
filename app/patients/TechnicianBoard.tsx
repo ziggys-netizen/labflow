@@ -9,7 +9,9 @@ import { isOrderForDeletedPatient } from "../lib/patientSoftDelete";
 import { patientsByIdFromDocs } from "../lib/patientDisplay";
 import { useStaffSession } from "../lib/pinSession";
 import { canEnterResults, canRecordSampleCollection } from "../lib/permissions";
-import { orderCollectionFromData } from "../lib/sampleCollection";
+import { interpretCollection, orderCollectionFromData } from "../lib/sampleCollection";
+import ScanBarcodeButton from "../lib/ScanBarcodeButton";
+import { type ScanPatient } from "../lib/labIdScan";
 import { parseRosterEntry, rosterShiftWindow } from "../lib/roster";
 import OperationalRow from "../lib/OperationalRow";
 import NotYetSynced from "../lib/NotYetSynced";
@@ -92,6 +94,46 @@ export default function TechnicianBoard() {
     return buildTechWorkItems(orders, patientsById, catalog);
   }, [ordersQuery.docs, patientsById, catalog]);
 
+  // A scan resolves against the orders and patients this board already holds.
+  const scanPatients = useMemo<ScanPatient[]>(() => {
+    const byLabId = new Map<string, ScanPatient>();
+    function entryFor(labId: string, patientId: string | null): ScanPatient {
+      const existing = byLabId.get(labId);
+      if (existing) return existing;
+      const created: ScanPatient = { patientId, labId, orders: [] };
+      byLabId.set(labId, created);
+      return created;
+    }
+
+    const labIdByPatient = new Map<string, string>();
+    for (const docSnap of patientsQuery.docs) {
+      const data = docSnap.data();
+      const labId = typeof data.labId === "string" ? data.labId.trim() : "";
+      if (!labId) continue;
+      labIdByPatient.set(docSnap.id, labId);
+      entryFor(labId, docSnap.id);
+    }
+
+    for (const docSnap of ordersQuery.docs) {
+      const data = docSnap.data();
+      if (isOrderForDeletedPatient(data)) continue;
+      const patientId = typeof data.patientId === "string" ? data.patientId : null;
+      const fromOrder = typeof data.patientLabId === "string" ? data.patientLabId.trim() : "";
+      const fromPatient = patientId ? labIdByPatient.get(patientId) || "" : "";
+      const labId = fromOrder || fromPatient;
+      if (!labId) continue;
+      const order = orderCollectionFromData(docSnap.id, data, docSnap.metadata.hasPendingWrites);
+      entryFor(labId, patientId).orders.push({
+        orderId: docSnap.id,
+        status: order.status,
+        collected: interpretCollection(order, catalog).allCollected,
+        label: order.tests.map((t) => t.code || t.name).filter(Boolean).join(", "),
+      });
+    }
+
+    return [...byLabId.values()];
+  }, [patientsQuery.docs, ordersQuery.docs, catalog]);
+
   const shift = useMemo(() => {
     const uid = acting?.uid || user?.uid;
     if (!uid) return null;
@@ -125,7 +167,8 @@ export default function TechnicianBoard() {
     <main className="min-h-screen">
       <AppNav />
       <div className="lf-shell flex flex-col gap-6 py-8">
-        <header className="flex flex-col gap-1">
+        <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-1">
           <h1 className="text-[19px] font-semibold text-lf-ink">{formatGreetingLine(now, firstName)}</h1>
           <p className="lf-num text-lf-ink-3">
             {formatBoardMetaLine({
@@ -134,6 +177,8 @@ export default function TechnicianBoard() {
               shift,
             })}
           </p>
+          </div>
+          {canEnter && <ScanBarcodeButton patients={scanPatients} busy={loading} />}
         </header>
 
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">

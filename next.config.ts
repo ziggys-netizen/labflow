@@ -47,8 +47,12 @@ const nextConfig: NextConfig = {
           },
           { key: "X-Content-Type-Options", value: "nosniff" },
           {
+            // camera=(self): the specimen scanner reads a Lab ID barcode from
+            // this origin's own pages. Nothing embedded may use it, and the
+            // browser still asks the person before the camera turns on.
+            // Microphone and location stay shut off entirely.
             key: "Permissions-Policy",
-            value: "camera=(), microphone=(), geolocation=()",
+            value: "camera=(self), microphone=(), geolocation=()",
           },
           {
             // 'self', not 'none': Firebase Auth embeds /__/auth/iframe, which

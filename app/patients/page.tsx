@@ -63,6 +63,8 @@ import {
   primaryActionHref,
   type PatientListOrder,
 } from "../lib/patientList";
+import ScanBarcodeButton from "../lib/ScanBarcodeButton";
+import { type ScanPatient } from "../lib/labIdScan";
 import TechnicianBoard from "./TechnicianBoard";
 import { isTechnicianBoardRole } from "../lib/permissions";
 
@@ -205,6 +207,22 @@ function PatientsContent() {
   const visiblePatients = useMemo(
     () => patients.filter((p) => patientListMatchesQuery(p, query)),
     [patients, query]
+  );
+
+  // Scanning resolves against the list already on screen: no extra read.
+  const scanPatients = useMemo<ScanPatient[]>(
+    () =>
+      patients.map((p) => ({
+        patientId: p.id,
+        labId: p.labId,
+        orders: (ordersByPatient[p.id] || []).map((order) => ({
+          orderId: order.id,
+          status: order.status,
+          collected: interpretCollection(order).allCollected,
+          label: order.tests.map((t) => t.code || t.name).filter(Boolean).join(", "),
+        })),
+      })),
+    [patients, ordersByPatient]
   );
 
   const loading = patientsQuery.loading || ordersQuery.loading;
@@ -569,6 +587,7 @@ function PatientsContent() {
                 Register a patient
               </Link>
             )}
+            {canEnter && <ScanBarcodeButton patients={scanPatients} busy={loading} />}
             {canDelete && (
               <Link
                 href="/patients/deleted"
