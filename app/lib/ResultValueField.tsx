@@ -35,7 +35,7 @@ export default function ResultValueField({
     <div className="grid grid-cols-3 gap-2 items-center">
       <div>
         <p className="text-sm text-gray-900">{normalized.name}</p>
-        <p className="text-xs text-gray-400">
+        <p className="text-xs text-gray-500">
           {range}
           {unit ? ` (${unit})` : ""}
         </p>

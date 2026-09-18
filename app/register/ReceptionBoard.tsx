@@ -133,7 +133,7 @@ export default function ReceptionBoard({ children }: { children: ReactNode }) {
         </a>
 
         <label className="flex flex-col gap-2">
-          <span className="text-[11.5px] text-lf-ink-2">Search patients</span>
+          <span className="text-[13px] text-lf-ink-2">Search patients</span>
           <input
             type="search"
             value={search}

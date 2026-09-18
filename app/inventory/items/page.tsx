@@ -72,7 +72,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
     <label className="block">
       <span className="block text-sm font-medium text-gray-700 mb-1">{label}</span>
       {children}
-      {hint && <span className="block text-xs text-gray-400 mt-1">{hint}</span>}
+      {hint && <span className="block text-xs text-gray-500 mt-1">{hint}</span>}
     </label>
   );
 }
@@ -516,7 +516,7 @@ function ItemsContent() {
                   <p className="text-sm text-gray-600">
                     {item.category} · {packDescription(item)}
                   </p>
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-gray-500 mt-1">
                     {[
                       item.manufacturer && `Manufacturer: ${item.manufacturer}`,
                       item.supplier && `Supplier: ${item.supplier}`,
@@ -536,7 +536,7 @@ function ItemsContent() {
                     </p>
                   )}
                   {owner && item.clinicId && (
-                    <p className="text-xs text-gray-400">
+                    <p className="text-xs text-gray-500">
                       Clinic: {clinicNames[item.clinicId] || item.clinicId}
                     </p>
                   )}

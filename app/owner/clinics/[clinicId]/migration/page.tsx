@@ -1253,7 +1253,7 @@ function MigrationContent() {
             <div>
               <h2 className="font-medium text-gray-900">{clinic.name}</h2>
               <p className="text-sm text-gray-600">{clinic.address || "No address recorded"}</p>
-              <p className="mt-1 font-mono text-xs text-gray-400">ID: {clinic.id}</p>
+              <p className="mt-1 font-mono text-xs text-gray-500">ID: {clinic.id}</p>
             </div>
             <span
               className={`rounded-full px-3 py-1 text-xs font-medium ${

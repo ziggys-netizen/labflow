@@ -18,7 +18,7 @@
   --lf-surface-2: #EEF2F4;
   --lf-ink: #16212B;
   --lf-ink-2: #4A5A67;
-  --lf-ink-3: #7C8994;
+  --lf-ink-3: #5F6B76;
   --lf-line: #DCE3E8;
   --lf-line-strong: #C3CDD4;
   --lf-accent: #14476B;
@@ -38,13 +38,42 @@
   --lf-cap-green: #4E9A72;
   --lf-r-sm: 3px;
   --lf-r-md: 6px;
+
+  /*
+    Text scale. These defaults are Tailwind's own sizes and are what paper
+    gets, so printed reports, receipts and labels keep their layout. Screens
+    read a step larger, and phones larger again, below.
+  */
+  --lf-text-xs: 0.75rem;
+  --lf-text-sm: 0.875rem;
+  --lf-text-base: 1rem;
+}
+
+@media screen {
+  :root {
+    --lf-text-xs: 0.8125rem;
+    --lf-text-sm: 0.9375rem;
+  }
+}
+
+/* Phones. 16px inputs also stop iOS zooming the page when a field is tapped. */
+@media screen and (max-width: 639px) {
+  :root {
+    --lf-text-xs: 0.875rem;
+    --lf-text-sm: 1rem;
+    --lf-text-base: 1.0625rem;
+  }
 }
 
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-ibm-plex-sans);
-  --font-mono: var(--font-ibm-plex-mono);
+  --font-sans: var(--font-lf-sans);
+  --font-mono: var(--font-lf-mono);
+
+  --text-xs: var(--lf-text-xs);
+  --text-sm: var(--lf-text-sm);
+  --text-base: var(--lf-text-base);
 
   --color-lf-ground: var(--lf-ground);
   --color-lf-surface: var(--lf-surface);
@@ -84,7 +113,7 @@
     --lf-surface-2: #1E2830;
     --lf-ink: #E3EAEF;
     --lf-ink-2: #A6B4BF;
-    --lf-ink-3: #74828D;
+    --lf-ink-3: #8C99A4;
     --lf-line: #2A353E;
     --lf-line-strong: #3A4854;
     --lf-accent: #6BA8D6;
@@ -118,13 +147,13 @@ body {
 
 /* Ready to use on digits that stack: Lab IDs, timestamps, quantities, codes. */
 @utility lf-num {
-  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-lf-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
 }
 
 /* Clinical H/L/C — letter after the value only. Never a stripe or chip. */
 @utility lf-clinical-letter {
-  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-lf-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
   font-size: 12px;
   font-weight: 600;
@@ -133,9 +162,9 @@ body {
 
 /* Operational chip — right end of a work row. Words, not a single letter. */
 @utility lf-op-chip {
-  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  font-family: var(--font-lf-mono), ui-monospace, monospace;
   font-variant-numeric: tabular-nums;
-  font-size: 10.5px;
+  font-size: 11.5px;
   font-weight: 500;
   line-height: 1;
   letter-spacing: 0.06em;
@@ -190,7 +219,7 @@ body {
 
 .lf-app-footer-left {
   gap: 8px;
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--lf-ink-3);
 }
 
@@ -203,7 +232,7 @@ body {
 
 .lf-app-footer-centre {
   gap: 14px;
-  font-size: 12.5px;
+  font-size: 13.5px;
   color: var(--lf-accent);
 }
 
@@ -212,8 +241,8 @@ body {
 }
 
 .lf-app-footer-right {
-  font-family: var(--font-ibm-plex-mono), ui-monospace, monospace;
-  font-size: 11px;
+  font-family: var(--font-lf-mono), ui-monospace, monospace;
+  font-size: 12px;
   color: var(--lf-ink-3);
   text-transform: uppercase;
 }
@@ -236,7 +265,7 @@ body {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  font-family: var(--font-ibm-plex-sans), ui-sans-serif, system-ui, sans-serif;
+  font-family: var(--font-lf-sans), ui-sans-serif, system-ui, sans-serif;
   font-weight: 600;
   line-height: 1;
   color: var(--lf-ink);

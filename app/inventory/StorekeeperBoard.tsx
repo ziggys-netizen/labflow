@@ -107,9 +107,9 @@ export default function StorekeeperBoard() {
                   selected ? "ring-1 ring-lf-accent" : "",
                 ].join(" ")}
               >
-                <span className="text-[11.5px] text-lf-ink">{row.label}</span>
+                <span className="text-[13px] text-lf-ink">{row.label}</span>
                 <span className="lf-num text-[24px] font-semibold text-lf-ink">{counts[row.id]}</span>
-                <span className="lf-num text-[11px] text-lf-ink-3">{sublabels[row.id]}</span>
+                <span className="lf-num text-[12px] text-lf-ink-3">{sublabels[row.id]}</span>
               </button>
             );
           })}
@@ -193,7 +193,7 @@ export default function StorekeeperBoard() {
           )}
         </section>
 
-        <p className="text-[11px] text-lf-ink-3">
+        <p className="text-[12px] text-lf-ink-3">
           Full store filters and specimen custody stay on the store pages linked from each row.
         </p>
       </div>

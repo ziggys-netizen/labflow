@@ -835,7 +835,7 @@ function CatalogueContent() {
                       );
                     }
                     return (
-                      <p className="mt-1 text-xs text-gray-400">
+                      <p className="mt-1 text-xs text-gray-500">
                         No SOP on file (existing test, still orderable)
                       </p>
                     );

@@ -161,7 +161,7 @@ function ProfileContent() {
             </button>
           </form>
           {!username && (
-            <p className="text-xs text-gray-400 mt-3">
+            <p className="text-xs text-gray-500 mt-3">
               Until you set one, your records are attributed to your account ID.
             </p>
           )}
@@ -197,9 +197,9 @@ function ProfileContent() {
                       <p className="text-sm text-gray-500">
                         {roleDisplay(m.role, m.shift)} · {m.status}
                       </p>
-                      <p className="text-xs text-gray-400 mt-1">Clinic ID: {m.clinicId}</p>
+                      <p className="text-xs text-gray-500 mt-1">Clinic ID: {m.clinicId}</p>
                       {m.approvedAt && (
-                        <p className="text-xs text-gray-400">
+                        <p className="text-xs text-gray-500">
                           Approved by{" "}
                           {actorLabel(m.approvedByUsername || m.approvedByEmail || m.approvedByUid)}{" "}
                           on {new Date(m.approvedAt).toLocaleDateString()}

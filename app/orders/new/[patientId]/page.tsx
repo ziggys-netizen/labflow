@@ -424,7 +424,7 @@ function NewOrderContent() {
                         className="w-full text-left px-3 py-2 text-sm bg-gray-50 border-b border-gray-100 last:border-b-0"
                       >
                         <span className="font-medium text-gray-500">{t.name}</span>
-                        <span className="text-gray-400 ml-2">{t.category}</span>
+                        <span className="text-gray-500 ml-2">{t.category}</span>
                         <p className="text-xs text-red-800 mt-0.5">
                           SOP reference required in Catalogue before this test can be ordered.
                         </p>
@@ -438,8 +438,8 @@ function NewOrderContent() {
                       className="w-full text-left px-3 py-2 text-sm hover:bg-gray-50 border-b border-gray-100 last:border-b-0"
                     >
                       <span className="font-medium text-gray-900">{t.name}</span>
-                      <span className="text-gray-400 ml-2">{t.category}</span>
-                      <span className="text-gray-400 ml-2">
+                      <span className="text-gray-500 ml-2">{t.category}</span>
+                      <span className="text-gray-500 ml-2">
                         {SPECIMEN_TYPE_LABELS[resolveSpecimenType(t.specimenType, t.code)]}
                       </span>
                     </button>

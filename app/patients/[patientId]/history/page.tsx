@@ -700,7 +700,7 @@ function PatientHistoryContent() {
                                       <span>{cell.value || "No result"}</span>
                                       {flag ? <ClinicalFlagLetter flag={flag} /> : null}
                                       {cell.amended ? (
-                                        <span className="text-[10px] uppercase text-lf-warn">amended</span>
+                                        <span className="text-[12px] uppercase text-lf-warn">amended</span>
                                       ) : null}
                                     </span>
                                   ) : (

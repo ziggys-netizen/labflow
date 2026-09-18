@@ -441,7 +441,7 @@ export default function Register() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Preferred / alternate name <span className="text-gray-400 font-normal">(optional)</span>
+              Preferred / alternate name <span className="text-gray-500 font-normal">(optional)</span>
             </label>
             <input
               type="text"
@@ -521,7 +521,7 @@ export default function Register() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Phone number <span className="text-gray-400 font-normal">(optional)</span>
+              Phone number <span className="text-gray-500 font-normal">(optional)</span>
             </label>
             <div className="flex gap-2">
               <select
@@ -546,7 +546,7 @@ export default function Register() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Address / Locality <span className="text-gray-400 font-normal">(optional)</span>
+              Address / Locality <span className="text-gray-500 font-normal">(optional)</span>
             </label>
             <input
               type="text"
@@ -560,7 +560,7 @@ export default function Register() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              National ID number <span className="text-gray-400 font-normal">(optional)</span>
+              National ID number <span className="text-gray-500 font-normal">(optional)</span>
             </label>
             <input
               type="text"
@@ -573,7 +573,7 @@ export default function Register() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Next of kin <span className="text-gray-400 font-normal">(name and phone, optional)</span>
+              Next of kin <span className="text-gray-500 font-normal">(name and phone, optional)</span>
             </label>
             <input
               type="text"
@@ -634,7 +634,7 @@ export default function Register() {
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              Reason for visit / clinical notes <span className="text-gray-400 font-normal">(optional)</span>
+              Reason for visit / clinical notes <span className="text-gray-500 font-normal">(optional)</span>
             </label>
             <textarea
               value={reasonForVisit}

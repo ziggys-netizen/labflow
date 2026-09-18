@@ -61,7 +61,7 @@ async function docFromCacheOrServer(ref: DocumentReference) {
 function Field({ label, value, mono }: { label: string; value?: string | null; mono?: boolean }) {
   return (
     <div className="flex flex-col gap-1">
-      <p className="text-[10px] uppercase tracking-[0.06em] text-lf-ink-3">{label}</p>
+      <p className="text-[12px] uppercase tracking-[0.06em] text-lf-ink-3">{label}</p>
       <p className={`text-sm text-lf-ink ${mono ? "lf-num" : ""}`}>{value || "Not recorded"}</p>
     </div>
   );

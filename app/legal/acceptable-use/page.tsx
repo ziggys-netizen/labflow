@@ -14,7 +14,7 @@ function AcceptableUseContent() {
         <h1 className="text-2xl font-semibold text-lf-ink">{ACCEPTABLE_USE.title}</h1>
         <p className="text-sm text-lf-ink-2">{formatTermsUpdateNotice()}</p>
         <TermsDocument />
-        <p className="font-mono text-[11px] uppercase text-lf-ink-3">
+        <p className="font-mono text-[12px] uppercase text-lf-ink-3">
           {termsRecordedCaption()}
         </p>
       </div>

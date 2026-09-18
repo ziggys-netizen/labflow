@@ -925,7 +925,7 @@ function OrderDetailContent() {
             record is retained and can be restored from the recycle bin.
           </p>
         )}
-        <p className="text-sm text-gray-400 mb-2">
+        <p className="text-sm text-gray-500 mb-2">
           Ordered {new Date(order.createdAt).toLocaleString()}
         </p>
         {(() => {
@@ -938,12 +938,12 @@ function OrderDetailContent() {
           );
         })()}
         {order.resultsEnteredBy && (
-          <p className="text-xs text-gray-400 mb-1">
+          <p className="text-xs text-gray-500 mb-1">
             Results entered by {order.resultsEnteredBy} at {new Date(order.resultsEnteredAt!).toLocaleString()}
           </p>
         )}
         {order.reviewedBy && (
-          <p className={`text-xs text-gray-400 ${order.status === "amended" ? "mb-1" : "mb-6"}`}>
+          <p className={`text-xs text-gray-500 ${order.status === "amended" ? "mb-1" : "mb-6"}`}>
             Released by {order.reviewedBy} at {new Date(order.reviewedAt!).toLocaleString()}
             {order.reviewNotes ? `. Note: ${order.reviewNotes}` : ""}
           </p>
@@ -1062,7 +1062,7 @@ function OrderDetailContent() {
           )}
 
           {!canCollect && awaitingSample && (
-            <p className="text-xs text-gray-400 mt-3">
+            <p className="text-xs text-gray-500 mt-3">
               Only a technician, laboratory lead, or owner can record sample collection.
             </p>
           )}

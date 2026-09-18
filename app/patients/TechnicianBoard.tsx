@@ -151,9 +151,9 @@ export default function TechnicianBoard() {
                   selected ? "ring-1 ring-lf-accent" : "",
                 ].join(" ")}
               >
-                <span className="text-[11.5px] text-lf-ink">{row.label}</span>
+                <span className="text-[13px] text-lf-ink">{row.label}</span>
                 <span className="lf-num text-[24px] font-semibold text-lf-ink">{counts[row.id]}</span>
-                <span className="lf-num text-[11px] text-lf-ink-3">{sublabels[row.id]}</span>
+                <span className="lf-num text-[12px] text-lf-ink-3">{sublabels[row.id]}</span>
               </button>
             );
           })}

@@ -63,7 +63,7 @@ function Metric({ label, value, hint }: { label: string; value: string; hint?: s
     <div className="border border-gray-200 rounded-lg p-4">
       <p className="text-sm text-gray-600">{label}</p>
       <p className="text-2xl font-semibold text-gray-900 mt-1">{value}</p>
-      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+      {hint && <p className="text-xs text-gray-500 mt-1">{hint}</p>}
     </div>
   );
 }
@@ -396,7 +396,7 @@ function InventoryContent() {
                       {alerts.out.map(({ item }) => (
                         <li key={item.id}>
                           {item.name}{" "}
-                          <span className="text-gray-400">
+                          <span className="text-gray-500">
                             · minimum {item.minimumStock} {item.packingUnit}
                           </span>
                         </li>
@@ -434,7 +434,7 @@ function InventoryContent() {
                       {alerts.expiring.map((row) => (
                         <li key={row.batch.id}>
                           {row.item?.name ?? row.batch.itemName}{" "}
-                          <span className="text-gray-400">lot {row.batch.lotNumber}</span>{" "}
+                          <span className="text-gray-500">lot {row.batch.lotNumber}</span>{" "}
                           <span className="text-amber-700">
                             expires {row.batch.expiryDate} ({row.days} days)
                           </span>
@@ -454,7 +454,7 @@ function InventoryContent() {
                       {alerts.expired.map((row) => (
                         <li key={row.batch.id}>
                           {row.item?.name ?? row.batch.itemName}{" "}
-                          <span className="text-gray-400">lot {row.batch.lotNumber}</span>{" "}
+                          <span className="text-gray-500">lot {row.batch.lotNumber}</span>{" "}
                           <span className="text-red-700">
                             expired {row.batch.expiryDate}. Quarantine and write off.
                           </span>
@@ -559,7 +559,7 @@ function InventoryContent() {
                   />
                 </label>
               </div>
-              <p className="text-xs text-gray-400 mt-3">
+              <p className="text-xs text-gray-500 mt-3">
                 The date range applies to the movement and specimen tables. Item, category,
                 supplier, department, status and expiry apply to the stock table.
               </p>
@@ -647,7 +647,7 @@ function InventoryContent() {
                             <Td>
                               {m.itemName}
                               {m.type === "transfer" && (
-                                <span className="text-xs text-gray-400"> · transfer</span>
+                                <span className="text-xs text-gray-500"> · transfer</span>
                               )}
                               <NotYetSynced show={m.notYetSynced} />
                             </Td>
@@ -676,7 +676,7 @@ function InventoryContent() {
                 <h2 className="text-sm font-medium text-gray-900">
                   Stock by lot ({visibleLots.length} of {lotRows.length})
                 </h2>
-                <p className="text-xs text-gray-400">Ordered first-expire-first-out within item</p>
+                <p className="text-xs text-gray-500">Ordered first-expire-first-out within item</p>
               </div>
               <div className="border border-gray-200 rounded-lg p-4 overflow-x-auto">
                 {visibleLots.length === 0 ? (
@@ -729,7 +729,7 @@ function InventoryContent() {
                           <Td>
                             {row.batch.expiryDate ?? "No expiry date"}
                             {row.days !== null && row.days >= 0 && row.days <= 90 && (
-                              <span className="text-xs text-gray-400"> · {row.days} days</span>
+                              <span className="text-xs text-gray-500"> · {row.days} days</span>
                             )}
                           </Td>
                           <Td>
@@ -745,7 +745,7 @@ function InventoryContent() {
                           <Td>
                             <StateBadge state={row.state} />
                             {row.balance.outOfServiceAt && row.onHand <= 0 && (
-                              <span className="block text-xs text-gray-400 mt-1">
+                              <span className="block text-xs text-gray-500 mt-1">
                                 Out of service {formatDateTime(row.balance.outOfServiceAt).date}
                               </span>
                             )}
@@ -762,7 +762,7 @@ function InventoryContent() {
             <section>
               <div className="flex flex-col gap-2 mb-3 sm:flex-row sm:items-center sm:justify-between">
                 <h2 className="text-sm font-medium text-gray-900">Specimen movement</h2>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-gray-500">
                   {today.specimensIn} received today · {today.specimensOut} sent today
                 </p>
               </div>

@@ -77,7 +77,7 @@ function Identity({
     return (
       <div>
         <p className="font-medium text-gray-900">{email || "Pre-approval"}</p>
-        <p className="text-xs text-gray-400">No account yet</p>
+        <p className="text-xs text-gray-500">No account yet</p>
       </div>
     );
   }
@@ -87,7 +87,7 @@ function Identity({
         {row.username || <span className="text-gray-500 italic">no username yet</span>}
       </p>
       {row.name && <p className="text-sm text-gray-600">{row.name}</p>}
-      <p className="text-xs text-gray-400">Sign-in account: {row.email || "unknown"}</p>
+      <p className="text-xs text-gray-500">Sign-in account: {row.email || "unknown"}</p>
     </div>
   );
 }
@@ -204,7 +204,7 @@ function UsernamePanel({
       <button onClick={onSave} className="text-sm text-gray-900 underline">
         Save username
       </button>
-      <span className="text-xs text-gray-400">Displayed instead of the email address.</span>
+      <span className="text-xs text-gray-500">Displayed instead of the email address.</span>
     </div>
   );
 }
@@ -616,7 +616,7 @@ export default function StaffPanel({
                     : "No clinic requested"}
                 </p>
                 {row.createdAt && (
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-gray-500">
                     Signed up {new Date(row.createdAt).toLocaleDateString()}
                   </p>
                 )}
@@ -643,7 +643,7 @@ export default function StaffPanel({
                 Reject
               </button>
             </div>
-            <p className="text-xs text-gray-400 mt-2">
+            <p className="text-xs text-gray-500 mt-2">
               Approve with a role. Shift Supervisor requires a shift. The owner role cannot be
               assigned.
             </p>

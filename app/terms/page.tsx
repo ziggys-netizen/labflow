@@ -103,7 +103,7 @@ function TermsGateContent() {
         </div>
         <p className="sr-only">{TERMS_DECLINE_MESSAGE}</p>
         {versionKnown ? (
-          <p className="font-mono text-[11px] uppercase text-lf-ink-3">
+          <p className="font-mono text-[12px] uppercase text-lf-ink-3">
             {termsRecordedCaption(documentVersion)}
           </p>
         ) : null}

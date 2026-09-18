@@ -303,7 +303,7 @@ function Metric({ label, value, hint }: { label: string; value: string; hint?: s
     <div className="border border-gray-200 rounded-lg p-4">
       <p className="text-sm text-gray-600">{label}</p>
       <p className="text-2xl font-semibold text-gray-900 mt-1">{value}</p>
-      {hint && <p className="text-xs text-gray-400 mt-1">{hint}</p>}
+      {hint && <p className="text-xs text-gray-500 mt-1">{hint}</p>}
     </div>
   );
 }
@@ -493,7 +493,7 @@ function DashboardContent() {
                 </p>
                 <p className="text-sm text-gray-500 mt-2">{stats.turnaroundCopy}</p>
                 {stats.turnaroundLegacy > 0 && (
-                  <p className="text-xs text-gray-400 mt-1">
+                  <p className="text-xs text-gray-500 mt-1">
                     Includes {stats.turnaroundLegacy} with a legacy single timestamp.
                   </p>
                 )}
@@ -546,7 +546,7 @@ function DashboardContent() {
         {canExportData(role) ? (
           <ExportReports />
         ) : (
-          <p className="text-xs text-gray-400 mt-8">
+          <p className="text-xs text-gray-500 mt-8">
             Excel export is not available for this role. Ask a clinic admin, lab manager, or the
             owner if a report is needed.
           </p>
@@ -564,7 +564,7 @@ function DashboardGate() {
         {canExportData(role) ? (
           <ExportReports />
         ) : (
-          <p className="text-[11px] text-lf-ink-3">
+          <p className="text-[12px] text-lf-ink-3">
             Excel export is not available for this role. Ask a clinic admin, lab manager, or the
             owner if a report is needed.
           </p>
