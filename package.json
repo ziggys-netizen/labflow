@@ -14,6 +14,8 @@
     "@e965/xlsx": "^0.20.3",
     "@google-cloud/firestore": "8.7.1",
     "@vercel/oidc": "^3.8.5",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "firebase": "^12.17.1",
     "firebase-admin": "^14.3.0",
     "google-auth-library": "^11.0.2",

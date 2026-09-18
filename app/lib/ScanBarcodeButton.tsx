@@ -7,9 +7,10 @@
  *   - a handheld USB or Bluetooth scanner, which types the Lab ID into the
  *     focused box and presses Enter. Nothing special is needed for it; the box
  *     takes focus when the panel opens.
- *   - the phone camera, through the browser's own BarcodeDetector. Where the
- *     browser has no such reader the panel says so plainly and the handheld
- *     and typed paths still work.
+ *   - the phone camera. Where the browser has its own reader (Chrome on
+ *     Android) that is used, because it costs no download. Everywhere else,
+ *     including Safari on iPhone, the page decodes the picture itself with
+ *     ZXing, pulled in only when someone asks for the camera.
  *
  * Deciding what a scan means lives in labIdScan.ts, where it is tested.
  */
@@ -53,12 +54,17 @@ export default function ScanBarcodeButton({
   const inputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
-  const loopRef = useRef<number | null>(null);
+  /** Stops whichever reader is running, native or ZXing. */
+  const readerStopRef = useRef<(() => void) | null>(null);
 
   const stopCamera = useCallback(() => {
-    if (loopRef.current !== null) {
-      window.clearInterval(loopRef.current);
-      loopRef.current = null;
+    if (readerStopRef.current) {
+      try {
+        readerStopRef.current();
+      } catch (err) {
+        console.error("Barcode reader would not stop cleanly", err);
+      }
+      readerStopRef.current = null;
     }
     const stream = streamRef.current;
     if (stream) {
@@ -116,63 +122,104 @@ export default function ScanBarcodeButton({
     [patients, router, stopCamera, close]
   );
 
-  async function startCamera() {
-    setCameraError("");
+  /** Chrome on Android and friends: the browser reads the symbol for us. */
+  async function startNativeReader(
+    stream: MediaStream,
+    video: HTMLVideoElement,
+    onHit: (text: string) => void
+  ): Promise<(() => void) | null> {
     const Reader = barcodeReaderConstructor();
-    if (!Reader) {
-      setCameraState("failed");
-      setCameraError(
-        "This browser cannot read a barcode with the camera. Use a handheld scanner, or type the Lab ID below. Chrome on Android can read it."
-      );
-      return;
-    }
-    if (!navigator.mediaDevices?.getUserMedia) {
-      setCameraState("failed");
-      setCameraError("This browser gives no access to a camera. Type the Lab ID below instead.");
-      return;
-    }
-
-    setCameraState("starting");
+    if (!Reader) return null;
     let reader: BarcodeReader;
     try {
-      reader = new Reader({ formats: ["code_128"] });
+      reader = new Reader({ formats: ["code_128", "code_39"] });
     } catch (err) {
-      console.error("BarcodeDetector rejected the Code 128 format", err);
+      console.error("BarcodeDetector rejected those formats", err);
       try {
         reader = new Reader();
       } catch (err2) {
         console.error("BarcodeDetector could not be created", err2);
-        setCameraState("failed");
-        setCameraError("This browser's barcode reader would not start. Type the Lab ID below instead.");
-        return;
+        return null;
       }
     }
-
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: { ideal: "environment" } },
-      });
-      streamRef.current = stream;
-      const video = videoRef.current;
-      if (!video) {
-        stopCamera();
-        return;
+    video.srcObject = stream;
+    await video.play();
+    const id = window.setInterval(async () => {
+      const current = videoRef.current;
+      if (!current || current.readyState < 2) return;
+      try {
+        const found = await reader.detect(current);
+        const hit = found.find((code) => code.rawValue?.trim());
+        if (hit) onHit(hit.rawValue);
+      } catch (err) {
+        console.error("Barcode read failed", err);
       }
-      video.srcObject = stream;
-      await video.play();
-      setCameraState("on");
+    }, 400);
+    return () => window.clearInterval(id);
+  }
 
-      loopRef.current = window.setInterval(async () => {
-        const current = videoRef.current;
-        if (!current || current.readyState < 2) return;
-        try {
-          const found = await reader.detect(current);
-          const hit = found.find((code) => code.rawValue?.trim());
-          if (hit) act(hit.rawValue);
-        } catch (err) {
+  /**
+   * Safari on iPhone has no barcode reader of its own, so the page decodes the
+   * camera picture itself. ZXing is imported here rather than at the top so it
+   * is fetched only when someone actually asks for the camera.
+   */
+  async function startOwnReader(
+    stream: MediaStream,
+    video: HTMLVideoElement,
+    onHit: (text: string) => void
+  ): Promise<(() => void) | null> {
+    try {
+      const [{ BrowserMultiFormatReader }, { BarcodeFormat, DecodeHintType }] = await Promise.all([
+        import("@zxing/browser"),
+        import("@zxing/library"),
+      ]);
+      const hints = new Map<number, unknown>();
+      hints.set(DecodeHintType.POSSIBLE_FORMATS, [BarcodeFormat.CODE_128, BarcodeFormat.CODE_39]);
+      hints.set(DecodeHintType.TRY_HARDER, true);
+      const reader = new BrowserMultiFormatReader(hints as never, {
+        delayBetweenScanAttempts: 200,
+      });
+      const controls = await reader.decodeFromStream(stream, video, (result, err) => {
+        const text = result?.getText();
+        if (text) {
+          onHit(text);
+          return;
+        }
+        // Not-found on a frame is the normal case while aiming, not an error.
+        if (err && err.name && err.name !== "NotFoundException") {
           console.error("Barcode read failed", err);
         }
-      }, 400);
+      });
+      return () => controls.stop();
+    } catch (err) {
+      console.error("The page's own barcode reader could not start", err);
+      return null;
+    }
+  }
+
+  async function startCamera() {
+    setCameraError("");
+    if (!navigator.mediaDevices?.getUserMedia) {
+      setCameraState("failed");
+      setCameraError(
+        "This browser gives the page no access to a camera. Use a handheld scanner, or type the Lab ID below."
+      );
+      return;
+    }
+    if (!window.isSecureContext) {
+      setCameraState("failed");
+      setCameraError(
+        "A camera only works on a secure (https) address. Use a handheld scanner, or type the Lab ID below."
+      );
+      return;
+    }
+
+    setCameraState("starting");
+    let stream: MediaStream;
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: "environment" } },
+      });
     } catch (err) {
       console.error("Camera could not be started", err);
       const name = err instanceof DOMException ? err.name : "";
@@ -180,10 +227,40 @@ export default function ScanBarcodeButton({
       setCameraState("failed");
       setCameraError(
         name === "NotAllowedError"
-          ? "The camera was not allowed. Allow camera access for this site in the browser, or type the Lab ID below."
+          ? "The camera was not allowed. Allow camera access for this site in the browser, then tap Use camera again."
           : name === "NotFoundError"
             ? "This device has no camera the browser can use. Use a handheld scanner, or type the Lab ID below."
             : "The camera could not be started. Use a handheld scanner, or type the Lab ID below."
+      );
+      return;
+    }
+
+    streamRef.current = stream;
+    const video = videoRef.current;
+    if (!video) {
+      stopCamera();
+      return;
+    }
+
+    try {
+      const stop =
+        (await startNativeReader(stream, video, act)) ?? (await startOwnReader(stream, video, act));
+      if (!stop) {
+        stopCamera();
+        setCameraState("failed");
+        setCameraError(
+          "The barcode reader could not be loaded. Check the connection and try again, or type the Lab ID below."
+        );
+        return;
+      }
+      readerStopRef.current = stop;
+      setCameraState("on");
+    } catch (err) {
+      console.error("The camera started but the reader did not", err);
+      stopCamera();
+      setCameraState("failed");
+      setCameraError(
+        "The camera started but the barcode reader did not. Use a handheld scanner, or type the Lab ID below."
       );
     }
   }
@@ -272,7 +349,7 @@ export default function ScanBarcodeButton({
               </div>
             </form>
 
-            <div className={cameraState === "on" ? "mt-4" : "sr-only"}>
+            <div className={cameraState === "on" || cameraState === "starting" ? "mt-4" : "sr-only"}>
               <video
                 ref={videoRef}
                 muted
@@ -281,7 +358,9 @@ export default function ScanBarcodeButton({
                 aria-label="Camera view for scanning a barcode"
               />
               <p className="mt-2 text-sm text-lf-ink-2">
-                Hold the container so the barcode fills the frame.
+                {cameraState === "starting"
+                  ? "Starting the camera..."
+                  : "Hold the container so the barcode fills the frame."}
               </p>
             </div>
 
