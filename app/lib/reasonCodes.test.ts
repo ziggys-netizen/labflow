@@ -47,7 +47,7 @@ describe("formatJustification", () => {
   it("keeps the code label and optional note, never a patient name requirement", () => {
     expect(formatJustification(SAMPLE_REJECTION_CODES, "clotted", "")).toBe("Clotted");
     expect(formatJustification(SAMPLE_REJECTION_CODES, "other", "tube cracked")).toBe(
-      "Other — tube cracked"
+      "Other: tube cracked"
     );
   });
 });

@@ -595,7 +595,7 @@ function ClinicProfileEditor({
           <section className="border border-gray-200 rounded-lg p-4 mb-6">
             <h2 className="font-medium text-gray-900 mb-2">Join code</h2>
             <p className="text-sm text-gray-700">
-              <span className="font-mono font-medium text-gray-900">{clinic.joinCode || "—"}</span>
+              <span className="font-mono font-medium text-gray-900">{clinic.joinCode || "Not set"}</span>
             </p>
             {owner && (
               <button

@@ -124,7 +124,7 @@ describe("amendReport", () => {
     expect(result.updates.lastAmendedByUid).toBe("u2");
     const parsed = parseMedicalReportVersions(result.updates.versions);
     expect(parsed).toHaveLength(2);
-    expect(parsed[1]?.reasonNote).toContain("Clinical update since finalizing");
+    expect(parsed[1]?.reasonNote).toContain("Clinical update since finalising");
   });
 });
 

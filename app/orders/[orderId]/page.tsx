@@ -906,7 +906,7 @@ function OrderDetailContent() {
           </span>
         </div>
         <p className="text-gray-600 mb-1">
-          {patientRecord?.name || "Patient"} — Lab ID: {order.patientLabId}
+          {patientRecord?.name || "Patient"} · Lab ID: {order.patientLabId}
         </p>
         {released && order.patientId && (
           <p className="mb-3">
@@ -945,14 +945,14 @@ function OrderDetailContent() {
         {order.reviewedBy && (
           <p className={`text-xs text-gray-400 ${order.status === "amended" ? "mb-1" : "mb-6"}`}>
             Released by {order.reviewedBy} at {new Date(order.reviewedAt!).toLocaleString()}
-            {order.reviewNotes ? ` — Note: ${order.reviewNotes}` : ""}
+            {order.reviewNotes ? `. Note: ${order.reviewNotes}` : ""}
           </p>
         )}
         {order.status === "amended" && order.lastAmendedAt && (
           <p className="text-xs text-amber-800 mb-6">
             Amended {new Date(order.lastAmendedAt).toLocaleString()}
             {order.lastAmendedBy ? ` by ${order.lastAmendedBy}` : ""}
-            {order.currentResultVersion ? ` — version ${order.currentResultVersion}` : ""}
+            {order.currentResultVersion ? ` (version ${order.currentResultVersion})` : ""}
           </p>
         )}
 
@@ -964,7 +964,7 @@ function OrderDetailContent() {
           </p>
           {collection.legacySingleCollection && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
-              Legacy single collection timestamp — applied to every specimen on this order. It is
+              Legacy single collection timestamp. It applies to every specimen on this order, and is
               not rewritten into per-specimen times until each specimen is recorded here.
             </p>
           )}
@@ -1110,7 +1110,7 @@ function OrderDetailContent() {
 
                 {isExpanded && !definition && (
                   <p className="text-sm text-gray-500 mt-3">
-                    Test definition not found in catalog — parameters unavailable.
+                    Test definition not found in the catalogue, so its parameters are unavailable.
                   </p>
                 )}
               </div>
@@ -1181,7 +1181,7 @@ function OrderDetailContent() {
           <p className="text-sm text-green-700 mt-6 font-medium">
             {order.status === "amended"
               ? "This report has been amended. Results are locked from further edits."
-              : "✓ Results approved and released — locked from further edits."}
+              : "✓ Results approved and released. They are now locked from further edits."}
           </p>
         )}
 
@@ -1205,7 +1205,7 @@ function OrderDetailContent() {
                 if (params.length === 0) {
                   return (
                     <p key={t.code} className="text-sm text-gray-700">
-                      {t.name}: {pendingAmendment.values[t.code] ? JSON.stringify(pendingAmendment.values[t.code]) : "—"}
+                      {t.name}: {pendingAmendment.values[t.code] ? JSON.stringify(pendingAmendment.values[t.code]) : "blank"}
                     </p>
                   );
                 }
@@ -1214,9 +1214,9 @@ function OrderDetailContent() {
                     <p className="text-sm font-medium text-gray-900">{t.name}</p>
                     {params.map((p) => (
                       <p key={p.name} className="text-sm text-gray-700">
-                        {p.name}: {pendingAmendment.values[t.code]?.[p.name] || "—"}
+                        {p.name}: {pendingAmendment.values[t.code]?.[p.name] || "blank"}
                         {order.results?.[t.code]?.[p.name] !== pendingAmendment.values[t.code]?.[p.name]
-                          ? ` (was ${order.results?.[t.code]?.[p.name] || "—"})`
+                          ? ` (was ${order.results?.[t.code]?.[p.name] || "blank"})`
                           : ""}
                       </p>
                     ))}
@@ -1349,7 +1349,7 @@ function OrderDetailContent() {
                 <div key={version.version} className="border border-gray-100 rounded-lg p-3">
                   <p className="text-sm font-medium text-gray-900">
                     Version {version.version}
-                    {version.version === 1 ? " — original release" : " — amendment"}
+                    {version.version === 1 ? ": original release" : ": amendment"}
                   </p>
                   <p className="text-xs text-gray-500 mb-2">
                     {version.version === 1
@@ -1364,8 +1364,8 @@ function OrderDetailContent() {
                     <p key={`${version.version}-${t.code}`} className="text-sm text-gray-700">
                       {t.name}:{" "}
                       {Object.entries(version.values[t.code] || {})
-                        .map(([name, value]) => `${name} ${value || "—"}`)
-                        .join(", ") || "—"}
+                        .map(([name, value]) => `${name} ${value || "blank"}`)
+                        .join(", ") || "No values"}
                     </p>
                   ))}
                 </div>

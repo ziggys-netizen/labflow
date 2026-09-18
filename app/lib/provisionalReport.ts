@@ -8,7 +8,7 @@ import { isReleasedResultStatus } from "./resultAmendment";
 
 export const PROVISIONAL_HEADING = "PROVISIONAL REPORT";
 export const PROVISIONAL_NOTICE =
-  "Provisional — not yet confirmed to the laboratory record. A final report will follow.";
+  "Provisional: not yet confirmed in the laboratory record. A final report will follow.";
 
 export const PRINT_DISCLOSURE_ACTION = "disclosure.print" as const;
 

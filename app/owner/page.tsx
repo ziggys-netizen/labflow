@@ -185,7 +185,7 @@ function OwnerContent() {
       } catch (seedErr) {
         console.error(seedErr);
         setStatus(
-          `Clinic created. Join code: ${joinCode}. Catalogue seed failed — use “Seed empty clinic catalogues” below to retry.`
+          `Clinic created. Join code: ${joinCode}. Catalogue seed failed. Use “Seed empty clinic catalogues” below to try again.`
         );
         await loadClinics();
         return;

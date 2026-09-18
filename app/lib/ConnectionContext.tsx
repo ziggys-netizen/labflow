@@ -223,7 +223,7 @@ export function SyncStatus() {
                 onClick={() => setPanelOpen(true)}
                 className="underline-offset-2 hover:underline text-left"
               >
-                Offline — {changeLabel}
+                Offline: {changeLabel}
               </button>
             )}
           </div>

@@ -14,7 +14,7 @@ describe("PIN format", () => {
     expect(isPinFormat("123456")).toBe(true);
     expect(isPinFormat("123")).toBe(false);
     expect(isPinFormat("12ab")).toBe(false);
-    expect(pinFormatError("12")).toBe("The PIN must be 4–6 digits.");
+    expect(pinFormatError("12")).toBe("The PIN must be 4 to 6 digits.");
   });
 });
 

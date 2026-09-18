@@ -43,7 +43,7 @@ function ClinicAdminContent() {
               >
                 Clinic profile
               </Link>
-              <span className="text-gray-500"> — name, address, retention, join code, rostering</span>
+              <span className="text-gray-500">: name, address, retention, join code and rostering</span>
             </li>
             <li>
               <Link
@@ -52,7 +52,7 @@ function ClinicAdminContent() {
               >
                 Staff management
               </Link>
-              <span className="text-gray-500"> — roles, approvals, and pre-approvals</span>
+              <span className="text-gray-500">: roles, approvals and pre-approvals</span>
             </li>
             <li>
               <Link
@@ -61,7 +61,7 @@ function ClinicAdminContent() {
               >
                 Roster
               </Link>
-              <span className="text-gray-500"> — roster entries and exceptions</span>
+              <span className="text-gray-500">: roster entries and exceptions</span>
             </li>
           </ul>
         )}

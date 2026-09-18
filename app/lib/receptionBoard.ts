@@ -95,7 +95,7 @@ export function buildTodaysRegistrations(
     .map((patient) => ({
       id: `reg:${patient.id}`,
       kind: "registered_today" as const,
-      labId: patient.labId || "—",
+      labId: patient.labId || "No Lab ID",
       title: patientDisplayName(patient),
       detail: "Registered today",
       // A viewer who can order tests (cashier) goes straight to ordering for
@@ -135,7 +135,7 @@ export function buildAwaitingCollection(
     const labId =
       (typeof order.patientLabId === "string" && order.patientLabId) ||
       patient?.labId ||
-      "—";
+      "No Lab ID";
     const tests = order.tests
       .map((test: OrderTestRef) => test.name || test.code)
       .filter(Boolean)

@@ -56,7 +56,7 @@ function QueueTestLabel({
       </span>
     );
   }
-  return <>{fallback || "—"}</>;
+  return <>{fallback || "Not recorded"}</>;
 }
 
 export function PatientListTableHeader({ mode }: { mode: PatientListRowMode }) {
@@ -115,10 +115,10 @@ export function PatientListMobileCard({
             <span className="text-sm text-lf-ink-2">
               <QueueTestLabel items={row.testItems} fallback={row.testLabel} />
             </span>
-            <span className="lf-num text-sm text-lf-ink-2">{row.timeInState || "—"}</span>
+            <span className="lf-num text-sm text-lf-ink-2">{row.timeInState || "Not recorded"}</span>
           </>
         ) : (
-          <span className="text-sm text-lf-ink-2">{row.activity || "—"}</span>
+          <span className="text-sm text-lf-ink-2">{row.activity || "No activity yet"}</span>
         )}
         {row.chip ? (
           <OperationalChip
@@ -172,11 +172,11 @@ export function PatientListTableRow({
             <QueueTestLabel items={row.testItems} fallback={row.testLabel} />
           </td>
           <td className="lf-num whitespace-nowrap py-2 pr-3 align-middle text-lf-ink-2">
-            {row.timeInState || "—"}
+            {row.timeInState || "Not recorded"}
           </td>
         </>
       ) : (
-        <td className="py-2 pr-3 align-middle text-lf-ink-2">{row.activity || "—"}</td>
+        <td className="py-2 pr-3 align-middle text-lf-ink-2">{row.activity || "No activity yet"}</td>
       )}
       <td className="py-2 pr-3 align-middle">
         {row.chip ? (

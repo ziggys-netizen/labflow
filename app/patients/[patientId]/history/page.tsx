@@ -44,6 +44,7 @@ import { parameterFlag, parseAgeYears } from "../../../lib/resultFlag";
 import { patientDisplayName } from "../../../lib/patientDisplay";
 import { formatSexAge } from "../../../lib/patientList";
 import { formatHeaderName } from "../../../lib/headerIdentity";
+import { unitLabel } from "../../../lib/resultModel";
 import {
   CUMULATIVE_ALIGNMENT_NOTE,
   HISTORY_AMENDMENT_FOOTNOTE_HEADING,
@@ -145,7 +146,7 @@ function HistoryPrintChrome({
   of: number;
   provisional: boolean;
 }) {
-  const name = patientDisplayName(patient) || patient.name || "—";
+  const name = patientDisplayName(patient) || patient.name || "Name not recorded";
   return (
     <header className="border-b border-gray-300 pb-3 mb-4">
       {provisional && (
@@ -157,7 +158,7 @@ function HistoryPrintChrome({
       <p className="text-sm font-semibold text-gray-900">{clinic?.name || "Clinic"}</p>
       {clinic?.address && <p className="text-xs text-gray-600">{clinic.address}</p>}
       <p className="text-xs text-gray-700 mt-2">
-        {name} · Lab ID {patient.labId || "—"} · {sexAge}
+        {name} · Lab ID {patient.labId || "not recorded"} · {sexAge}
       </p>
       <p className="text-xs text-gray-600">Date range {dateRange}</p>
       <p className="text-xs text-gray-600">
@@ -273,7 +274,7 @@ function PatientHistoryContent() {
   const cumulativeColumns = useMemo(() => historyCumulativeColumns(orders), [orders]);
   const cumulativeRows = useMemo(() => historyCumulativeRows(orders, catalog), [orders, catalog]);
   const unsynced = historyHasUnsynced(orders);
-  const sexAge = patient ? formatSexAge(patient) : "—";
+  const sexAge = patient ? formatSexAge(patient) : "Not recorded";
   const displayName = patientDisplayName(patient) || patient?.name || "Patient";
   const flagCtx = {
     sex: patient?.sex,
@@ -428,7 +429,7 @@ function PatientHistoryContent() {
     paginateByWeight(printCumRows, () => 1, HISTORY_CUMULATIVE_ROWS_PER_PAGE)
   );
   const printCumFootnotes = printJob ? historyAmendmentFootnotes(printJob.orders, catalog) : [];
-  const printRange = printJob ? historyDateRangeLabel(printJob.orders) : "—";
+  const printRange = printJob ? historyDateRangeLabel(printJob.orders) : "No dates";
   const printProvisional = printJob
     ? printJob.orders.some((order) =>
         isProvisionalPrint({
@@ -508,7 +509,7 @@ function PatientHistoryContent() {
           </Link>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="flex min-w-0 flex-col gap-2">
-              <p className="lf-num text-sm text-lf-ink-2">{patient.labId || "—"}</p>
+              <p className="lf-num text-sm text-lf-ink-2">{patient.labId || "No Lab ID"}</p>
               <h1 className="text-2xl font-semibold text-lf-ink">History</h1>
               <p className="text-sm text-lf-ink-2">
                 {displayName} · {sexAge}
@@ -639,15 +640,15 @@ function PatientHistoryContent() {
                                             className="border-b border-lf-line"
                                           >
                                             <td className="py-1 pr-3 text-lf-ink">
-                                              {param.testName} — {param.parameter}
+                                              {param.testName}: {param.parameter}
                                             </td>
                                             <td className="py-1 pr-3 text-lf-ink">
                                               <span className="inline-flex items-baseline gap-1">
-                                                <span>{param.value || "—"}</span>
+                                                <span>{param.value || "No result"}</span>
                                                 {flag ? <ClinicalFlagLetter flag={flag} /> : null}
                                               </span>
                                             </td>
-                                            <td className="py-1 text-lf-ink-2">{param.unit}</td>
+                                            <td className="py-1 text-lf-ink-2">{unitLabel(param.unit)}</td>
                                           </tr>
                                         );
                                       })}
@@ -682,7 +683,7 @@ function PatientHistoryContent() {
                         {cumulativeRows.map((row) => (
                           <tr key={row.key} className="border-b border-lf-line">
                             <td className="py-2 pr-3 text-lf-ink">{row.label}</td>
-                            <td className="py-2 pr-3 text-lf-ink-2">{row.unit}</td>
+                            <td className="py-2 pr-3 text-lf-ink-2">{unitLabel(row.unit)}</td>
                             {cumulativeColumns.map((col) => {
                               const cell = row.values[col.orderId];
                               const definition =
@@ -696,14 +697,14 @@ function PatientHistoryContent() {
                                 <td key={col.orderId} className="lf-num py-2 pr-3 text-lf-ink">
                                   {cell ? (
                                     <span className="inline-flex items-baseline gap-1">
-                                      <span>{cell.value || "—"}</span>
+                                      <span>{cell.value || "No result"}</span>
                                       {flag ? <ClinicalFlagLetter flag={flag} /> : null}
                                       {cell.amended ? (
                                         <span className="text-[10px] uppercase text-lf-warn">amended</span>
                                       ) : null}
                                     </span>
                                   ) : (
-                                    "—"
+                                    "No result"
                                   )}
                                 </td>
                               );
@@ -806,13 +807,13 @@ function PatientHistoryContent() {
                                 return (
                                   <tr key={`${visit.orderId}-${param.testCode}-${param.parameter}`}>
                                     <td className="py-0.5 pr-3 text-gray-900">
-                                      {param.testName} — {param.parameter}
+                                      {param.testName}: {param.parameter}
                                     </td>
                                     <td className="py-0.5 pr-3 text-gray-900">
-                                      {param.value || "—"}
+                                      {param.value || "No result"}
                                       {flag ? ` ${flag}` : ""}
                                     </td>
-                                    <td className="py-0.5 text-gray-600">{param.unit}</td>
+                                    <td className="py-0.5 text-gray-600">{unitLabel(param.unit)}</td>
                                   </tr>
                                 );
                               })}
@@ -825,7 +826,7 @@ function PatientHistoryContent() {
                   <footer className="mt-6 border-t border-gray-300 pt-2 text-[10px] text-gray-500">
                     {clinic?.name || "Clinic"}
                     {clinic?.address ? ` · ${clinic.address}` : ""} · {displayName} · Lab ID{" "}
-                    {patient.labId || "—"} · {sexAge} · {printRange} · Printed {printJob.printedAt} by{" "}
+                    {patient.labId || "No Lab ID"} · {sexAge} · {printRange} · Printed {printJob.printedAt} by{" "}
                     {printedBy} · {formatHistoryPageLine(sheet.page, sheet.of)}
                   </footer>
                 </section>
@@ -859,7 +860,7 @@ function PatientHistoryContent() {
                       {sheet.items.map((row) => (
                         <tr key={row.key} className="border-b border-gray-100">
                           <td className="py-1 pr-2">{row.label}</td>
-                          <td className="py-1 pr-2">{row.unit}</td>
+                          <td className="py-1 pr-2">{unitLabel(row.unit)}</td>
                           {printCumColumns.map((col) => {
                             const cell = row.values[col.orderId];
                             const definition =
@@ -871,7 +872,7 @@ function PatientHistoryContent() {
                               : null;
                             return (
                               <td key={col.orderId} className="py-1 pr-2">
-                                {cell ? `${cell.value || "—"}${flag ? ` ${flag}` : ""}${cell.amended ? " *" : ""}` : "—"}
+                                {cell ? `${cell.value || "No result"}${flag ? ` ${flag}` : ""}${cell.amended ? " *" : ""}` : "No result"}
                               </td>
                             );
                           })}
@@ -890,7 +891,7 @@ function PatientHistoryContent() {
                   <footer className="mt-6 border-t border-gray-300 pt-2 text-[10px] text-gray-500">
                     {clinic?.name || "Clinic"}
                     {clinic?.address ? ` · ${clinic.address}` : ""} · {displayName} · Lab ID{" "}
-                    {patient.labId || "—"} · {sexAge} · {printRange} · Printed {printJob.printedAt} by{" "}
+                    {patient.labId || "No Lab ID"} · {sexAge} · {printRange} · Printed {printJob.printedAt} by{" "}
                     {printedBy} · {formatHistoryPageLine(sheet.page, sheet.of)}
                   </footer>
                 </section>

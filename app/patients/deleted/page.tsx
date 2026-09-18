@@ -22,7 +22,7 @@ interface DeletedPatient {
 }
 
 function formatWhen(iso: string) {
-  if (!iso) return "—";
+  if (!iso) return "Not recorded";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
@@ -49,12 +49,12 @@ function DeletedPatientsContent() {
               return {
                 id: docSnap.id,
                 clinicId: data.clinicId || "",
-                labId: data.labId || "—",
-                name: data.name || "—",
+                labId: data.labId || "No Lab ID",
+                name: data.name || "Name not recorded",
                 deletedAt: data.deletedAt || "",
-                deletedBy: data.deletedBy || "—",
-                deletedByRole: data.deletedByRole || "—",
-                deletionReason: data.deletionReason || "—",
+                deletedBy: data.deletedBy || "Unknown",
+                deletedByRole: data.deletedByRole || "Unknown",
+                deletionReason: data.deletionReason || "No reason given",
               };
             })
         );
@@ -147,7 +147,7 @@ function DeletedPatientsContent() {
                       className="py-2 pr-4 text-gray-600 whitespace-nowrap font-mono text-xs"
                       title={p.clinicId}
                     >
-                      {p.clinicId || "—"}
+                      {p.clinicId || "Not recorded"}
                     </td>
                     <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">{p.labId}</td>
                     <td className="py-2 pr-4 text-gray-900 whitespace-nowrap">{p.name}</td>

@@ -104,7 +104,7 @@ export function reorderQuantityText(row: ReorderAlertRow): string {
  */
 export function reorderLineText(row: ReorderAlertRow): string {
   const state = row.kind === "zero" ? "OUT OF STOCK" : "LOW";
-  const parts = [`${state} — ${row.name}`, row.department || "Bench", reorderQuantityText(row)];
+  const parts = [`${state}: ${row.name}`, row.department || "Bench", reorderQuantityText(row)];
   return parts.join(" · ");
 }
 
@@ -119,7 +119,7 @@ export function sortReorderRows(rows: ReorderAlertRow[]): ReorderAlertRow[] {
 export function reorderDigestSubject(clinicName: string, rows: ReorderAlertRow[]): string {
   const outCount = rows.filter((row) => row.kind === "zero").length;
   const lead = outCount > 0 ? `${outCount} out of stock` : `${rows.length} low`;
-  return `LabFlow stock alert — ${lead} · ${clinicName}`;
+  return `LabFlow stock alert: ${lead} · ${clinicName}`;
 }
 
 function escapeHtml(value: string): string {
@@ -153,7 +153,7 @@ export function buildReorderDigest(
 
   const textParts: string[] = [`Stock alert for ${clinicName}.`, ""];
   if (out.length > 0) {
-    textParts.push("OUT OF STOCK — reorder now:");
+    textParts.push("OUT OF STOCK. Reorder now:");
     for (const row of out) textParts.push(`  ${reorderLineText(row)}`);
     textParts.push(
       "  No usable stock remains for the items above. Earlier low-stock messages were sent as each one fell.",
@@ -161,7 +161,7 @@ export function buildReorderDigest(
     );
   }
   if (low.length > 0) {
-    textParts.push("LOW — at or below minimum, start the reorder process:");
+    textParts.push("LOW: at or below the minimum. Start the reorder process:");
     for (const row of low) textParts.push(`  ${reorderLineText(row)}`);
     textParts.push("");
   }
@@ -174,7 +174,7 @@ export function buildReorderDigest(
   ];
   if (out.length > 0) {
     htmlParts.push(
-      '<p style="color:#b91c1c;font-weight:700">OUT OF STOCK — reorder now:</p>',
+      '<p style="color:#b91c1c;font-weight:700">OUT OF STOCK. Reorder now:</p>',
       '<ul style="color:#b91c1c;font-weight:700">',
       ...out.map((row) => `<li>${escapeHtml(reorderLineText(row))}</li>`),
       "</ul>",
@@ -183,7 +183,7 @@ export function buildReorderDigest(
   }
   if (low.length > 0) {
     htmlParts.push(
-      "<p><strong>LOW — at or below minimum, start the reorder process:</strong></p>",
+      "<p><strong>LOW: at or below the minimum. Start the reorder process:</strong></p>",
       "<ul>",
       ...low.map((row) => `<li>${escapeHtml(reorderLineText(row))}</li>`),
       "</ul>"

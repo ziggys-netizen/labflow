@@ -20,7 +20,7 @@ export const USERNAME_MIN_LENGTH = 3;
 export const USERNAME_MAX_LENGTH = 20;
 
 export const USERNAME_RULES =
-  "3–20 characters, lowercase letters, numbers, dots and underscores. Must start with a letter and cannot end with, or repeat, a dot or underscore.";
+  "3 to 20 characters: lowercase letters, numbers, dots and underscores. Must start with a letter and cannot end with, or repeat, a dot or underscore.";
 
 /** Letter first, then alphanumeric groups joined by single dots or underscores. */
 const USERNAME_PATTERN = /^[a-z][a-z0-9]*(?:[._][a-z0-9]+)*$/;

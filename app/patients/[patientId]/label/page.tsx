@@ -250,7 +250,7 @@ function LabelContent() {
           </Link>
           <h1 className="text-2xl font-semibold text-lf-ink">Specimen label</h1>
           <p className="text-sm text-lf-ink-2">
-            {size.widthMm}×{size.heightMm}mm. Choose the label printer in the print dialog. Change the
+            {size.widthMm}×{size.heightMm}mm. Choose the label printer in the print window. Change the
             size in Clinic profile if it does not match your stock.
           </p>
           <button

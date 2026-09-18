@@ -229,8 +229,8 @@ export function formatDashboardQueueWait(iso: string | null | undefined, nowMs: 
 }
 
 export function formatDashboardQueueTestLabel(tests: OrderTestRef[]): string {
-  if (!tests.length) return "—";
-  return tests.map((test) => test.name || test.code || "—").filter(Boolean).join(", ");
+  if (!tests.length) return "No tests";
+  return tests.map((test) => test.name || test.code || "Unnamed test").filter(Boolean).join(", ");
 }
 
 export type DashboardQueueTestItem = {
@@ -243,9 +243,9 @@ export function formatDashboardQueueTestItems(
   tests: OrderTestRef[],
   catalog: { code: string; specimenCap?: unknown }[] = []
 ): DashboardQueueTestItem[] {
-  if (!tests.length) return [{ label: "—", cap: null }];
+  if (!tests.length) return [{ label: "No tests", cap: null }];
   return tests.map((test) => ({
-    label: test.name || test.code || "—",
+    label: test.name || test.code || "Unnamed test",
     cap: resolveSpecimenCap(
       (test as { specimenCap?: unknown }).specimenCap,
       test.code,

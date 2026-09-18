@@ -125,9 +125,9 @@ function parseReport(id: string, data: Record<string, unknown>, notYetSynced: bo
 }
 
 function formatDateTime(iso: string | null | undefined): string {
-  if (!iso) return "—";
+  if (!iso) return "Not recorded";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? "Not recorded" : d.toLocaleString();
 }
 
 function Textarea({
@@ -310,7 +310,7 @@ function ReportContentContent() {
   function requestFinalize() {
     if (!selected || !user) return;
     if (!reportContentComplete(content)) {
-      setStatus("Fill in chief complaint, findings, assessment, and plan before finalizing.");
+      setStatus("Fill in chief complaint, findings, assessment, and plan before finalising.");
       return;
     }
     setPinAction(() => () => void commitFinalize());
@@ -328,7 +328,7 @@ function ReportContentContent() {
       doc(db, "medicalReports", selected.id),
       result.updates,
       { merge: true },
-      writeMeta(`Finalized medical report for ${patient?.labId ?? "patient"}`, { status: "final" })
+      writeMeta(`Finalised medical report for ${patient?.labId ?? "patient"}`, { status: "final" })
     );
     const updated: MedicalReportRecord = {
       ...selected,
@@ -339,7 +339,7 @@ function ReportContentContent() {
     setReports((prev) => prev.map((r) => (r.id === selected.id ? updated : r)));
     selectReport(updated);
     audit("medicalReport.finalized", selected.id, { version: 1 });
-    setStatus("Report finalized.");
+    setStatus("Report finalised.");
     setTimeout(() => setStatus(""), 2500);
   }
 
@@ -469,7 +469,7 @@ function ReportContentContent() {
             Back to patient
           </Link>
           <div className="flex flex-col gap-2">
-            <p className="lf-num text-sm text-lf-ink-2">{patient.labId || "—"}</p>
+            <p className="lf-num text-sm text-lf-ink-2">{patient.labId || "No Lab ID"}</p>
             <h1 className="text-2xl font-semibold text-lf-ink">Medical reports</h1>
             <p className="text-sm text-lf-ink-2">
               {displayName} · {sexAge}
@@ -513,7 +513,7 @@ function ReportContentContent() {
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm text-lf-ink-2">
                     {selected.status === "final"
-                      ? `Finalized ${formatDateTime(selected.finalizedAt)} by ${formatHistoryReleaser(selected.finalizedBy)}`
+                      ? `Finalised ${formatDateTime(selected.finalizedAt)} by ${formatHistoryReleaser(selected.finalizedBy)}`
                       : `Draft started ${formatDateTime(selected.createdAt)} by ${formatHistoryReleaser(selected.createdBy)}`}
                   </p>
                   {selected.status === "final" && (
@@ -563,7 +563,7 @@ function ReportContentContent() {
                             onClick={requestFinalize}
                             className="lf-touch inline-flex items-center justify-center rounded-lf-md bg-lf-accent px-4 text-sm font-medium text-lf-on-accent"
                           >
-                            Finalize
+                            Finalise
                           </button>
                         </>
                       ) : (
@@ -598,7 +598,7 @@ function ReportContentContent() {
                         <p className="text-[10px] uppercase tracking-[0.06em] text-lf-ink-3">
                           {MEDICAL_REPORT_FIELD_LABELS[field]}
                         </p>
-                        <p className="whitespace-pre-wrap text-sm text-lf-ink">{selected.content[field] || "—"}</p>
+                        <p className="whitespace-pre-wrap text-sm text-lf-ink">{selected.content[field] || "Not recorded"}</p>
                       </div>
                     ))}
                     <button
@@ -624,11 +624,11 @@ function ReportContentContent() {
             <p className="text-sm font-semibold text-gray-900">{clinic?.name || "Clinic"}</p>
             {clinic?.address && <p className="text-xs text-gray-600">{clinic.address}</p>}
             <p className="text-xs text-gray-700 mt-2">
-              {displayName} · Lab ID {patient.labId || "—"} · {sexAge}
+              {displayName} · Lab ID {patient.labId || "not recorded"} · {sexAge}
             </p>
             <p className="text-xs text-gray-600">
               {printing.status === "final"
-                ? `Finalized ${formatDateTime(printing.finalizedAt)} by ${formatHistoryReleaser(printing.finalizedBy)} · v${printing.currentVersion}`
+                ? `Finalised ${formatDateTime(printing.finalizedAt)} by ${formatHistoryReleaser(printing.finalizedBy)} · v${printing.currentVersion}`
                 : ""}
             </p>
           </header>
@@ -639,7 +639,7 @@ function ReportContentContent() {
                 <p className="text-[10px] uppercase tracking-wide text-gray-500">
                   {MEDICAL_REPORT_FIELD_LABELS[field]}
                 </p>
-                <p className="whitespace-pre-wrap text-sm text-gray-900">{printing.content[field] || "—"}</p>
+                <p className="whitespace-pre-wrap text-sm text-gray-900">{printing.content[field] || "Not recorded"}</p>
               </div>
             ))}
           </div>
@@ -650,14 +650,14 @@ function ReportContentContent() {
                 .filter((v) => v.version > 1)
                 .map((v) => (
                   <p key={v.version} className="text-[10px] text-gray-600">
-                    v{v.version} — {formatDateTime(v.at)} by {formatHistoryReleaser(v.authorEmail)}
-                    {v.reasonNote ? ` — ${v.reasonNote}` : ""}
+                    Version {v.version}, {formatDateTime(v.at)}, by {formatHistoryReleaser(v.authorEmail)}
+                    {v.reasonNote ? `. Reason: ${v.reasonNote}` : ""}
                   </p>
                 ))}
             </div>
           )}
           <footer className="mt-8 pt-2 border-t border-gray-300 text-[10px] text-gray-500">
-            {clinic?.name || "Clinic"} · {displayName} · Lab ID {patient.labId || "—"} · Printed{" "}
+            {clinic?.name || "Clinic"} · {displayName} · Lab ID {patient.labId || "not recorded"} · Printed{" "}
             {new Date().toLocaleString()} by {formatHistoryReleaser(writer.email)}
           </footer>
         </div>

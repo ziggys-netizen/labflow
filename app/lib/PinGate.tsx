@@ -168,7 +168,7 @@ export default function PinGate({ children }: { children: ReactNode }) {
             </label>
           )}
           <label className="block text-sm text-gray-700">
-            {needsSetup ? "New 4–6 digit PIN" : "PIN"}
+            {needsSetup ? "New PIN (4 to 6 digits)" : "PIN"}
             <input
               type="password"
               inputMode="numeric"

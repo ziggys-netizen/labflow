@@ -836,7 +836,7 @@ function CatalogueContent() {
                     }
                     return (
                       <p className="mt-1 text-xs text-gray-400">
-                        No SOP on file (existing test — still orderable)
+                        No SOP on file (existing test, still orderable)
                       </p>
                     );
                   })()}
@@ -856,7 +856,7 @@ function CatalogueContent() {
                     defaultValue={parseTatMinutes(test.tatMinutes) ?? ""}
                     onBlur={(e) => void saveTatMinutes(test.code, e.target.value)}
                     onChange={(e) => updateTatMinutes(test.code, e.target.value)}
-                    placeholder="—"
+                    placeholder="Minutes"
                     className="w-20 border border-gray-300 rounded px-2 py-1 text-sm"
                   />
                   {!isTestReviewed(test) && (

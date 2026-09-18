@@ -301,7 +301,7 @@ function InventoryContent() {
   );
 
   function clinicLabel(id: string | null) {
-    if (!id) return "—";
+    if (!id) return "No clinic";
     return clinicNames[id] || id;
   }
 
@@ -346,7 +346,7 @@ function InventoryContent() {
           </div>
         </div>
         <p className="text-gray-600 mb-8">
-          {owner ? "All clinics" : "Your clinic"} — what came in, what went out, and what remains.
+          {owner ? "All clinics" : "Your clinic"}: what came in, what went out and what remains.
           Balances are calculated from the movement ledger, never typed in.
         </p>
 
@@ -456,7 +456,7 @@ function InventoryContent() {
                           {row.item?.name ?? row.batch.itemName}{" "}
                           <span className="text-gray-400">lot {row.batch.lotNumber}</span>{" "}
                           <span className="text-red-700">
-                            expired {row.batch.expiryDate} — quarantine and write off
+                            expired {row.batch.expiryDate}. Quarantine and write off.
                           </span>
                         </li>
                       ))}
@@ -596,13 +596,13 @@ function InventoryContent() {
                             <Td>
                               {m.itemName} <NotYetSynced show={m.notYetSynced} />
                             </Td>
-                            <Td>{m.supplier || "—"}</Td>
-                            <Td>{m.lotNumber || "—"}</Td>
+                            <Td>{m.supplier || "Not recorded"}</Td>
+                            <Td>{m.lotNumber || "Not recorded"}</Td>
                             <Td>{m.packingUnit}</Td>
                             <Td>
                               {formatQuantity(m.quantity, m.packingUnit, m.unitsPerPack, m.baseUnit)}
                             </Td>
-                            <Td>{m.deliveryNote || "—"}</Td>
+                            <Td>{m.deliveryNote || "Not recorded"}</Td>
                             <Td>{actorLabel(m.actor)}</Td>
                             <Td>{when.date}</Td>
                             <Td>{when.time}</Td>
@@ -651,14 +651,14 @@ function InventoryContent() {
                               )}
                               <NotYetSynced show={m.notYetSynced} />
                             </Td>
-                            <Td>{m.lotNumber || "—"}</Td>
+                            <Td>{m.lotNumber || "Not recorded"}</Td>
                             <Td>
                               {formatQuantity(m.quantity, m.packingUnit, m.unitsPerPack, m.baseUnit)}
                             </Td>
                             <Td>{m.packingUnit}</Td>
-                            <Td>{m.issuedTo || m.destination || "—"}</Td>
-                            <Td>{m.department || "—"}</Td>
-                            <Td>{m.purpose || m.reason || "—"}</Td>
+                            <Td>{m.issuedTo || m.destination || "Not recorded"}</Td>
+                            <Td>{m.department || "Not recorded"}</Td>
+                            <Td>{m.purpose || m.reason || "Not recorded"}</Td>
                             <Td>{actorLabel(m.actor)}</Td>
                             <Td>{when.date}</Td>
                             <Td>{when.time}</Td>
@@ -709,12 +709,12 @@ function InventoryContent() {
                             {row.item?.name ?? row.batch.itemName}{" "}
                             <NotYetSynced show={row.batch.notYetSynced || row.item?.notYetSynced} />
                           </Td>
-                          <Td>{row.item?.category ?? "—"}</Td>
-                          <Td>{row.batch.lotNumber || "—"}</Td>
+                          <Td>{row.item?.category ?? "Not recorded"}</Td>
+                          <Td>{row.batch.lotNumber || "Not recorded"}</Td>
                           <Td>
                             {row.item
                               ? `${row.item.packingUnit} of ${row.item.unitsPerPack} ${row.item.baseUnit}`
-                              : "—"}
+                              : "Not recorded"}
                           </Td>
                           <Td>
                             {row.item
@@ -727,7 +727,7 @@ function InventoryContent() {
                               : row.onHand}
                           </Td>
                           <Td>
-                            {row.batch.expiryDate ?? "—"}
+                            {row.batch.expiryDate ?? "No expiry date"}
                             {row.days !== null && row.days >= 0 && row.days <= 90 && (
                               <span className="text-xs text-gray-400"> · {row.days} days</span>
                             )}
@@ -740,8 +740,8 @@ function InventoryContent() {
                                 : "unopened"}
                             </span>
                           </Td>
-                          <Td>{row.batch.supplier || row.item?.supplier || "—"}</Td>
-                          <Td>{row.batch.location || "—"}</Td>
+                          <Td>{row.batch.supplier || row.item?.supplier || "Not recorded"}</Td>
+                          <Td>{row.batch.location || "Not recorded"}</Td>
                           <Td>
                             <StateBadge state={row.state} />
                             {row.balance.outOfServiceAt && row.onHand <= 0 && (
@@ -803,11 +803,11 @@ function InventoryContent() {
                                 className="lf-num block max-w-[12rem] truncate"
                                 title={s.orderReference || undefined}
                               >
-                                {s.orderReference || "—"}
+                                {s.orderReference || "Not recorded"}
                               </span>
                             </Td>
-                            <Td>{s.department || "—"}</Td>
-                            <Td>{s.destination || "—"}</Td>
+                            <Td>{s.department || "Not recorded"}</Td>
+                            <Td>{s.destination || "Not recorded"}</Td>
                             <Td>{s.condition}</Td>
                             <Td>
                               <span className="whitespace-nowrap">

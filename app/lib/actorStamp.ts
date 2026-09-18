@@ -40,10 +40,10 @@ export function actorLabel(
   actor: ActorStamp | string | null | undefined,
   directory?: IdentityDirectory
 ): string {
-  if (!actor) return "—";
+  if (!actor) return "Unknown";
   if (typeof actor === "string") {
     const trimmed = actor.trim();
-    if (!trimmed) return "—";
+    if (!trimmed) return "Unknown";
     return directory?.byEmail[trimmed.toLowerCase()] ?? directory?.byUid[trimmed] ?? trimmed;
   }
   if (actor.username) return actor.username;

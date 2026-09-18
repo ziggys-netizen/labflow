@@ -132,7 +132,7 @@ describe("queue ordering and stale wait", () => {
 
 describe("formatHours", () => {
   it("does not treat a missing timestamp as zero", () => {
-    expect(formatHours(hoursSince(null, NOW))).toBe("—");
+    expect(formatHours(hoursSince(null, NOW))).toBe("Not recorded");
     expect(formatHours(2.4)).toBe("2.4 h");
     expect(formatHours(26.2)).toBe("26 h");
   });

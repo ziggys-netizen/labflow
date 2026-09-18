@@ -244,10 +244,10 @@ function ServicesContent() {
           </Link>
         </div>
         <p className="text-gray-600 mb-6">
-          Non-lab items a cashier can bill — consultation, a dressing, a procedure fee. Not a lab
+          Non-lab items a cashier can bill, such as a consultation, a dressing or a procedure fee. Not a lab
           test: nothing here creates an order or goes through sample collection or results.
           Examples clinics commonly bill this way: Consultation, Wound dressing, Minor procedure,
-          Vaccination, Referral letter — add only what your clinic actually charges for.
+          Vaccination, Referral letter. Add only what your clinic actually charges for.
         </p>
         {needsClinic && <ActingClinicPrompt />}
 
@@ -310,7 +310,7 @@ function ServicesContent() {
                 <p className="text-xs text-gray-500 lf-num">{service.code}</p>
                 {!serviceIsReviewed(service) && (
                   <span className="mt-1 inline-block rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">
-                    Not reviewed{service.addedByRole ? ` — added by ${service.addedByRole}` : ""}
+                    Not reviewed{service.addedByRole ? ` (added by ${service.addedByRole})` : ""}
                   </span>
                 )}
               </div>

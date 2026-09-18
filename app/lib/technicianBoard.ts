@@ -85,7 +85,7 @@ export function formatBoardMetaLine(input: {
 }): string {
   const parts = [formatBoardDay(input.now)];
   if (input.shift) {
-    parts.push(`SHIFT ${input.shift.startTime}–${input.shift.endTime}`);
+    parts.push(`SHIFT ${input.shift.startTime} TO ${input.shift.endTime}`);
   }
   parts.push(`${input.itemCount} ${input.itemCount === 1 ? "ITEM" : "ITEMS"}`);
   return parts.join(" · ");
@@ -379,8 +379,8 @@ export function buildTechWorkItems(
     const labId =
       (typeof order.patientLabId === "string" && order.patientLabId) ||
       (typeof patient?.labId === "string" && patient.labId) ||
-      "—";
-    const tests = order.tests.length > 0 ? order.tests : [{ code: "", name: "—" }];
+      "No Lab ID";
+    const tests = order.tests.length > 0 ? order.tests : [{ code: "", name: "No tests" }];
 
     tests.forEach((test, index) => {
       const collectedAt = test.code ? specimenCollectedAt(order, test, catalog) : interpretCollection(order, catalog).latestCollectedAt;
@@ -390,7 +390,7 @@ export function buildTechWorkItems(
         orderId: order.id,
         labId,
         patientName,
-        testName: test.name || test.code || "—",
+        testName: test.name || test.code || "Unnamed test",
         testCode: test.code || "",
         status: order.status,
         recollectionOfOrderId: order.recollectionOfOrderId ?? null,

@@ -218,7 +218,7 @@ function MovementsContent() {
 
       if (mode === "receive") {
         if (!lotNumber.trim()) {
-          setStatus("A lot or batch number is required — ISO 15189 requires it on every receipt.");
+          setStatus("A lot or batch number is required. ISO 15189 requires it on every receipt.");
           setSaving(false);
           return;
         }
@@ -352,7 +352,7 @@ function MovementsContent() {
             action: "inventory.adjustment",
             targetCollection: "inventoryMovements",
             targetId: movementRef.id,
-            targetLabel: `${selectedItem.name} · lot ${targetBatch?.lotNumber ?? "—"}`,
+            targetLabel: `${selectedItem.name} · lot ${targetBatch?.lotNumber ?? "not recorded"}`,
             detail: {
               direction,
               quantity: qty,
@@ -565,7 +565,7 @@ function MovementsContent() {
                     fefoRecommendation
                       ? `Recommended: lot ${fefoRecommendation.batch.lotNumber}, expiring ${
                           fefoRecommendation.batch.expiryDate ?? "unknown"
-                        } — first expire, first out.`
+                        }. First expire, first out.`
                       : "No lot with stock on hand."
                   }
                 >
@@ -577,7 +577,7 @@ function MovementsContent() {
                     <option value="">Select lot...</option>
                     {itemLots.map((l) => (
                       <option key={l.batch.id} value={l.batch.id}>
-                        {l.batch.lotNumber} · exp {l.batch.expiryDate ?? "—"} · {l.onHand} on hand
+                        {l.batch.lotNumber} · {l.batch.expiryDate ? `exp ${l.batch.expiryDate}` : "no expiry date"} · {l.onHand} on hand
                         {l.state === "expired" ? " · EXPIRED" : ""}
                       </option>
                     ))}
@@ -620,7 +620,7 @@ function MovementsContent() {
                     </Field>
                     <Field
                       label="Purpose"
-                      hint="Stock issues record person and purpose only — they are deliberately not linked to individual test orders."
+                      hint="Stock issues record the person and purpose only. They are deliberately not linked to individual test orders."
                     >
                       <input
                         type="text"
@@ -667,7 +667,7 @@ function MovementsContent() {
                     {selectedItem?.packingUnit ?? "unit"} on hand.
                     {fefoRecommendation &&
                       selectedLot.batch.id !== fefoRecommendation.batch.id &&
-                      ` A lot expiring sooner (${fefoRecommendation.batch.lotNumber}) is available — the choice is recorded as made.`}
+                      ` A lot expiring sooner (${fefoRecommendation.batch.lotNumber}) is available. The choice is recorded as made.`}
                   </p>
                 )}
               </div>
@@ -767,14 +767,14 @@ function MovementsContent() {
                         <Td>
                           {m.itemName} <NotYetSynced show={m.notYetSynced} />
                         </Td>
-                        <Td>{m.lotNumber || "—"}</Td>
+                        <Td>{m.lotNumber || "Not recorded"}</Td>
                         <Td>
                           {sign}
                           {formatQuantity(m.quantity, m.packingUnit, m.unitsPerPack, m.baseUnit)}
                         </Td>
-                        <Td>{m.supplier || m.issuedTo || m.destination || "—"}</Td>
-                        <Td>{m.department || "—"}</Td>
-                        <Td>{m.deliveryNote || m.purpose || m.reason || m.note || "—"}</Td>
+                        <Td>{m.supplier || m.issuedTo || m.destination || "Not recorded"}</Td>
+                        <Td>{m.department || "Not recorded"}</Td>
+                        <Td>{m.deliveryNote || m.purpose || m.reason || m.note || "Not recorded"}</Td>
                         <Td>{actorLabel(m.actor)}</Td>
                         <Td>{when.date}</Td>
                         <Td>{when.time}</Td>

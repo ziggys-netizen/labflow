@@ -794,10 +794,10 @@ export default function StaffPanel({
                       <StatusBadge status={STAFF_DIRECTORY_STATE_LABELS[entry.state]} />
                     </td>
                     <td className="py-3 pr-3 text-gray-900">
-                      {roleRequiresShift(entry.role) ? shiftLabel(entry.shift) || "—" : "—"}
+                      {roleRequiresShift(entry.role) ? shiftLabel(entry.shift) || "Not set" : "N/A"}
                     </td>
                     <td className="py-3 pr-3 text-gray-600">
-                      {entry.clinicId ? clinicNames[entry.clinicId] || entry.clinicId : "—"}
+                      {entry.clinicId ? clinicNames[entry.clinicId] || entry.clinicId : "No clinic"}
                     </td>
                     <td className="py-3 pr-3 text-xs text-gray-500">
                       {staffTermsIndicatorLabel(
@@ -815,7 +815,7 @@ export default function StaffPanel({
                         ? `Expires ${new Date(entry.expiresAt).toLocaleDateString()}`
                         : staffDirectoryActorLabel(entry, directory)
                           ? `By ${staffDirectoryActorLabel(entry, directory)}`
-                          : "—"}
+                          : "Not recorded"}
                     </td>
                     <td className="py-3">
                       {entry.kind === "pre-approval" ? (
@@ -911,7 +911,7 @@ export default function StaffPanel({
       <AppNav />
       <div className="lf-shell py-16">
         <h1 className="text-2xl font-semibold text-gray-900 mb-2">
-          {scopedName ? `Staff — ${scopedName}` : "Manage Staff"}
+          {scopedName ? `Staff at ${scopedName}` : "Manage Staff"}
         </h1>
         <p className="text-gray-600 mb-4">
           One list of every account and pre-approval for this clinic: pre-approved, pending,

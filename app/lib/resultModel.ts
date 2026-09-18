@@ -20,10 +20,17 @@ export const CLINIC_TIERS = ["primary", "secondary", "tertiary"] as const;
 export type ClinicTier = (typeof CLINIC_TIERS)[number];
 
 export const CLINIC_TIER_LABELS: Record<ClinicTier, string> = {
-  primary: "Primary — village clinic / minor health centre",
-  secondary: "Secondary — major health centre / district hospital",
-  tertiary: "Tertiary — general / teaching hospital",
+  primary: "Primary (village clinic or minor health centre)",
+  secondary: "Secondary (major health centre or district hospital)",
+  tertiary: "Tertiary (general or teaching hospital)",
 };
+
+/** A unit for display. "No unit" is stored as "—"; readers see N/A. */
+export function unitLabel(unit: string | null | undefined): string {
+  const u = (unit || "").trim();
+  if (!u || u === "—" || u === "-" || u === "–") return "N/A";
+  return u;
+}
 
 export function isClinicTier(value: unknown): value is ClinicTier {
   return typeof value === "string" && (CLINIC_TIERS as readonly string[]).includes(value);
@@ -234,6 +241,6 @@ export function displayRange(parameter: TestParameter): string {
   if (normalized.resultType === "qualitative" || normalized.resultType === "semi_quantitative") {
     return normalized.referenceRange || normalized.valueSet?.map((item) => item.value).join(" / ") || "";
   }
-  if (normalized.resultType === "text") return "—";
+  if (normalized.resultType === "text") return "N/A";
   return normalized.referenceRange;
 }

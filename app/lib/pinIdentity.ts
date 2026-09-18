@@ -31,10 +31,10 @@ export function isPinFormat(pin: string | null | undefined): boolean {
 }
 
 export function pinFormatError(pin: string | null | undefined): string | null {
-  if (!pin) return "Enter a 4–6 digit PIN.";
+  if (!pin) return "Enter a PIN of 4 to 6 digits.";
   if (!/^\d+$/.test(pin)) return "The PIN must be digits only.";
   if (pin.length < PIN_MIN_LENGTH || pin.length > PIN_MAX_LENGTH) {
-    return "The PIN must be 4–6 digits.";
+    return "The PIN must be 4 to 6 digits.";
   }
   return null;
 }

@@ -101,7 +101,7 @@ function ReviewContent() {
       rows.push({
         id: parsed.id,
         patientName: resolvePatientNameById(patientId, patientsById) || "Unknown patient",
-        patientLabId: typeof data.patientLabId === "string" ? data.patientLabId : "—",
+        patientLabId: typeof data.patientLabId === "string" ? data.patientLabId : "No Lab ID",
         tests: parsed.tests,
         status: parsed.status,
         resultsEnteredBy: typeof data.resultsEnteredBy === "string" ? data.resultsEnteredBy : null,
@@ -205,7 +205,7 @@ function ReviewContent() {
                           Lab ID: {order.patientLabId}
                         </p>
                         <p className="text-sm text-lf-ink">
-                          Tests: {order.tests.map((test) => test.name || test.code).join(", ") || "—"}
+                          Tests: {order.tests.map((test) => test.name || test.code).join(", ") || "No tests"}
                           {order.abnormal ? " · Abnormal results" : ""}
                         </p>
                         <p className="text-sm text-lf-ink-2">

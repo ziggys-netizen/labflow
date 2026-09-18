@@ -39,7 +39,7 @@ import {
 } from "../../../../lib/dataQuality";
 
 function formatWhen(iso: string | null | undefined) {
-  if (!iso) return "—";
+  if (!iso) return "Not recorded";
   const t = new Date(iso).getTime();
   return Number.isNaN(t) ? iso : new Date(iso).toLocaleString();
 }
@@ -265,7 +265,7 @@ function DataQualityContent() {
         <p className="text-gray-600 mb-6">
           Flags orders whose collection time is shared to the second with other orders, earlier
           than the order was created, or after result approval. Clearing returns the order to
-          awaiting sample. It does not invent a replacement time. Confirm each row — there is no
+          awaiting sample. It does not invent a replacement time. Confirm each row. There is no
           bulk clear.
         </p>
         {status && <p className="text-sm text-gray-600 mb-4">{status}</p>}

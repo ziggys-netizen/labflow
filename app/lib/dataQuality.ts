@@ -125,8 +125,8 @@ export function findSuspiciousCollectionOrders(
     if (reasons.length === 0) continue;
     flagged.push({
       id: row.order.id,
-      patientName: row.order.patientName || row.order.patientLabId || "—",
-      patientLabId: row.order.patientLabId || "—",
+      patientName: row.order.patientName || row.order.patientLabId || "Not recorded",
+      patientLabId: row.order.patientLabId || "No Lab ID",
       createdAt: row.order.createdAt || "",
       reviewedAt: row.order.reviewedAt || null,
       stampedTimes: row.stampedTimes,

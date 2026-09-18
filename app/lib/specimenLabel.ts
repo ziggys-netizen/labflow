@@ -116,7 +116,7 @@ export function labelPageCss(size: LabelSize): string {
 }
 
 export function formatLabelTimestamp(at: Date): string {
-  if (Number.isNaN(at.getTime())) return "—";
+  if (Number.isNaN(at.getTime())) return "No time";
   const pad = (n: number) => String(n).padStart(2, "0");
   return `${at.getFullYear()}-${pad(at.getMonth() + 1)}-${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
@@ -138,8 +138,8 @@ export function printableSpecimenLabel(input: {
     ok: true,
     label: {
       labId,
-      sexAge: (input.sexAge || "").trim() || "—",
-      clinicName: (input.clinicName || "").trim() || "—",
+      sexAge: (input.sexAge || "").trim() || "Not recorded",
+      clinicName: (input.clinicName || "").trim() || "Clinic not set",
       printedAt: formatLabelTimestamp(input.printedAt ?? new Date()),
       barcodeValue: labId,
     },

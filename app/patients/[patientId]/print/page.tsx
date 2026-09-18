@@ -33,6 +33,7 @@ import ClinicalFlagLetter from "../../../lib/ClinicalFlagLetter";
 import LabFlowWordmark from "../../../lib/LabFlowWordmark";
 import { interpretCollection, orderCollectionFromData, type OrderTestRef, type SampleCollections } from "../../../lib/sampleCollection";
 import { orderDisplayLabel } from "../../../lib/orderLifecycle";
+import { unitLabel } from "../../../lib/resultModel";
 import { useStaffSession, useWriteIdentity } from "../../../lib/pinSession";
 import { trackedSetDoc, writeActorFromUser } from "../../../lib/trackedWrites";
 import { actorFromAuth, auditTargetLabel, safeLogAudit } from "../../../lib/audit";
@@ -115,9 +116,9 @@ async function docsFromCacheOrServer(q: Query) {
 }
 
 function formatDateTime(iso?: string | null) {
-  if (!iso) return "—";
+  if (!iso) return "Not recorded";
   const d = new Date(iso);
-  return Number.isNaN(d.getTime()) ? "—" : d.toLocaleString();
+  return Number.isNaN(d.getTime()) ? "Not recorded" : d.toLocaleString();
 }
 
 function Field({
@@ -133,7 +134,7 @@ function Field({
     <div>
       <p className="text-[10px] uppercase tracking-wide text-gray-500">{label}</p>
       <p className={`text-sm text-gray-900${valueClassName ? ` ${valueClassName}` : ""}`}>
-        {value || "—"}
+        {value || "Not recorded"}
       </p>
     </div>
   );
@@ -512,17 +513,17 @@ function PatientPrintContent() {
                             return (
                             <tr key={`${t.code}-${i}`} className="border-b border-gray-100">
                               <td className="py-1 pr-3 text-gray-900">
-                                {i === 0 ? `${t.name} — ` : ""}
+                                {i === 0 ? `${t.name}: ` : ""}
                                 {p.name}
                               </td>
                               <td className="py-1 pr-3 text-gray-900">
                                 <span className="inline-flex items-baseline gap-1">
-                                  <span>{value || "—"}</span>
+                                  <span>{value || "No result"}</span>
                                   {flag ? <ClinicalFlagLetter flag={flag} /> : null}
                                 </span>
-                                {hlReason ? ` — ${hlReason}` : ""}
+                                {hlReason ? ` (${hlReason})` : ""}
                               </td>
-                              <td className="py-1 pr-3 text-gray-600">{p.unit}</td>
+                              <td className="py-1 pr-3 text-gray-600">{unitLabel(p.unit)}</td>
                               <td className="py-1 text-gray-600">
                                 {p.referenceRange}
                                 {!isTestReviewed(definition) && (
@@ -560,10 +561,10 @@ function PatientPrintContent() {
                             return (
                               <tr key={`${change.testCode}-${change.parameter}`} className="border-b border-gray-100">
                                 <td className="py-1 pr-3 text-gray-900">
-                                  {test?.name || change.testCode} — {change.parameter}
+                                  {test?.name || change.testCode}: {change.parameter}
                                 </td>
-                                <td className="py-1 pr-3 text-gray-600">{change.previous || "—"}</td>
-                                <td className="py-1 text-gray-900">{change.current || "—"}</td>
+                                <td className="py-1 pr-3 text-gray-600">{change.previous || "blank"}</td>
+                                <td className="py-1 text-gray-900">{change.current || "blank"}</td>
                               </tr>
                             );
                           })}

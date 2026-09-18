@@ -491,7 +491,7 @@ describe("elapsed TAT on released", () => {
     expect(classifyTurnaround(released).hours).toBe(2);
     expect(medianElapsedTatHours([released])).toBe(summarizeTurnaround([released]).median);
     expect(releasedTatSubLabel(2, TODAY)).toBe("MEDIAN 2.0H ELAPSED · TODAY");
-    expect(releasedTatSubLabel(null, { ...TODAY, kind: "shift" })).toBe("ELAPSED TAT — · THIS SHIFT");
+    expect(releasedTatSubLabel(null, { ...TODAY, kind: "shift" })).toBe("MEDIAN NOT AVAILABLE · THIS SHIFT");
     expect(releasedTatSubLabel(2, TODAY)).not.toMatch(/target/i);
   });
 });

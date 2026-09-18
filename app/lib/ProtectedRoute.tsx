@@ -97,7 +97,7 @@ export default function ProtectedRoute({
     <>
       {authOffline && (
         <div className="no-print border-b border-amber-200 bg-amber-50 px-0 py-2">
-          <p className="lf-shell text-sm text-amber-950">Offline — using cached account details</p>
+          <p className="lf-shell text-sm text-amber-950">Offline. Using saved account details.</p>
         </div>
       )}
       {children}

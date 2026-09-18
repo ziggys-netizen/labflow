@@ -34,7 +34,7 @@ export function hoursSince(iso: string | null | undefined, nowMs: number = Date.
 }
 
 export function formatHours(hours: number | null): string {
-  if (hours === null || hours < 0) return "—";
+  if (hours === null || hours < 0) return "Not recorded";
   if (hours < 10) return `${hours.toFixed(1)} h`;
   return `${Math.round(hours)} h`;
 }

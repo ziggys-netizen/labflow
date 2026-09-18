@@ -112,7 +112,7 @@ export function destinationLabel(movement: InventoryMovement): string {
     (movement.destination && movement.destination.trim()) ||
     (movement.issuedTo && movement.issuedTo.trim()) ||
     (movement.department && movement.department.trim()) ||
-    "—"
+    "Not recorded"
   );
 }
 
@@ -163,7 +163,7 @@ export function buildExpiringRows(
       tile: "expiring",
       kind: "expiring",
       title: item?.name || batch.itemName || "Unnamed item",
-      detail: `LOT ${batch.lotNumber || "—"} · ${days}D · ON HAND ${onHand}`,
+      detail: `LOT ${batch.lotNumber || "NOT RECORDED"} · ${days}D · ON HAND ${onHand}`,
       href: "/inventory",
       actionLabel: "Open store",
       at: batch.expiryDate,
@@ -190,7 +190,7 @@ export function buildIssuedTodayRows(
       tile: "issued" as const,
       kind: "issued" as const,
       title: movement.itemName || "Unnamed item",
-      detail: `${formatQuantity(movement.quantity, movement.packingUnit, movement.unitsPerPack, movement.baseUnit)} · LOT ${movement.lotNumber || "—"} · ${destinationLabel(movement)}`,
+      detail: `${formatQuantity(movement.quantity, movement.packingUnit, movement.unitsPerPack, movement.baseUnit)} · LOT ${movement.lotNumber || "NOT RECORDED"} · ${destinationLabel(movement)}`,
       href: "/inventory/movements",
       actionLabel: "Open movements",
       at: movement.occurredAt,
@@ -221,7 +221,7 @@ export function buildMyIssuedTodayList(
         movement.unitsPerPack,
         movement.baseUnit
       ),
-      lotNumber: movement.lotNumber || "—",
+      lotNumber: movement.lotNumber || "Not recorded",
       destination: destinationLabel(movement),
       occurredAt: movement.occurredAt,
       notYetSynced: movement.notYetSynced,

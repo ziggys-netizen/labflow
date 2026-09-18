@@ -296,7 +296,7 @@ function BillServiceContent() {
         <h1 className="text-2xl font-semibold text-gray-900 mb-1">Bill a service</h1>
         {isOwner(role) && !writeClinicId && <ActingClinicPrompt />}
         <p className="text-gray-600 mb-6">
-          {patientName} — Lab ID: {patientLabId}
+          {patientName} · Lab ID: {patientLabId}
         </p>
 
         <label className="block text-sm font-medium text-gray-700 mb-1">Search for a service</label>
@@ -306,7 +306,7 @@ function BillServiceContent() {
             <p className="font-semibold text-amber-950 text-sm">No services set up yet.</p>
             <p className="text-sm text-amber-900 mt-1">
               {canAdd
-                ? "Add one below — you can bill it right away."
+                ? "Add one below. You can bill it straight away."
                 : "Ask the lab manager to add services (consultation, dressing, etc.) in Settings."}
             </p>
           </div>

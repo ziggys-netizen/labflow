@@ -175,16 +175,16 @@ export function formatTurnaroundExclusionCopy(summary: TurnaroundSummary): strin
   const orderWord = summary.counted === 1 ? "order" : "orders";
   const parts = [
     `Median of ${summary.counted} ${orderWord}.`,
-    `${summary.excludedMissingCollection} excluded — no recorded collection time.`,
+    `${summary.excludedMissingCollection} excluded (no recorded collection time).`,
   ];
   if (summary.excludedImpossible > 0) {
-    parts.push(`${summary.excludedImpossible} excluded — collection after approval.`);
+    parts.push(`${summary.excludedImpossible} excluded (collection after approval).`);
   }
   if (summary.excludedInvalid > 0) {
-    parts.push(`${summary.excludedInvalid} excluded — unreadable timestamps.`);
+    parts.push(`${summary.excludedInvalid} excluded (unreadable timestamps).`);
   }
   if (summary.excludedMissingReview > 0) {
-    parts.push(`${summary.excludedMissingReview} excluded — no review time.`);
+    parts.push(`${summary.excludedMissingReview} excluded (no review time).`);
   }
   return parts.join(" ");
 }

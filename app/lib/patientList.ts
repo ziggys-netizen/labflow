@@ -76,7 +76,7 @@ export function formatSexAbbrev(sex: string | null | undefined): string {
   if (normalized === "female" || normalized === "f") return "F";
   if (normalized === "male" || normalized === "m") return "M";
   const raw = (sex || "").trim();
-  return raw || "—";
+  return raw || "Sex not recorded";
 }
 
 /**
@@ -120,7 +120,7 @@ export function formatPatientAge(
 ): string {
   if (parseDobYmd(input.dob ?? null)) {
     const age = ageFromDob(input.dob, now);
-    if (!age) return "—";
+    if (!age) return "Age unknown";
     if (age.years === 0) return `${age.months}m`;
     return `${age.years}y`;
   }
@@ -129,7 +129,7 @@ export function formatPatientAge(
   if (years !== null && years >= 1) return `${Math.trunc(years)}y`;
   if (months !== null) return `${Math.trunc(months)}m`;
   if (years !== null) return `${Math.trunc(years)}y`;
-  return "—";
+  return "Age unknown";
 }
 
 export function formatSexAge(
@@ -138,13 +138,13 @@ export function formatSexAge(
 ): string {
   const sex = formatSexAbbrev(input.sex);
   const age = formatPatientAge(input, now);
-  if (sex === "—" && age === "—") return "—";
+  if (sex === "Sex not recorded" && age === "Age unknown") return "Not recorded";
   return `${sex} · ${age}`;
 }
 
 export function formatActivityDay(iso: string): string {
   const t = timeMs(iso);
-  if (t === null) return "—";
+  if (t === null) return "Not recorded";
   const d = new Date(t);
   return `${d.getDate()} ${MONTHS[d.getMonth()]}`;
 }
@@ -246,7 +246,7 @@ export function patientLastActivity(
     }
   }
 
-  if (events.length === 0) return "—";
+  if (events.length === 0) return "No activity yet";
   events.sort((a, b) => (timeMs(a.at) ?? 0) - (timeMs(b.at) ?? 0));
   const latest = events[events.length - 1]!;
   return `${formatActivityDay(latest.at)} · ${latest.text}`;

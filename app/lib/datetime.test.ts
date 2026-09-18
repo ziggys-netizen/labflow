@@ -206,7 +206,7 @@ describe("summarizeTurnaround", () => {
     expect(
       formatTurnaroundExclusionCopy(summary)
     ).toBe(
-      "Median of 1 order. 1 excluded — no recorded collection time. 1 excluded — collection after approval. 1 excluded — unreadable timestamps."
+      "Median of 1 order. 1 excluded (no recorded collection time). 1 excluded (collection after approval). 1 excluded (unreadable timestamps)."
     );
   });
 });
@@ -235,7 +235,7 @@ describe("formatTurnaroundExclusionCopy", () => {
         excludedInvalid: 0,
         legacyCounted: 0,
       })
-    ).toBe("Median of 12 orders. 4 excluded — no recorded collection time.");
+    ).toBe("Median of 12 orders. 4 excluded (no recorded collection time).");
     expect(
       formatTurnaroundExclusionCopy({
         median: null,
@@ -247,7 +247,7 @@ describe("formatTurnaroundExclusionCopy", () => {
         excludedInvalid: 0,
         legacyCounted: 0,
       })
-    ).toBe("Median of 0 orders. 0 excluded — no recorded collection time.");
+    ).toBe("Median of 0 orders. 0 excluded (no recorded collection time).");
   });
 });
 

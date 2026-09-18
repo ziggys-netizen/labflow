@@ -152,7 +152,7 @@ export async function seedGreenAidIsolationFixtures(
     greenAidPatientLabId: patientsByKey["adult-male"].labId,
     medicAidPatientIdPlaceholder: "<PASTE_A_MEDIC_AID_PATIENT_DOC_ID>",
     note:
-      "Medic Aid staff probe: as Medic Aid staff, attempt getDoc on greenAidPatientId — expect permission-denied. Owner console prints these IDs after seed.",
+      "Medic Aid staff probe: as Medic Aid staff, attempt getDoc on greenAidPatientId and expect permission-denied. Owner console prints these IDs after seed.",
   };
 
   if (options.actor) {

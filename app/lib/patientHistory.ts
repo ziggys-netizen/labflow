@@ -147,18 +147,18 @@ export function releasedHistoryOrders<T extends { status: string; createdAt: str
 }
 
 export function formatHistoryDay(iso: string | null | undefined): string {
-  if (!iso) return "—";
+  if (!iso) return "Date not recorded";
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return "—";
+  if (Number.isNaN(d.getTime())) return "Date not recorded";
   return `${d.getDate()} ${MONTHS[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 export function formatHistoryReleaser(value: string | null | undefined): string {
   const raw = (value || "").trim();
-  if (!raw) return "—";
+  if (!raw) return "Not recorded";
   const local = raw.includes("@") ? raw.slice(0, raw.indexOf("@")) : raw;
   const spaced = local.replace(/[._]+/g, " ").replace(/\s+/g, " ").trim();
-  if (!spaced) return "—";
+  if (!spaced) return "Not recorded";
   return formatHeaderName(spaced.includes(" ") ? spaced : spaced);
 }
 
@@ -318,15 +318,15 @@ export function resolvePrintOrders(
 }
 
 export function historyDateRangeLabel(orders: HistoryOrderInput[]): string {
-  if (orders.length === 0) return "—";
+  if (orders.length === 0) return "No dates";
   const times = orders
     .map((order) => order.createdAt)
     .filter((iso) => !Number.isNaN(new Date(iso).getTime()))
     .sort();
-  if (times.length === 0) return "—";
+  if (times.length === 0) return "No dates";
   const from = formatHistoryDay(times[0]);
   const to = formatHistoryDay(times[times.length - 1]);
-  return from === to ? from : `${from} – ${to}`;
+  return from === to ? from : `${from} to ${to}`;
 }
 
 export function namedHistoryLabIds(labId: string | null | undefined): string[] {
@@ -404,11 +404,11 @@ export function historyAmendmentFootnotes(
   const lines: string[] = [];
   for (const visit of historyVisitRows(orders)) {
     if (!visit.amended) continue;
-    const amendedOn = visit.amendmentDateLabel || "—";
+    const amendedOn = visit.amendmentDateLabel || "date not recorded";
     for (const param of historyVisitParameters(visit, catalog)) {
       if (!param.value.trim()) continue;
       const name = param.parameter === "Result" ? param.testName : param.parameter;
-      lines.push(`${name}, ${visit.dateLabel} — amended ${amendedOn}, v${visit.version}`);
+      lines.push(`${name}, ${visit.dateLabel}: amended ${amendedOn}, v${visit.version}`);
     }
   }
   return lines;

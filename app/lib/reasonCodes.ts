@@ -15,7 +15,7 @@ export const SAMPLE_REJECTION_CODES: ReasonCode[] = [
   { code: "insufficient_volume", label: "Insufficient volume" },
   { code: "wrong_container", label: "Wrong container" },
   { code: "unlabelled", label: "Unlabelled" },
-  { code: "mislabeled", label: "Mislabeled" },
+  { code: "mislabeled", label: "Mislabelled" },
   { code: "leaked_in_transit", label: "Leaked in transit" },
   { code: "delayed_beyond_stability", label: "Delayed beyond stability" },
   { code: "wrong_test_requested", label: "Wrong test requested" },
@@ -50,7 +50,7 @@ export const REPORT_AMENDMENT_CODES: ReasonCode[] = [
   { code: "transcription_error", label: "Transcription error" },
   { code: "wrong_information", label: "Wrong information entered" },
   { code: "wrong_patient", label: "Wrong patient" },
-  { code: "clinical_update", label: "Clinical update since finalizing" },
+  { code: "clinical_update", label: "Clinical update since finalising" },
   { code: "other", label: "Other" },
 ];
 
@@ -139,5 +139,5 @@ export function formatJustification(
   const extra = (note || "").trim();
   if (!label) return extra;
   if (!extra) return label;
-  return `${label} — ${extra}`;
+  return `${label}: ${extra}`;
 }

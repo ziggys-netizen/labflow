@@ -94,8 +94,11 @@ export const SHIFT_LABELS: Record<Shift, string> = {
   night: "Night",
 };
 
+/** Shown where a person holds no role. The page header hides it. */
+export const NO_ROLE_LABEL = "No role";
+
 export function roleLabel(role: string | null | undefined): string {
-  if (!role) return "—";
+  if (!role) return NO_ROLE_LABEL;
   return ROLE_LABELS[role as Role] ?? role;
 }
 
@@ -104,11 +107,11 @@ export function shiftLabel(shift: string | null | undefined): string {
   return SHIFT_LABELS[shift];
 }
 
-/** e.g. "Shift Supervisor — Night". Other roles omit the shift. */
+/** e.g. "Shift Supervisor (Night)". Other roles omit the shift. */
 export function roleDisplay(role: string | null | undefined, shift?: string | null): string {
   const label = roleLabel(role);
   if (roleRequiresShift(role) && shift && isShift(shift)) {
-    return `${label} — ${shiftLabel(shift)}`;
+    return `${label} (${shiftLabel(shift)})`;
   }
   return label;
 }

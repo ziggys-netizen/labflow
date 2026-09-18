@@ -13,7 +13,7 @@ export default function Home() {
             Laboratory management, built for quality
           </h1>
           <p className="mx-auto mt-4 max-w-2xl text-lg text-lf-ink-2">
-            LabFlow helps clinical laboratories track patients, samples, and results — designed around WHO SLIPTA and ISO 15189 quality standards.
+            LabFlow helps clinical laboratories track patients, samples and results. It is designed around the WHO SLIPTA and ISO 15189 quality standards.
           </p>
           <div className="mt-8">
             <a

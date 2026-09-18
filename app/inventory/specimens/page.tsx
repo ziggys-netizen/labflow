@@ -205,7 +205,7 @@ function SpecimensContent() {
         </div>
         <p className="text-gray-600 mb-6">
           Specimens received into the laboratory and specimens sent out to a referral laboratory,
-          with the date and time of each. This is a custody log — it does not change the collection
+          with the date and time of each. This is a custody log. It does not change the collection
           time recorded on an order.
         </p>
 
@@ -271,7 +271,7 @@ function SpecimensContent() {
               </Field>
               <Field
                 label="Order / Lab ID reference"
-                hint="A reference only — do not enter patient names here."
+                hint="A reference only. Do not enter patient names here."
               >
                 <input
                   type="text"
@@ -423,13 +423,13 @@ function SpecimensContent() {
                         <Td>
                           {entry.specimenType} <NotYetSynced show={entry.notYetSynced} />
                         </Td>
-                        <Td>{entry.container || "—"}</Td>
+                        <Td>{entry.container || "Not recorded"}</Td>
                         <Td>{entry.quantity}</Td>
-                        <Td>{entry.orderReference || "—"}</Td>
-                        <Td>{entry.department || "—"}</Td>
-                        <Td>{entry.destination || "—"}</Td>
+                        <Td>{entry.orderReference || "Not recorded"}</Td>
+                        <Td>{entry.department || "Not recorded"}</Td>
+                        <Td>{entry.destination || "Not recorded"}</Td>
                         <Td>{entry.condition}</Td>
-                        <Td>{entry.transport || "—"}</Td>
+                        <Td>{entry.transport || "Not recorded"}</Td>
                         <Td>
                           {canRecord ? (
                             <select

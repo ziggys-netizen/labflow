@@ -96,8 +96,8 @@ function QueueAllContent() {
       const data = docSnap.data();
       map.set(docSnap.id, {
         id: docSnap.id,
-        labId: typeof data.labId === "string" && data.labId ? data.labId : "—",
-        name: typeof data.name === "string" && data.name ? data.name : "—",
+        labId: typeof data.labId === "string" && data.labId ? data.labId : "No Lab ID",
+        name: typeof data.name === "string" && data.name ? data.name : "Name not recorded",
         preferredName: typeof data.preferredName === "string" ? data.preferredName : "",
         sex: typeof data.sex === "string" ? data.sex : "",
         dob: typeof data.dob === "string" ? data.dob : "",

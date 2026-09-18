@@ -33,7 +33,7 @@ export default function SopReferenceFields({
         SOP reference {mark}
       </p>
       <p className="text-xs text-gray-500">
-        Document identifiers only — not the procedure text. Review date is required for SLIPTA
+        Document identifiers only, not the procedure text. Review date is required for SLIPTA
         periodic review.
       </p>
       <div className="grid grid-cols-2 gap-2">

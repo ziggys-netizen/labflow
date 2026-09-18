@@ -192,7 +192,7 @@ const LAWFUL_BASES = [
   { code: "public_task", label: "Public task (public authority)" },
   { code: "legal_obligation", label: "Legal obligation" },
   { code: "vital_interests", label: "Vital interests" },
-  { code: "consent", label: "Consent — do not use as the primary clinical path" },
+  { code: "consent", label: "Consent (not to be used as the main clinical basis)" },
 ] as const;
 
 // Normalizes a name: trims extra whitespace, converts to consistent Title Case
@@ -291,7 +291,7 @@ export default function Register() {
       const data = docSnap.data();
       if (isPatientDeleted(data)) return;
       if ((data.name || "").trim().toLowerCase() === normalizedName) {
-        matches.push(`Name + DOB match — Lab ID: ${data.labId}`);
+        matches.push(`Same name and date of birth: Lab ID ${data.labId}`);
       }
     });
 
@@ -303,7 +303,7 @@ export default function Register() {
       if (isPatientDeleted(data)) return;
       const alreadyListed = matches.some((m) => m.includes(data.labId));
       if (!alreadyListed) {
-        matches.push(`Same phone number — Lab ID: ${data.labId} (${data.name})`);
+        matches.push(`Same phone number: Lab ID ${data.labId} (${data.name})`);
       }
     });
 
@@ -333,7 +333,7 @@ export default function Register() {
         `Possible existing record(s) found:\n\n${duplicateCheck.matches.join("\n")}\n\nRegister anyway as a new record?`
       );
       if (!proceed) {
-        setStatus("Registration cancelled — existing record kept.");
+        setStatus("Registration cancelled. The existing record was kept.");
         return;
       }
     }
@@ -654,7 +654,7 @@ export default function Register() {
               />
               <span>
                 The patient (or their guardian) has been told what this laboratory will do with their record.
-                This is a record of what was said — not the legal ground for processing, and not a condition of the test.
+                This is a record of what was said. It is not the legal ground for processing, nor a condition of the test.
               </span>
             </label>
           </div>

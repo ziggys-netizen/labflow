@@ -185,7 +185,7 @@ function ReceiptsContent() {
               >
                 <p className="text-sm font-medium text-gray-900">{row.description}</p>
                 <p className="text-xs text-gray-500">
-                  {row.at ? new Date(row.at).toLocaleString() : ""} — {row.amount} · {row.method}
+                  {row.at ? new Date(row.at).toLocaleString() : ""} · {row.amount} · {row.method}
                 </p>
               </Link>
             </li>

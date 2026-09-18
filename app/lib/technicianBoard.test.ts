@@ -254,7 +254,7 @@ describe("greeting and actions", () => {
         itemCount: 11,
         shift: { startTime: "07:00", endTime: "15:00" },
       })
-    ).toBe("FRI 4 SEP · SHIFT 07:00–15:00 · 11 ITEMS");
+    ).toBe("FRI 4 SEP · SHIFT 07:00 TO 15:00 · 11 ITEMS");
   });
 
   it("uses collect, enter results, or open from real next work", () => {

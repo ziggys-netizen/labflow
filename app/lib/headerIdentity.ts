@@ -1,5 +1,7 @@
 /** Header identity line. Uses existing displayName / username / role label only. */
 
+import { NO_ROLE_LABEL } from "./permissions";
+
 export function formatHeaderName(
   displayName: string | null | undefined,
   username?: string | null
@@ -24,7 +26,7 @@ export function formatHeaderIdentity(
 ): string {
   const name = formatHeaderName(displayName, username);
   const role = (roleText ?? "").trim();
-  if (!role || role === "—") return name;
+  if (!role || role === "—" || role === NO_ROLE_LABEL) return name;
   return `${name} · ${role.toUpperCase()}`;
 }
 

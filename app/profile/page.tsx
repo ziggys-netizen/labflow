@@ -171,7 +171,7 @@ function ProfileContent() {
           <h2 className="font-medium text-gray-900 mb-3">Clinic assignments</h2>
           {role === "owner" && (
             <p className="text-sm text-gray-600">
-              Owner account — global access to every clinic. Owner accounts are never assigned to a
+              Owner account: global access to every clinic. Owner accounts are never assigned to a
               clinic. Use the clinic selector in the header to operate inside a clinic for this
               session.
             </p>
@@ -245,7 +245,7 @@ function ProfileContent() {
                 <ul className="text-sm text-gray-700 space-y-1">
                   {myEntries.map((entry) => (
                     <li key={entry.id}>
-                      {entry.daysOfWeek.map((day) => ISO_WEEKDAY_LABELS[day]).join(", ")} · {entry.startTime}–
+                      {entry.daysOfWeek.map((day) => ISO_WEEKDAY_LABELS[day]).join(", ")} · {entry.startTime} to{" "}
                       {entry.endTime} · {entry.pattern} · {deriveShiftLabel(entry.startTime)}
                     </li>
                   ))}
@@ -260,7 +260,7 @@ function ProfileContent() {
           <p className="text-sm text-gray-600">
             You authenticate with Google as{" "}
             <span className="font-mono text-gray-900">{user?.email}</span>. This address is used for
-            sign-in and account recovery only — it is not shown to other staff as your identity.
+            sign-in and account recovery only. It is not shown to other staff as your identity.
           </p>
         </section>
       </div>

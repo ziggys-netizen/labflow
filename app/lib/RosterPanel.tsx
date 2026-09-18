@@ -33,7 +33,7 @@ function staffLabel(row: StaffRow) {
 function timesForDay(entries: RosterEntry[], day: IsoWeekday) {
   return entries
     .filter((entry) => entry.daysOfWeek.includes(day))
-    .map((entry) => `${entry.startTime}–${entry.endTime}`)
+    .map((entry) => `${entry.startTime} to ${entry.endTime}`)
     .join(", ");
 }
 
@@ -266,7 +266,7 @@ export default function RosterPanel({ clinicId }: { clinicId: string }) {
           Access is granted during a staff member&apos;s window plus a {grace}-minute grace at both
           ends. Working outside that window is a recorded act, not a lockout. Rostering is{" "}
           {enabled ? "on" : "off"} for this clinic
-          {enabled ? "" : " — turn it on from the clinic profile when the entries are ready"}.
+          {enabled ? "" : ". Turn it on from the clinic profile when the entries are ready"}.
         </p>
         {status && <p className="text-sm text-gray-700 mb-4">{status}</p>}
 
@@ -295,7 +295,7 @@ export default function RosterPanel({ clinicId }: { clinicId: string }) {
                     </td>
                     {ISO_WEEKDAYS.map((day) => (
                       <td key={day} className="px-3 py-2 text-gray-600 whitespace-nowrap">
-                        {timesForDay(entries, day) || "—"}
+                        {timesForDay(entries, day) || "Off"}
                       </td>
                     ))}
                   </tr>
@@ -445,7 +445,7 @@ export default function RosterPanel({ clinicId }: { clinicId: string }) {
               <li key={entry.id} className="flex justify-between gap-3 border-b border-gray-100 py-2">
                 <span>
                   {staffLabel(staff.find((row) => row.uid === entry.userUid) ?? { uid: entry.userUid } as StaffRow)}{" "}
-                  · {entry.startTime}–{entry.endTime} · {entry.pattern} ·{" "}
+                  · {entry.startTime} to {entry.endTime} · {entry.pattern} ·{" "}
                   {entry.daysOfWeek.map((day) => ISO_WEEKDAY_LABELS[day].slice(0, 3)).join(", ")}
                 </span>
                 <button type="button" onClick={() => void removeEntry(entry)} className="underline text-gray-800">

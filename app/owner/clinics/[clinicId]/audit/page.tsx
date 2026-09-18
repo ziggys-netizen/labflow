@@ -29,7 +29,7 @@ import {
 const PAGE_SIZE = 50;
 
 function formatWhen(iso: string) {
-  if (!iso) return "—";
+  if (!iso) return "Not recorded";
   const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? iso : d.toLocaleString();
 }
@@ -290,21 +290,21 @@ function ClinicAuditViewer({ clinicId, owner }: { clinicId: string; owner: boole
                       <td className="py-2 px-3 whitespace-nowrap text-gray-700">{formatWhen(row.at)}</td>
                       <td className="py-2 px-3 font-mono text-gray-900">{row.action}</td>
                       <td className="py-2 px-3 text-gray-700">
-                        <div>{row.actorEmail || row.actorUid || "—"}</div>
+                        <div>{row.actorEmail || row.actorUid || "Unknown"}</div>
                         <div className="text-xs text-gray-500">
-                          {roleDisplay(row.actorRole, row.actorShift) || "—"}
+                          {roleDisplay(row.actorRole, row.actorShift) || "No role"}
                           {row.actingAsOwner ? " · acting as owner" : ""}
                         </div>
                       </td>
                       <td className="py-2 px-3 text-gray-700">
-                        <div>{row.targetLabel || row.targetId || "—"}</div>
+                        <div>{row.targetLabel || row.targetId || "Not recorded"}</div>
                         <div className="text-xs text-gray-500">
                           {row.targetCollection}
                           {row.targetId ? ` / ${row.targetId}` : ""}
                         </div>
                       </td>
                       <td className="py-2 px-3 text-xs text-gray-600 font-mono whitespace-pre-wrap">
-                        {row.detail ? JSON.stringify(row.detail) : "—"}
+                        {row.detail ? JSON.stringify(row.detail) : "None"}
                       </td>
                     </tr>
                   ))}

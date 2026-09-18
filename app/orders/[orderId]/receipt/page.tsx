@@ -159,7 +159,7 @@ function OrderReceiptContent() {
           <AppNav />
         </div>
         <div className="px-6 py-16 text-center text-gray-600">
-          <p>No payment was recorded on this order — there is nothing to print a receipt for.</p>
+          <p>No payment was recorded on this order, so there is no receipt to print.</p>
           <Link href={`/orders/${orderId}`} className="mt-3 inline-block text-sm text-gray-900 underline">
             Back to order
           </Link>

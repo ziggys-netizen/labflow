@@ -154,8 +154,8 @@ describe("printableSpecimenLabel", () => {
     const result = printableSpecimenLabel({ labId: "LF-1", sexAge: "", clinicName: "" });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    expect(result.label.sexAge).toBe("—");
-    expect(result.label.clinicName).toBe("—");
+    expect(result.label.sexAge).toBe("Not recorded");
+    expect(result.label.clinicName).toBe("Clinic not set");
   });
 });
 
@@ -165,7 +165,7 @@ describe("formatLabelTimestamp", () => {
   });
 
   it("does not print Invalid Date onto a specimen", () => {
-    expect(formatLabelTimestamp(new Date("nonsense"))).toBe("—");
+    expect(formatLabelTimestamp(new Date("nonsense"))).toBe("No time");
   });
 });
 

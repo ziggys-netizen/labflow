@@ -175,8 +175,8 @@ function PatientsContent() {
           return {
             id: docSnap.id,
             clinicId: data.clinicId || "",
-            labId: data.labId || "—",
-            name: typeof data.name === "string" && data.name ? data.name : "—",
+            labId: data.labId || "No Lab ID",
+            name: typeof data.name === "string" && data.name ? data.name : "Name not recorded",
             preferredName: typeof data.preferredName === "string" ? data.preferredName : "",
             sex: data.sex || "",
             dob: typeof data.dob === "string" ? data.dob : "",

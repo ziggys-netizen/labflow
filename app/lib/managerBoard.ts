@@ -219,7 +219,7 @@ export function isReleasedInWindow(order: ManagerOrder, window: TechReleaseWindo
 
 function testNames(order: Pick<ManagerOrder, "tests">): string {
   const names = order.tests.map((test) => test.name || test.code).filter(Boolean);
-  return names.length > 0 ? names.join(", ") : "—";
+  return names.length > 0 ? names.join(", ") : "No tests";
 }
 
 function patientTitle(
@@ -234,7 +234,7 @@ function patientTitle(
   const labId =
     (typeof order.patientLabId === "string" && order.patientLabId) ||
     (typeof patient?.labId === "string" && patient.labId) ||
-    "—";
+    "No Lab ID";
   return { labId, name };
 }
 
@@ -257,7 +257,7 @@ export function releasedTatSubLabel(
   window: TechReleaseWindow
 ): string {
   const when = window.kind === "shift" ? "THIS SHIFT" : "TODAY";
-  if (medianHours == null) return `ELAPSED TAT — · ${when}`;
+  if (medianHours == null) return `MEDIAN NOT AVAILABLE · ${when}`;
   return `MEDIAN ${formatHoursToken(medianHours)} ELAPSED · ${when}`;
 }
 

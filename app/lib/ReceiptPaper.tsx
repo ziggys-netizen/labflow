@@ -65,7 +65,7 @@ export default function ReceiptPaper({ data }: { data: ReceiptData }) {
       </div>
 
       <p className="text-xs text-gray-400 mt-6 text-center">
-        Issued by {data.issuedByRole} · Keep this receipt — the lab uses the Lab ID above to find your
+        Issued by {data.issuedByRole} · Keep this receipt. The lab uses the Lab ID above to find your
         record.
       </p>
     </div>

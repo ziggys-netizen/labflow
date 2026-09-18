@@ -711,6 +711,6 @@ export function sensitiveActionLabel(action: SensitivePinAction): string {
     case "print":
       return "print a patient history";
     case "medicalReport":
-      return "finalize or amend a medical report";
+      return "finalise or amend a medical report";
   }
 }

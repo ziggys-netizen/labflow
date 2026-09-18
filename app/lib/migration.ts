@@ -332,7 +332,7 @@ const TEST_CATALOG_FIELDS: MigrationField[] = [
     label: "Test code",
     required: true,
     aliases: ["code", "test code", "test id", "short code"],
-    help: "Required. This is the catalogue identifier and is normalized to uppercase.",
+    help: "Required. This is the catalogue identifier and is converted to capitals.",
   },
   {
     key: "name",

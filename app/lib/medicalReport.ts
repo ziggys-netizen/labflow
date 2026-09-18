@@ -46,10 +46,10 @@ export type MedicalReportVersion = {
 };
 
 export const REPORT_INCOMPLETE_MESSAGE =
-  "Fill in chief complaint, findings, assessment, and plan before finalizing.";
-export const REPORT_NOT_FINAL_MESSAGE = "Only a finalized report can be amended.";
+  "Fill in chief complaint, findings, assessment, and plan before finalising.";
+export const REPORT_NOT_FINAL_MESSAGE = "Only a finalised report can be amended.";
 export const REPORT_NO_CHANGE_MESSAGE = "Change at least one field before amending.";
-export const REPORT_AMENDMENT_REASON_MESSAGE = "Choose a reason to amend a finalized report.";
+export const REPORT_AMENDMENT_REASON_MESSAGE = "Choose a reason to amend a finalised report.";
 
 export function emptyReportContent(): MedicalReportContent {
   return { chiefComplaint: "", findings: "", assessment: "", plan: "" };

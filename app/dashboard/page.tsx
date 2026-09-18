@@ -286,7 +286,7 @@ function ExportReports() {
         <ul className="text-sm text-gray-700 space-y-1">
           {recent.map((item) => (
             <li key={`${item.at}-${item.reportType}-${item.startDate}`}>
-              {new Date(item.at).toLocaleString()} — {REPORT_TYPE_LABELS[item.reportType]}{" "}
+              {new Date(item.at).toLocaleString()} · {REPORT_TYPE_LABELS[item.reportType]}{" "}
               {item.startDate} to {item.endDate}, {item.rowCount} row
               {item.rowCount === 1 ? "" : "s"}
               {item.recipient ? `, emailed to ${item.recipient}` : ""}
@@ -489,7 +489,7 @@ function DashboardContent() {
               <div className="border border-gray-200 rounded-lg p-4 md:col-span-2">
                 <p className="text-sm text-gray-600">Median turnaround</p>
                 <p className="text-2xl font-semibold text-gray-900 mt-1">
-                  {stats.turnaround === null ? "—" : `${stats.turnaround.toFixed(1)} h`}
+                  {stats.turnaround === null ? "No data yet" : `${stats.turnaround.toFixed(1)} h`}
                 </p>
                 <p className="text-sm text-gray-500 mt-2">{stats.turnaroundCopy}</p>
                 {stats.turnaroundLegacy > 0 && (

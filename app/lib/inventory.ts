@@ -155,7 +155,7 @@ export const MOVEMENT_TYPES: MovementTypeDefinition[] = [
     value: "disposal",
     label: "Disposed",
     direction: "out",
-    hint: "Written off — expired, damaged, contaminated or returned to supplier.",
+    hint: "Written off: expired, damaged, contaminated or returned to the supplier.",
   },
 ];
 
@@ -215,7 +215,7 @@ export type BatchAcceptance = (typeof BATCH_ACCEPTANCE)[number];
 
 export const ACCEPTANCE_LABELS: Record<string, string> = {
   accepted: "Accepted",
-  untested: "Quarantine — not yet tested",
+  untested: "Quarantine (not yet tested)",
   rejected: "Rejected",
 };
 
@@ -698,7 +698,7 @@ export function packDescription(item: {
   baseUnit: string;
   unitSize?: string;
 }): string {
-  if (item.unitSize) return `${item.packingUnit} — ${item.unitSize}`;
+  if (item.unitSize) return `${item.packingUnit}, ${item.unitSize}`;
   if (item.unitsPerPack > 1) {
     return `${item.packingUnit} of ${item.unitsPerPack} ${item.baseUnit}`;
   }
@@ -707,9 +707,9 @@ export function packDescription(item: {
 
 /** Local date and time, kept short so tables stay readable. */
 export function formatDateTime(iso: string | null | undefined): { date: string; time: string } {
-  if (!iso) return { date: "—", time: "—" };
+  if (!iso) return { date: "Not recorded", time: "Not recorded" };
   const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return { date: "—", time: "—" };
+  if (Number.isNaN(d.getTime())) return { date: "Not recorded", time: "Not recorded" };
   return {
     date: d.toLocaleDateString(),
     time: d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),

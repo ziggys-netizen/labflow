@@ -159,7 +159,7 @@ export function staffTermsIndicatorLabel(status: StaffTermsIndicator): string {
   if (status === "accepted") return "Accepted";
   if (status === "not_accepted") return "Not accepted";
   if (status === "not_required") return "Not required";
-  return "—";
+  return "Unknown";
 }
 
 export function isTermsReadablePath(pathname: string): boolean {

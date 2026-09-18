@@ -62,7 +62,7 @@ function Field({ label, value, mono }: { label: string; value?: string | null; m
   return (
     <div className="flex flex-col gap-1">
       <p className="text-[10px] uppercase tracking-[0.06em] text-lf-ink-3">{label}</p>
-      <p className={`text-sm text-lf-ink ${mono ? "lf-num" : ""}`}>{value || "—"}</p>
+      <p className={`text-sm text-lf-ink ${mono ? "lf-num" : ""}`}>{value || "Not recorded"}</p>
     </div>
   );
 }
@@ -128,7 +128,7 @@ function PatientRecordContent() {
           <div className="flex flex-col gap-6">
             <div className="flex items-start justify-between gap-3">
               <div className="flex min-w-0 flex-col gap-2">
-                <p className="lf-num text-sm text-lf-ink-2">{patient.labId || "—"}</p>
+                <p className="lf-num text-sm text-lf-ink-2">{patient.labId || "No Lab ID"}</p>
                 <h1 className="text-2xl font-semibold text-lf-ink">{displayName}</h1>
                 <p className="text-sm text-lf-ink-2">{formatSexAge(patient)}</p>
               </div>
@@ -161,7 +161,7 @@ function PatientRecordContent() {
               <Field label="Next of kin" value={patient.nextOfKin} />
               <Field label="Referring clinician" value={patient.referringClinician} />
               <Field label="Clinic ID" value={patient.clinicId} mono />
-              <Field label="Registered" value={patient.createdAt ? new Date(patient.createdAt).toLocaleString() : "—"} />
+              <Field label="Registered" value={patient.createdAt ? new Date(patient.createdAt).toLocaleString() : "Not recorded"} />
               <Field label="Registered by" value={roleLabel(patient.createdByRole)} />
             </div>
           </div>

@@ -1181,9 +1181,9 @@ function MigrationContent() {
       <main className="min-h-screen">
         <AppNav />
         <div className="mx-auto max-w-lg px-6 py-16 text-center">
-          <h1 className="mb-2 text-2xl font-semibold text-gray-900">Migration Center</h1>
+          <h1 className="mb-2 text-2xl font-semibold text-gray-900">Migration Centre</h1>
           <p className="mb-4 text-gray-600">
-            This release keeps data import owner-only because server-side Firestore authorization is
+            This release keeps data import owner-only because server-side Firestore authorisation is
             not yet present.
           </p>
           <Link href="/patients" className="font-medium text-gray-900 underline">
@@ -1210,7 +1210,7 @@ function MigrationContent() {
       <main className="min-h-screen">
         <AppNav />
         <div className="mx-auto max-w-lg px-6 py-16 text-center">
-          <h1 className="mb-2 text-2xl font-semibold text-gray-900">Migration Center</h1>
+          <h1 className="mb-2 text-2xl font-semibold text-gray-900">Migration Centre</h1>
           <p className="mb-4 text-red-600">{clinicError || "Clinic not found."}</p>
           <Link href="/owner" className="font-medium text-gray-900 underline">
             Back to Owner
@@ -1232,7 +1232,7 @@ function MigrationContent() {
               </Link>{" "}
               / Clinic onboarding
             </p>
-            <h1 className="text-2xl font-semibold text-gray-900">Migration Center</h1>
+            <h1 className="text-2xl font-semibold text-gray-900">Migration Centre</h1>
             <p className="mt-1 text-gray-600">
               Import existing clinic data without uploading spreadsheet files to an external
               service.
@@ -1350,7 +1350,7 @@ function MigrationContent() {
                 >
                   <span className="mb-3 block text-sm font-medium text-gray-900">+ Add data</span>
                   <span className="mb-3 block text-xs text-gray-500">
-                    Choose a file or drop one here. Native file dialog, .xlsx .xlsm .csv.
+                    Choose a file or drop one here. Accepted formats: .xlsx, .xlsm and .csv.
                   </span>
                   <input
                     key={fileInputKey}
@@ -1381,7 +1381,7 @@ function MigrationContent() {
                 <h2 className="mb-2 text-lg font-medium text-gray-900">Map columns</h2>
                 <p className="mb-4 text-sm text-gray-600">
                   Confirm each source column against the first five data rows. Fields are pre-filled
-                  by column-name matching only — not by AI. Nothing is written until you confirm
+                  by column-name matching only, not by AI. Nothing is written until you confirm
                   this mapping and complete Import.
                 </p>
                 <div className="mb-4 overflow-x-auto">
@@ -1400,7 +1400,7 @@ function MigrationContent() {
                         <tr key={row.rowNumber} className="border-b border-gray-100">
                           {sheet.headers.map((header) => (
                             <td key={header} className="max-w-[12rem] truncate px-2 py-2 text-gray-600">
-                              {row.values[header] || "—"}
+                              {row.values[header] || "(empty)"}
                             </td>
                           ))}
                         </tr>
@@ -1444,7 +1444,7 @@ function MigrationContent() {
                                 .slice(0, MAPPING_PREVIEW_ROWS)
                                 .map((row) => row.values[header])
                                 .filter(Boolean)
-                                .join(" · ") || "—"}
+                                .join(" · ") || "(empty)"}
                             </td>
                             <td className="py-3">
                               <select
@@ -1699,7 +1699,7 @@ function MigrationContent() {
                   />
                   <span>
                     I confirm the selected clinic, row counts, duplicate actions, and that I am
-                    authorized to import this data.
+                    authorised to import this data.
                   </span>
                 </label>
                 <button
@@ -1857,7 +1857,7 @@ function MigrationContent() {
         <section className="mt-6 rounded-lg border border-gray-200 p-4">
           <h2 className="font-medium text-gray-900">Migration history</h2>
           <p className="mt-1 text-sm text-gray-600">
-            Reports contain aggregate counts and operator details only—never spreadsheet rows or
+            Reports contain aggregate counts and operator details only, never spreadsheet rows or
             patient content.
           </p>
           {loadingHistory && <p className="mt-3 text-sm text-gray-500">Loading history...</p>}
@@ -1943,9 +1943,9 @@ function MigrationContent() {
                             {collectionLabel(record.collectionName)}
                           </td>
                           <td className="py-2 pr-3 font-mono text-xs text-gray-900">
-                            {record.labId || "—"}
+                            {record.labId || "No Lab ID"}
                           </td>
-                          <td className="py-2 pr-3 text-gray-900">{record.name || "—"}</td>
+                          <td className="py-2 pr-3 text-gray-900">{record.name || "Name not recorded"}</td>
                           <td className="py-2 pr-3 text-gray-600">
                             {record.createdAt ? safeDateLabel(record.createdAt) : "Unknown date"}
                           </td>

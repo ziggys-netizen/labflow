@@ -386,7 +386,7 @@ function ItemsContent() {
                 >
                   {PACKING_UNITS.map((u) => (
                     <option key={u.value} value={u.value}>
-                      {u.value} — {u.hint}
+                      {u.value}: {u.hint}
                     </option>
                   ))}
                 </select>
@@ -510,7 +510,7 @@ function ItemsContent() {
                 <div>
                   <p className="font-medium text-gray-900">
                     {item.name}
-                    {!item.active && <span className="text-sm text-gray-500"> — retired</span>}{" "}
+                    {!item.active && <span className="text-sm text-gray-500"> (retired)</span>}{" "}
                     <NotYetSynced show={item.notYetSynced} />
                   </p>
                   <p className="text-sm text-gray-600">
@@ -531,7 +531,7 @@ function ItemsContent() {
                   </p>
                   {item.active && hasNoReorderLevel(item) && (
                     <p className="text-xs font-medium text-amber-700 mt-1">
-                      No reorder level set — this item will not warn before it runs out. Edit it to
+                      No reorder level set. This item will not warn before it runs out. Edit it to
                       set one.
                     </p>
                   )}
