@@ -16,7 +16,11 @@ import { isOwner } from "../../../../lib/clinicScope";
 import { loadClinic } from "../../../../lib/clinics";
 import {
   AUDIT_ACTIONS,
+  AUDIT_MISSING_INDEX_NOTICE,
+  auditLoadFailureMessage,
   auditLogsToCsv,
+  classifyReadFailure,
+  firestoreErrorCode,
   defaultAuditDateFrom,
   defaultAuditDateTo,
   filterAuditLogs,
@@ -77,31 +81,46 @@ function ClinicAuditViewer({ clinicId, owner }: { clinicId: string; owner: boole
   const [fetchCapped, setFetchCapped] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
+  const [degraded, setDegraded] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [page, setPage] = useState(0);
+
+  // The clinic's name is its own read: if it fails, the log still shows.
+  useEffect(() => {
+    let cancelled = false;
+    loadClinic(clinicId)
+      .then((clinic) => {
+        if (!cancelled && clinic?.name) setClinicName(clinic.name);
+      })
+      .catch((err) => {
+        console.error("Could not load the clinic name for the audit log", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [clinicId]);
 
   useEffect(() => {
     let cancelled = false;
     async function load() {
       try {
-        const [clinic, loaded] = await Promise.all([
-          loadClinic(clinicId),
-          loadClinicAuditLogs(clinicId, {
-            startAt: localDayStartIso(appliedFrom),
-            endAt: localDayEndIso(appliedTo),
-          }),
-        ]);
+        const loaded = await loadClinicAuditLogs(clinicId, {
+          startAt: localDayStartIso(appliedFrom),
+          endAt: localDayEndIso(appliedTo),
+        });
         if (cancelled) return;
-        setClinicName(clinic?.name || clinicId);
         setRows(loaded.rows);
         setFetchCapped(loaded.capped);
+        setDegraded(loaded.degraded === "missing-index");
         setPage(0);
         setError("");
       } catch (err) {
-        console.error(err);
+        console.error("Audit log read failed", err);
         if (cancelled) return;
-        setError("Could not load the audit log.");
+        setError(auditLoadFailureMessage(classifyReadFailure(err), firestoreErrorCode(err)));
         setRows([]);
         setFetchCapped(false);
+        setDegraded(false);
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -110,7 +129,13 @@ function ClinicAuditViewer({ clinicId, owner }: { clinicId: string; owner: boole
     return () => {
       cancelled = true;
     };
-  }, [clinicId, appliedFrom, appliedTo]);
+  }, [clinicId, appliedFrom, appliedTo, reloadKey]);
+
+  function retry() {
+    setLoading(true);
+    setError("");
+    setReloadKey((n) => n + 1);
+  }
 
   const filtered = useMemo(
     () => filterAuditLogs(rows, { action: actionFilter, actorUid: actorFilter }),
@@ -253,8 +278,33 @@ function ClinicAuditViewer({ clinicId, owner }: { clinicId: string; owner: boole
           </button>
         </form>
 
-        {error && <p className="text-sm text-red-600 mb-4">{error}</p>}
+        {error && (
+          <div
+            role="alert"
+            className="mb-4 flex flex-wrap items-center gap-3 rounded-lg border border-red-300 bg-red-50 px-4 py-3"
+          >
+            <p className="text-sm text-red-800">
+              <span className="font-semibold">Audit log not loaded. </span>
+              {error}
+            </p>
+            <button
+              type="button"
+              onClick={retry}
+              className="lf-touch inline-flex items-center rounded-lg border border-red-300 bg-white px-4 text-sm font-medium text-red-800 hover:bg-red-100"
+            >
+              Retry
+            </button>
+          </div>
+        )}
         {loading && <p className="text-gray-600">Loading...</p>}
+        {!loading && degraded && (
+          <p
+            role="status"
+            className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950"
+          >
+            {AUDIT_MISSING_INDEX_NOTICE}
+          </p>
+        )}
         {!loading && fetchCapped && (
           <p
             role="status"
@@ -264,7 +314,7 @@ function ClinicAuditViewer({ clinicId, owner }: { clinicId: string; owner: boole
             searched. Narrow the date range to search further back.
           </p>
         )}
-        {!loading && filtered.length === 0 && (
+        {!loading && !error && filtered.length === 0 && (
           <p className="text-sm text-gray-600">No audit entries in this range.</p>
         )}
         {!loading && filtered.length > 0 && (

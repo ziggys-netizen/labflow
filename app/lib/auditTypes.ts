@@ -235,7 +235,82 @@ export type ClinicAuditLoadResult = {
   rows: AuditLogRecord[];
   /** True when the range had more than AUDIT_FETCH_CAP matches; older entries were not searched. */
   capped: boolean;
+  /**
+   * Set when the fast, indexed read was refused because the live database is
+   * missing its index, and the rows came from the slower fallback read. The
+   * page stays usable; the notice tells someone to deploy the index.
+   */
+  degraded?: "missing-index";
 };
+
+/** Why a Firestore read failed, sorted into things a person can act on. */
+export type ReadFailure = "missing-index" | "permission" | "offline" | "unknown";
+
+/** The Firestore error code ("permission-denied", ...), without a "firestore/" prefix. */
+export function firestoreErrorCode(err: unknown): string {
+  if (typeof err === "object" && err !== null && "code" in err) {
+    return String((err as { code: unknown }).code).replace(/^firestore\//, "");
+  }
+  return "";
+}
+
+function errorMessage(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    return String((err as { message: unknown }).message);
+  }
+  return "";
+}
+
+/**
+ * Classify on the Firestore error code, and for a missing index on the
+ * message's fixed opening as well: "failed-precondition" alone also covers
+ * other states that no fallback would help.
+ */
+export function classifyReadFailure(err: unknown): ReadFailure {
+  const code = firestoreErrorCode(err);
+  if (code === "failed-precondition" && /^The query requires an index/.test(errorMessage(err))) {
+    return "missing-index";
+  }
+  if (code === "permission-denied") return "permission";
+  if (code === "unavailable" || code === "deadline-exceeded") return "offline";
+  return "unknown";
+}
+
+/** What the audit page says when it cannot show the log at all. */
+export function auditLoadFailureMessage(kind: ReadFailure, code: string = ""): string {
+  switch (kind) {
+    case "permission":
+      return "You do not have access to this clinic's audit log.";
+    case "offline":
+      return "Could not reach the server to load the audit log. Check the connection, then press Retry.";
+    case "missing-index":
+      return "The audit log's database index is missing, and the slower read also failed. Press Retry. If it keeps happening, the index needs deploying (firebase deploy --only firestore:indexes).";
+    default:
+      return code
+        ? `The audit log could not be loaded (${code}). Press Retry. If it keeps happening, send that reason to the LabFlow owner.`
+        : "The audit log could not be loaded. Press Retry. If it keeps happening, tell the LabFlow owner.";
+  }
+}
+
+/** The notice shown while the page is running on the fallback read. */
+export const AUDIT_MISSING_INDEX_NOTICE =
+  "Showing the audit log by the slower route: its database index is missing. Everything is shown, it only takes longer. To restore the fast route, deploy the indexes (firebase deploy --only firestore:indexes).";
+
+/**
+ * The fallback read cannot ask the database for a date range in order, so it
+ * reads the clinic's entries and does it here: keep those inside
+ * [startAt, endAt], newest first, exactly as the indexed query returns them.
+ */
+export function auditRowsInRange(
+  rows: AuditLogRecord[],
+  startAt?: string,
+  endAt?: string
+): AuditLogRecord[] {
+  return rows
+    .filter((row) => (!startAt || row.at >= startAt) && (!endAt || row.at <= endAt))
+    .sort((a, b) => (a.at === b.at ? b.id.localeCompare(a.id) : a.at < b.at ? 1 : -1));
+}
 
 /**
  * Trim a paged fetch to the cap and mark when more documents existed beyond it.
