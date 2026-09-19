@@ -31,7 +31,7 @@ import {
   normalizeParameter,
   type ResultType,
 } from "../../lib/resultModel";
-import { testsForTier } from "../../lib/testCatalog";
+import { missingStandardTests, testsForTier } from "../../lib/testCatalog";
 import type { ClinicTier } from "../../lib/resultModel";
 import SopReferenceFields from "../../lib/SopReferenceFields";
 import {
@@ -371,15 +371,20 @@ function CatalogueContent() {
     }
   }
 
-  async function seedThisClinic() {
+  /**
+   * `onlyIfEmpty` seeds a clinic with no catalogue. Without it, it adds only
+   * the standard tests the clinic is missing and leaves every existing test,
+   * its prices and its ranges, exactly as they are.
+   */
+  async function seedThisClinic(onlyIfEmpty: boolean) {
     const seedClinic = writeClinicId || clinicId;
     const actor = actorFromAuth(user, role, shift);
     if (!seedClinic || !actor || role !== "owner") return;
     setSeeding(true);
-    setStatus("Seeding default catalogue...");
+    setStatus(onlyIfEmpty ? "Seeding default catalogue..." : "Adding the missing standard tests...");
     try {
       const clinic = await loadClinic(seedClinic);
-      const n = await seedClinicCatalog(seedClinic, { actor, onlyIfEmpty: true, tier: clinic?.tier });
+      const n = await seedClinicCatalog(seedClinic, { actor, onlyIfEmpty, tier: clinic?.tier });
       setClinicTier(clinic?.tier ?? null);
       const catalogDocs = await getClinicDocs("testCatalog", role, clinicId, { sortBy: "name" });
       const scoped = catalogDocs.filter((d) => (d.data().clinicId as string) === seedClinic);
@@ -391,8 +396,12 @@ function CatalogueContent() {
       );
       setStatus(
         n === 0
-          ? "This clinic already has a catalogue."
-          : `Seeded ${n} tests for this clinic's tier. Confirm them for this laboratory.`
+          ? onlyIfEmpty
+            ? "This clinic already has a catalogue."
+            : "Nothing to add: this clinic already has every standard test for its level."
+          : onlyIfEmpty
+            ? `Seeded ${n} tests for this clinic's tier. Confirm them for this laboratory.`
+            : `Added ${n} standard ${n === 1 ? "test" : "tests"}. Confirm ${n === 1 ? "its" : "their"} reference ranges for this laboratory.`
       );
     } catch (err) {
       console.error(err);
@@ -580,6 +589,8 @@ function CatalogueContent() {
 
   const scopeId = writeClinicId || clinicId;
   const needsClinic = isOwner(role) && !writeClinicId;
+  const missingStandard =
+    tests.length > 0 ? missingStandardTests(tests.map((t) => t.code), clinicTier) : [];
 
   return (
     <main className="min-h-screen">
@@ -607,7 +618,7 @@ function CatalogueContent() {
             {role === "owner" && scopeId ? (
               <button
                 type="button"
-                onClick={seedThisClinic}
+                onClick={() => void seedThisClinic(true)}
                 disabled={seeding}
                 className="mt-3 bg-gray-900 text-white text-sm rounded-lg px-3 py-1.5 disabled:opacity-50"
               >
@@ -620,6 +631,29 @@ function CatalogueContent() {
                 Ask the platform owner to seed empty clinic catalogues from the Owner page.
               </p>
             )}
+          </div>
+        )}
+        {!needsClinic && role === "owner" && scopeId && missingStandard.length > 0 && (
+          <div className="mb-6 rounded-lg border border-amber-300 bg-amber-50 p-4">
+            <p className="font-semibold text-amber-950">
+              {missingStandard.length} standard {missingStandard.length === 1 ? "test is" : "tests are"}{" "}
+              missing from this clinic
+            </p>
+            <p className="mt-1 text-sm text-amber-950">
+              {missingStandard.map((t) => t.name).join(", ")}. They were added to LabFlow after this
+              clinic was set up. Adding them changes none of the tests already here; like any seeded
+              test, their reference ranges then need confirming.
+            </p>
+            <button
+              type="button"
+              onClick={() => void seedThisClinic(false)}
+              disabled={seeding}
+              className="lf-touch mt-3 inline-flex items-center rounded-lg bg-gray-900 px-4 text-sm font-medium text-white disabled:opacity-50"
+            >
+              {seeding
+                ? "Adding..."
+                : `Add ${missingStandard.length} missing ${missingStandard.length === 1 ? "test" : "tests"}`}
+            </button>
           </div>
         )}
         {unreviewed.length > 0 && (

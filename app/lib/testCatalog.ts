@@ -387,6 +387,21 @@ export function testsForTier(tier: ClinicTier): LabTest[] {
   return TEST_CATALOG.filter((row) => (row.tiers ?? [...CLINIC_TIERS]).includes(tier));
 }
 
+/**
+ * Standard tests for this clinic's level that its catalogue does not have,
+ * matched by test code without regard to case. When the product catalogue
+ * gains a test, clinics created before it lack it; this is what they are
+ * missing. A clinic with no level set is compared with the whole catalogue.
+ */
+export function missingStandardTests(
+  existingCodes: Iterable<string>,
+  tier: ClinicTier | null | undefined
+): LabTest[] {
+  const have = new Set([...existingCodes].map((code) => code.trim().toUpperCase()));
+  const source = tier ? testsForTier(tier) : TEST_CATALOG;
+  return source.filter((test) => !have.has(test.code.toUpperCase()));
+}
+
 /** Positive minutes only. Empty, zero, and non-numeric values mean “no target”. */
 export function parseTatMinutes(value: unknown): number | null {
   if (typeof value === "number" && Number.isFinite(value) && value > 0) {

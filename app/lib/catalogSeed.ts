@@ -1,6 +1,6 @@
 import { collection, doc, getDocs, query, where, writeBatch } from "firebase/firestore";
 import { db } from "./firebase";
-import { TEST_CATALOG, parseTatMinutes, testsForTier, type LabTest } from "./testCatalog";
+import { missingStandardTests, parseTatMinutes, type LabTest } from "./testCatalog";
 import { parseClinicTier, type ClinicTier } from "./resultModel";
 import { logAudit, type AuditActor } from "./audit";
 
@@ -55,12 +55,17 @@ export async function seedClinicCatalog(
   if (options.onlyIfEmpty && !existingSnap.empty) return 0;
 
   const existingIds = new Set(existingSnap.docs.map((d) => d.id));
+  // Skip by code as well as by document id: a test imported from a
+  // spreadsheet can carry the same code under a different id, and a second
+  // "HB" in one clinic would split its results between two definitions.
+  const existingCodes = existingSnap.docs
+    .map((d) => d.data().code)
+    .filter((code): code is string => typeof code === "string");
   const seededAt = new Date().toISOString();
   const created: { id: string; code: string }[] = [];
   const batch = writeBatch(db);
   const tier = parseClinicTier(options.tier);
-  const source = tier ? testsForTier(tier) : TEST_CATALOG;
-  for (const test of source) {
+  for (const test of missingStandardTests(existingCodes, tier)) {
     const id = catalogDocId(clinicId, test.code);
     if (existingIds.has(id)) continue;
     batch.set(doc(db, "testCatalog", id), catalogSeedPayload(clinicId, test, seededAt));
